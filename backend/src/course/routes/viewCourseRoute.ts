@@ -1,5 +1,5 @@
 import express from "express";
-import { viewCourses } from "../controllers/viewController.js";
+import { viewCourses } from "../controllers/viewCourseController.js";
 
 const router = express.Router();
 

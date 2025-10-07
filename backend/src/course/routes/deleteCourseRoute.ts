@@ -1,5 +1,5 @@
 import express from "express";
-import { deleteCourse } from "../controllers/deleteController.js";
+import { deleteCourse } from "../controllers/deleteCourseController.js";
 
 const router = express.Router();
 

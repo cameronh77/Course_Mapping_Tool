@@ -1,8 +1,8 @@
 import express from "express";
-import creationRoutes from "./routes/creationRoute.js";
-import viewRoutes from "./routes/viewRoute.js";
-import deleteRoutes from "./routes/deleteRoute.js";
-import updateRoutes from "./routes/updateCourseRoute.js";
+import creationRoutes from "./course/routes/createCourseRoute.js";
+import viewRoutes from "./course/routes/viewCourseRoute.js";
+import deleteRoutes from "./course/routes/deleteCourseRoute.js";
+import updateRoutes from "./course/routes/updateCourseRoute.js";
 
 const app = express();
 

@@ -1,4 +1,4 @@
-import prisma from "../../database/prismaClient.js";
+import prisma from "../../../database/prismaClient.js";
 
 export const addCourse = async (req, res) => {
   const { courseId, courseDesc, expectedDuration, numberTeachingPeriods } =
