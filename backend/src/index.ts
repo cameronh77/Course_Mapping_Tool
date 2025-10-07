@@ -2,6 +2,7 @@ import express from "express";
 import creationRoutes from "./routes/creationRoute.js";
 import viewRoutes from "./routes/viewRoute.js";
 import deleteRoutes from "./routes/deleteRoute.js";
+import updateRoutes from "./routes/updateCourseRoute.js";
 
 const app = express();
 
@@ -10,6 +11,7 @@ app.use(express.json());
 app.use("/api/create", creationRoutes);
 app.use("/api/view", viewRoutes);
 app.use("/api/delete", deleteRoutes);
+app.use("/api/update", updateRoutes);
 
 const server = app.listen(3000, () =>
   console.log(`
