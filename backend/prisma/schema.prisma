@@ -15,7 +15,7 @@ datasource db {
 }
 
 model Course {
-  courseId                Int         @id 
+  courseId                String        @id 
   courseDesc              String      //A description of the course
   expectedDuration        Int         //The expected duration of the course
   numberTeachingPeriods   Int         //How many teaching periods in a year
@@ -25,7 +25,7 @@ model Course {
 }
 
 model Unit {
-  unitId            Int         @id 
+  unitId            String      @id 
   unitDesc          String      //A description of the unit
   credits           Int         //How many credits the unit is worth
   semestersOffered  Int[]       //Which semesters the unit is offered in
@@ -35,10 +35,10 @@ model Unit {
 
 model CourseUnit {
   course    Course  @relation(fields: [courseId], references: [courseId])
-  courseId  Int
+  courseId  String
 
   unit      Unit    @relation(fields: [unitId], references: [unitId])
-  unitId    Int
+  unitId    String
 
   semester  Int     //The reccomended semester for the unit in the course  
   year      Int     //The reccomended year for the unit in the course

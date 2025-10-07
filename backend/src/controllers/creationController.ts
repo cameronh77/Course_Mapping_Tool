@@ -16,7 +16,7 @@ export const addCourse = async (req, res) => {
     // Check if a course with the given courseId already exists
     const existingCourse = await prisma.course.findUnique({
       where: {
-        courseId: parseInt(courseId),
+        courseId: courseId,
       },
     });
 
@@ -28,7 +28,7 @@ export const addCourse = async (req, res) => {
 
     const newCourse = await prisma.course.create({
       data: {
-        courseId: parseInt(courseId),
+        courseId: courseId,
         courseDesc,
         expectedDuration: parseInt(expectedDuration),
         numberTeachingPeriods: parseInt(numberTeachingPeriods),
