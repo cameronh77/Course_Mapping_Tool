@@ -3,6 +3,6 @@ import { addCourse } from "../controllers/creationController.js";
 
 const router = express.Router();
 
-router.get("/course", addCourse);
+router.post("/course", addCourse);
 
 export default router;
