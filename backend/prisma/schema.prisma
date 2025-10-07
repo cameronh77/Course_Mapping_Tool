@@ -15,8 +15,36 @@ datasource db {
 }
 
 model Course {
-  Course_ID    Int  @id @default(autoincrement())
-  Course_Desc  String 
-  Expected_Duration Int
-  Number_Teaching_Periods Int
+  courseId                Int         @id 
+  courseDesc              String      //A description of the course
+  expectedDuration        Int         //The expected duration of the course
+  numberTeachingPeriods   Int         //How many teaching periods in a year
+
+  unitsOffered            CourseUnit[] 
+
 }
+
+model Unit {
+  unitId            Int         @id 
+  unitDesc          String      //A description of the unit
+  credits           Int         //How many credits the unit is worth
+  semestersOffered  Int[]       //Which semesters the unit is offered in
+
+  courseUnit        CourseUnit[]
+}
+
+model CourseUnit {
+  course    Course  @relation(fields: [courseId], references: [courseId])
+  courseId  Int
+
+  unit      Unit    @relation(fields: [unitId], references: [unitId])
+  unitId    Int
+
+  semester  Int     //The reccomended semester for the unit in the course  
+  year      Int     //The reccomended year for the unit in the course
+  elective  Boolean //Whether of not the unit is an elective in the course
+
+  @@id([courseId, unitId])
+}
+
+
