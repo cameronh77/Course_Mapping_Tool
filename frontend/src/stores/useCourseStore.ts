@@ -5,8 +5,8 @@ export const useCourseStore = create((set) => ({
   existingCourses: [],
 
   createCourse: async (data) => {
-    set({ isSigningUp: true });
     try {
+      console.log(data);
       const res = await axiosInstance.post("/course/create", data);
       console.log(res.data);
       set({ authUser: res.data });

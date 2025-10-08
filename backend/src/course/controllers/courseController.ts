@@ -1,11 +1,17 @@
 import prisma from "../../../database/prismaClient.js";
 
 export const addCourse = async (req, res) => {
-  const { courseId, courseDesc, expectedDuration, numberTeachingPeriods } =
-    req.body;
+  const {
+    courseId,
+    courseName,
+    courseDesc,
+    expectedDuration,
+    numberTeachingPeriods,
+  } = req.body;
   try {
     if (
       !courseId ||
+      !courseName ||
       !courseDesc ||
       !expectedDuration ||
       !numberTeachingPeriods
@@ -29,6 +35,7 @@ export const addCourse = async (req, res) => {
     const newCourse = await prisma.course.create({
       data: {
         courseId: courseId,
+        courseName,
         courseDesc,
         expectedDuration: parseInt(expectedDuration),
         numberTeachingPeriods: parseInt(numberTeachingPeriods),
