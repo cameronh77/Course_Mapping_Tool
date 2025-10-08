@@ -16,6 +16,7 @@ datasource db {
 
 model Course {
   courseId                String        @id 
+  courseName              String      
   courseDesc              String      //A description of the course
   expectedDuration        Int         //The expected duration of the course
   numberTeachingPeriods   Int         //How many teaching periods in a year
@@ -26,6 +27,7 @@ model Course {
 
 model Unit {
   unitId            String      @id 
+  unitName          String      
   unitDesc          String      //A description of the unit
   credits           Int         //How many credits the unit is worth
   semestersOffered  Int[]       //Which semesters the unit is offered in

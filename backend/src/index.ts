@@ -1,17 +1,18 @@
 import express from "express";
-import creationRoutes from "./course/routes/createCourseRoute.js";
-import viewRoutes from "./course/routes/viewCourseRoute.js";
-import deleteRoutes from "./course/routes/deleteCourseRoute.js";
-import updateRoutes from "./course/routes/updateCourseRoute.js";
+import courseRoutes from "./course/routes/courseRoutes.js";
+import cors from "cors";
 
 const app = express();
 
 app.use(express.json());
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  })
+);
 
-app.use("/api/create", creationRoutes);
-app.use("/api/view", viewRoutes);
-app.use("/api/delete", deleteRoutes);
-app.use("/api/update", updateRoutes);
+app.use("/api/course", courseRoutes);
 
 const server = app.listen(3000, () =>
   console.log(`
