@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCourseStore } from "../stores/useCourseStore";
 import {
   Eye,
@@ -11,8 +11,15 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
+export interface Course {
+  courseId: String;
+  courseName: String;
+  courseDesc: String;
+  expectedDuration: number;
+  numberTeachingPeriods: number;
+}
+
 export const HomePage = () => {
-  const [showPassword, setShowPassword] = useState(false);
   const [courseData, setCourseData] = useState({
     courseId: "",
     courseName: "",
@@ -20,8 +27,28 @@ export const HomePage = () => {
     expectedDuration: "",
     numberTeachingPeriods: "",
   });
+  const [loadedCourses, setLoadedCourses] = useState<Course[]>([]);
 
-  const { createCourse } = useCourseStore();
+  const { existingCourses, createCourse, viewCourses } = useCourseStore();
+
+  useEffect(() => {
+    const loadCourses = async () => {
+      await viewCourses(); // assuming it returns data or updates the store
+      setLoadedCourses(
+        existingCourses.map((c: any) => ({
+          courseId: c.courseId,
+          courseName: c.courseName,
+          courseDesc: c.courseDesc,
+          expectedDuration: Number(c.expectedDuration),
+          numberTeachingPeriods: Number(c.numberTeachingPeriods),
+        })) as Course[]
+      );
+    };
+
+    loadCourses();
+    console.log("THESE ARE EXISTING COURSES", existingCourses);
+    console.log("THESE ARE LOADED COURSES", loadedCourses);
+  }, [existingCourses]);
 
   const handleSubmit = (e) => {
     console.log(courseData);
@@ -150,6 +177,26 @@ export const HomePage = () => {
           >
             CREATE COURSE
           </button>
+        </div>
+      </div>
+      <div className="flex flex-col justify-center items-center p-6 sm:p-12">
+        <div className="text center mb-8">
+          <div className="flex flex-col items-center gap-2 group">
+            <h1 className="text-2xl font-bold mt-2">Create A New Course</h1>
+          </div>
+        </div>
+        <div className="w-full max-w-md outline-solid ">
+          {loadedCourses.map((course) => (
+            <div className="card card-dash bg-base-100 w-96">
+              <div className="card-body">
+                <h2 className="card-title">{course.courseName}</h2>
+                <p>{course.courseDesc}</p>
+                <div className="card-actions justify-end">
+                  <button className="btn btn-primary">View Course</button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
