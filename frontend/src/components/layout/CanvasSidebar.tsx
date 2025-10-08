@@ -1,0 +1,9 @@
+import React from 'react';
+
+export const CanvasSidebar: React.FC = () => {
+  return (
+    <div className="w-1/3 h-screen bg-gray-300 border-r border-gray-400">
+      {/* Empty sidebar content */}
+    </div>
+  );
+};
