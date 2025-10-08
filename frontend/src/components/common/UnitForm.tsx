@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 interface UnitFormProps {
     onSave: (data: UnitFormData) => void;
+    initialData?: Partial<UnitFormData>;
 }
 
 export interface UnitFormData {
@@ -12,13 +13,13 @@ export interface UnitFormData {
     semestersOffered: number[] | null;
 }
 
-const UnitForm: React.FC<UnitFormProps> = ({ onSave }) => {
+const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData }) => {
     const [form, setForm] = useState<UnitFormData>({
-        unitId: null,
-        unitName: null,
-        unitDesc: null,
-        credits: null,
-        semestersOffered: null,
+        unitId: initialData?.unitId || null,
+        unitName: initialData?.unitName || null,
+        unitDesc: initialData?.unitDesc || null,
+        credits: initialData?.credits || null,
+        semestersOffered: initialData?.semestersOffered || null,
     });
 
 
@@ -80,7 +81,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave }) => {
                 <label>
                     Unit Description:
                     <textarea
-                        name="description"
+                        name="unitDesc"
                         value={form.unitDesc || ''}
                         onChange={handleChange}
                         required
