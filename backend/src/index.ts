@@ -1,6 +1,9 @@
 import express from "express";
 import courseRoutes from "./course/routes/courseRoutes.js";
 import unitRoutes from "./unit/routes/unitRoutes.js";
+import courseUnitRoutes from "./course-unit/routes/courseUnitRoutes.js";
+import courseLearningOutcomeRoutes from "./course-learning-outcome/routes/courseLearningOutcomeRoutes.js";
+import unitLearningOutcomeRoutes from "./unit-learning-outcome/routes/unitLearningOutcomeRoutes.js";
 import cors from "cors";
 
 const app = express();
@@ -15,6 +18,9 @@ app.use(
 
 app.use("/api/course", courseRoutes);
 app.use("/api/unit", unitRoutes);
+app.use("/api/course-unit", courseUnitRoutes);
+app.use("/api/CLO", courseLearningOutcomeRoutes);
+app.use("/api/ULO", unitLearningOutcomeRoutes);
 
 const server = app.listen(3000, () =>
   console.log(`
