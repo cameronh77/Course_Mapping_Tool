@@ -171,19 +171,21 @@ export const HomePage = () => {
               />
             </div>
           </div>
-          <button
-            type="submit"
-            className="btn btn-primary w-full"
-            onClick={handleSubmit}
-          >
-            CREATE COURSE
-          </button>
+          <Link to="/UnitCanvas" className="link link-primary">
+            <button
+              type="submit"
+              className="btn btn-primary w-full"
+              onClick={handleSubmit}
+            >
+              CREATE COURSE
+            </button>
+          </Link>
         </div>
       </div>
       <div className="flex flex-col justify-center items-center p-6 sm:p-12">
         <div className="text center mb-8">
           <div className="flex flex-col items-center gap-2 group">
-            <h1 className="text-2xl font-bold mt-2">Create A New Course</h1>
+            <h1 className="text-2xl font-bold mt-2">Current Courses</h1>
           </div>
         </div>
         <div className="w-full max-w-md outline-solid ">
@@ -193,7 +195,9 @@ export const HomePage = () => {
                 <h2 className="card-title">{course.courseName}</h2>
                 <p>{course.courseDesc}</p>
                 <div className="card-actions justify-end">
-                  <button className="btn btn-primary">View Course</button>
+                  <Link to="/UnitCanvas" className="link link-primary">
+                    <button className="btn btn-primary">View Course</button>
+                  </Link>
                 </div>
               </div>
             </div>
