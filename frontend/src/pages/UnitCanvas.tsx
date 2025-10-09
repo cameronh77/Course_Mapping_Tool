@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { CanvasSidebar } from '../components/layout/CanvasSidebar';
-import UnitForm, { type UnitFormData } from '../components/common/UnitForm';
-import { axiosInstance } from '../lib/axios';
-import { useUnitStore } from '../stores/useUnitStore';
+import React, { useState, useEffect } from "react";
+import { CanvasSidebar } from "../components/layout/CanvasSidebar";
+import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
+import { axiosInstance } from "../lib/axios";
+import { useUnitStore } from "../stores/useUnitStore";
+import { useCourseStore } from "../stores/useCourseStore";
+import Navbar from "../components/navbar";
 
 // Define the Unit interface
 interface Unit {
@@ -15,18 +17,20 @@ interface Unit {
 
 export const CanvasPage: React.FC = () => {
   // ... (existing state variables and functions remain the same) ...
-  const [unitBoxes, setUnitBoxes] = useState<Array<{
-    id: number, 
-    name: string,
-    unitId?: string,
-    description?: string,
-    credits?: number,
-    semestersOffered?: number[],
-    x: number,
-    y: number,
-    color?: string,
-  }>>([]);
-  
+  const [unitBoxes, setUnitBoxes] = useState<
+    Array<{
+      id: number;
+      name: string;
+      unitId?: string;
+      description?: string;
+      credits?: number;
+      semestersOffered?: number[];
+      x: number;
+      y: number;
+      color?: string;
+    }>
+  >([]);
+
   // State for editing
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState<boolean>(false);
@@ -36,9 +40,10 @@ export const CanvasPage: React.FC = () => {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const canvasRef = React.useRef<HTMLDivElement>(null);
+  const { currentCourse } = useCourseStore();
 
   // States for unit search
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Unit[]>([]);
   const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
   const { viewUnits, createUnit, updateUnit } = useUnitStore();
@@ -56,14 +61,16 @@ export const CanvasPage: React.FC = () => {
   // ... (createUnitBox, startEdit, handleFormSave, cancelEdit, handleMouseDown, handleDoubleClick, deleteUnit functions remain the same) ...
 
   const createUnitBox = (selectedUnit: Unit) => {
-    const unitExists = unitBoxes.some(unit => unit.unitId === selectedUnit.unitId);
+    const unitExists = unitBoxes.some(
+      (unit) => unit.unitId === selectedUnit.unitId
+    );
 
     if (unitExists) {
       alert("This unit has already been added.");
       setShowSearchResults(false);
       return;
     }
-    
+
     const newUnit = {
       id: Date.now(),
       name: selectedUnit.unitName,
@@ -71,9 +78,9 @@ export const CanvasPage: React.FC = () => {
       description: selectedUnit.unitDesc,
       credits: selectedUnit.credits,
       semestersOffered: selectedUnit.semestersOffered,
-      x: 100 + (unitBoxes.length * 50),
-      y: 100 + (unitBoxes.length * 30),
-      color: '#3B82F6'
+      x: 100 + unitBoxes.length * 50,
+      y: 100 + unitBoxes.length * 30,
+      color: "#3B82F6",
     };
     setUnitBoxes([...unitBoxes, newUnit]);
     setShowSearchResults(false);
@@ -86,34 +93,38 @@ export const CanvasPage: React.FC = () => {
 
   function handleFormSave(formData: UnitFormData) {
     if (editingId) {
-      const editedUnit = unitBoxes.find(unit => unit.id === editingId);
+      const editedUnit = unitBoxes.find((unit) => unit.id === editingId);
 
       if (editedUnit) {
         updateUnit(editedUnit.unitId, {
           unitName: formData.unitName || editedUnit.name,
           unitDesc: formData.unitDesc || editedUnit.description,
           credits: formData.credits || editedUnit.credits,
-          semestersOffered: formData.semestersOffered || editedUnit.semestersOffered
+          semestersOffered:
+            formData.semestersOffered || editedUnit.semestersOffered,
         })
           .then(() => {
             // Update the local state with the updated unit boxes
-            setUnitBoxes(unitBoxes.map(unit =>
-              unit.id === editingId
-                ? {
-                  ...unit,
-                  name: formData.unitName || unit.name,
-                  unitId: formData.unitId || unit.unitId,
-                  description: formData.unitDesc || unit.description,
-                  credits: formData.credits || unit.credits,
-                  semestersOffered: formData.semestersOffered || unit.semestersOffered,
-                  color: formData.color || unit.color
-                }
-                : unit
-            ));
+            setUnitBoxes(
+              unitBoxes.map((unit) =>
+                unit.id === editingId
+                  ? {
+                      ...unit,
+                      name: formData.unitName || unit.name,
+                      unitId: formData.unitId || unit.unitId,
+                      description: formData.unitDesc || unit.description,
+                      credits: formData.credits || unit.credits,
+                      semestersOffered:
+                        formData.semestersOffered || unit.semestersOffered,
+                      color: formData.color || unit.color,
+                    }
+                  : unit
+              )
+            );
             setEditingId(null);
             setShowForm(false);
           })
-          .catch(error => {
+          .catch((error) => {
             console.error("Error updating unit:", error);
           });
       }
@@ -128,17 +139,17 @@ export const CanvasPage: React.FC = () => {
   function handleMouseDown(e: React.MouseEvent, id: number) {
     e.preventDefault();
     e.stopPropagation();
-    
-    const unit = unitBoxes.find(u => u.id === id);
+
+    const unit = unitBoxes.find((u) => u.id === id);
     if (!unit || !canvasRef.current) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    const offset = { 
-      x: mouseX - unit.x, 
-      y: mouseY - unit.y
+    const offset = {
+      x: mouseX - unit.x,
+      y: mouseY - unit.y,
     };
     setDragOffset(offset);
     setDraggedUnit(id);
@@ -146,7 +157,7 @@ export const CanvasPage: React.FC = () => {
 
     const handleMove = (moveEvent: MouseEvent) => {
       if (!canvasRef.current) return;
-      
+
       setIsDragging(true);
       const moveRect = canvasRef.current.getBoundingClientRect();
       const newMouseX = moveEvent.clientX - moveRect.left;
@@ -155,10 +166,16 @@ export const CanvasPage: React.FC = () => {
       setUnitBoxes((prevUnits) =>
         prevUnits.map((unit) =>
           unit.id === id
-            ? { 
-                ...unit, 
-                x: Math.max(0, Math.min(newMouseX - offset.x, moveRect.width - 256)),
-                y: Math.max(0, Math.min(newMouseY - offset.y, moveRect.height - 100))
+            ? {
+                ...unit,
+                x: Math.max(
+                  0,
+                  Math.min(newMouseX - offset.x, moveRect.width - 256)
+                ),
+                y: Math.max(
+                  0,
+                  Math.min(newMouseY - offset.y, moveRect.height - 100)
+                ),
               }
             : unit
         )
@@ -168,22 +185,22 @@ export const CanvasPage: React.FC = () => {
     const handleUp = () => {
       setDraggedUnit(null);
       setDragOffset({ x: 0, y: 0 });
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleUp);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
       setTimeout(() => setIsDragging(false), 100);
     };
 
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleUp);
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
   }
-  
+
   function handleDoubleClick(unitId: number) {
     if (isDragging) return;
     startEdit(unitId);
   }
 
   function deleteUnit(unitId: number) {
-    setUnitBoxes(unitBoxes.filter(unit => unit.id !== unitId));
+    setUnitBoxes(unitBoxes.filter((unit) => unit.id !== unitId));
   }
 
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -214,14 +231,13 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-
   return (
     <div className="flex h-screen">
+      <Navbar />
       {/* Sidebar container - Removed w-1/6 and relative, let CanvasSidebar define width */}
-      <div className="flex flex-col h-full"> 
+      <div className="flex flex-col h-full">
         {/* Sidebar component */}
         <CanvasSidebar>
-          
           {/* Unit Add button - Now inside the sidebar */}
           <button
             className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
@@ -244,25 +260,32 @@ export const CanvasPage: React.FC = () => {
             />
 
             {/* Search Results Dropdown */}
-            {showSearchResults && searchTerm.length > 0 && searchResults.length > 0 && (
-              <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
-                {searchResults.map((unit) => (
-                  <div
-                    key={unit.unitId}
-                    className="px-4 py-2 text-black hover:bg-gray-100 cursor-pointer text-sm"
-                    onClick={() => createUnitBox(unit)}
-                  >
-                    <span className="font-semibold">{unit.unitId}</span> - {unit.unitName}
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* Added a prompt if search is active but no results are found */}
-            {showSearchResults && searchTerm.length > 0 && searchResults.length === 0 && (
-                <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50">
-                    <div className="px-4 py-2 text-gray-500 text-sm">No units found.</div>
+            {showSearchResults &&
+              searchTerm.length > 0 &&
+              searchResults.length > 0 && (
+                <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                  {searchResults.map((unit) => (
+                    <div
+                      key={unit.unitId}
+                      className="px-4 py-2 text-black hover:bg-gray-100 cursor-pointer text-sm"
+                      onClick={() => createUnitBox(unit)}
+                    >
+                      <span className="font-semibold">{unit.unitId}</span> -{" "}
+                      {unit.unitName}
+                    </div>
+                  ))}
                 </div>
-            )}
+              )}
+            {/* Added a prompt if search is active but no results are found */}
+            {showSearchResults &&
+              searchTerm.length > 0 &&
+              searchResults.length === 0 && (
+                <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50">
+                  <div className="px-4 py-2 text-gray-500 text-sm">
+                    No units found.
+                  </div>
+                </div>
+              )}
           </div>
         </CanvasSidebar>
       </div>
@@ -271,7 +294,7 @@ export const CanvasPage: React.FC = () => {
       <div
         ref={canvasRef}
         className="w-full bg-white p-6 overflow-hidden relative"
-        style={{ userSelect: 'none' }}
+        style={{ userSelect: "none" }}
       >
         {/* ... (Absolutely positioned unit boxes and Modals) ... */}
         {unitBoxes.map((unit) => (
@@ -286,16 +309,21 @@ export const CanvasPage: React.FC = () => {
             onMouseDown={(e) => handleMouseDown(e, unit.id)}
             onDoubleClick={() => handleDoubleClick(unit.id)}
           >
-            <div className={`transition-shadow duration-200 relative ${draggedUnit === unit.id ? 'shadow-lg scale-105' : 'shadow-sm'
-              }`}>
+            <div
+              className={`transition-shadow duration-200 relative ${
+                draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"
+              }`}
+            >
               <div
                 className="border border-gray-300 p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300"
                 style={{
-                  backgroundColor: unit.color || '#3B82F6',
-                  color: 'white'
+                  backgroundColor: unit.color || "#3B82F6",
+                  color: "white",
                 }}
               >
-                <h2 className="text-lg font-semibold text-center text-white">{unit.unitId || unit.name}</h2>
+                <h2 className="text-lg font-semibold text-center text-white">
+                  {unit.unitId || unit.name}
+                </h2>
               </div>
 
               {/* Delete button - appears on hover */}
@@ -329,12 +357,20 @@ export const CanvasPage: React.FC = () => {
               <UnitForm
                 onSave={handleFormSave}
                 initialData={{
-                  unitId: unitBoxes.find(u => u.id === editingId)?.unitId || null,
-                  unitName: unitBoxes.find(u => u.id === editingId)?.name || null,
-                  unitDesc: unitBoxes.find(u => u.id === editingId)?.description || null,
-                  credits: unitBoxes.find(u => u.id === editingId)?.credits || null,
-                  semestersOffered: unitBoxes.find(u => u.id === editingId)?.semestersOffered || null,
-                  color: unitBoxes.find(u => u.id === editingId)?.color || null,
+                  unitId:
+                    unitBoxes.find((u) => u.id === editingId)?.unitId || null,
+                  unitName:
+                    unitBoxes.find((u) => u.id === editingId)?.name || null,
+                  unitDesc:
+                    unitBoxes.find((u) => u.id === editingId)?.description ||
+                    null,
+                  credits:
+                    unitBoxes.find((u) => u.id === editingId)?.credits || null,
+                  semestersOffered:
+                    unitBoxes.find((u) => u.id === editingId)
+                      ?.semestersOffered || null,
+                  color:
+                    unitBoxes.find((u) => u.id === editingId)?.color || null,
                 }}
               />
             </div>
@@ -354,15 +390,15 @@ export const CanvasPage: React.FC = () => {
                   ×
                 </button>
               </div>
-              <UnitForm 
-                onSave={handleCreateUnit} 
+              <UnitForm
+                onSave={handleCreateUnit}
                 initialData={{
-                    unitId: null,
-                    unitName: null,
-                    unitDesc: null,
-                    credits: null,
-                    semestersOffered: null,
-                    color: null,
+                  unitId: null,
+                  unitName: null,
+                  unitDesc: null,
+                  credits: null,
+                  semestersOffered: null,
+                  color: null,
                 }}
               />
             </div>

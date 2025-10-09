@@ -4,16 +4,22 @@ import { useEffect } from "react";
 //import { Loader } from "lucide-react"
 import { HomePage } from "./pages/HomePage";
 import { CanvasPage } from "./pages/UnitCanvas";
-//import { useThemeStore } from "./store/useThemeStore"
+import Navbar from "./components/navbar";
+import { useCourseStore } from "./stores/useCourseStore";
+import { CourseEdit } from "./pages/CourseEdit";
 
 const App = () => {
-  //const {authUser, checkAuth, isCheckingAuth} = useAuthStore()
+  const { currentCourse } = useCourseStore();
 
+  useEffect(() => {
+    console.log(currentCourse);
+  }, currentCourse);
   return (
     <div>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/UnitCanvas" element={<CanvasPage />} />
+        <Route path="/CourseEdit" element={<CourseEdit />} />
       </Routes>
     </div>
   );
