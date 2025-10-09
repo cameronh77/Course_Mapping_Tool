@@ -66,7 +66,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData }) => {
                         value={form.unitId || ''}
                         onChange={handleChange}
                         required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900"
                         placeholder="e.g., ATS3006, FIT3170"
                     />
                 </div>
@@ -81,7 +81,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData }) => {
                         value={form.unitName || ''}
                         onChange={handleChange}
                         required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900"
                         placeholder="e.g., Introduction to Computer Science"
                     />
                 </div>
@@ -96,7 +96,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData }) => {
                         onChange={handleChange}
                         required
                         rows={3}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-vertical"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors resize-vertical text-gray-900"
                         placeholder="Describe what this unit covers..."
                     />
                 </div>
@@ -113,7 +113,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData }) => {
                         min={0}
                         max={20}
                         required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900"
                         placeholder="e.g. 6"
                     />
                 </div>
@@ -130,7 +130,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData }) => {
                         onChange={handleSemestersChange}
                         placeholder="e.g. 1, 2"
                         required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900"
                     />
                     <p className="text-xs text-gray-500 mt-1">
                         Enter semester numbers separated by commas (e.g. 1, 2)
@@ -156,7 +156,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData }) => {
                                 value={form.color || '#3B82F6'}
                                 onChange={handleChange}
                                 placeholder="#3B82F6"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-gray-900"
                             />
                         </div>
                         <div 
