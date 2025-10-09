@@ -3,7 +3,6 @@ import { CanvasSidebar } from '../components/layout/CanvasSidebar';
 import UnitForm, { type UnitFormData } from '../components/common/UnitForm';
 import { axiosInstance } from '../lib/axios';
 import { useUnitStore } from '../stores/useUnitStore';
-import { UnitBox } from '../components/common/UnitBox'; // Added import
 
 // Define the Unit interface
 interface Unit {
@@ -42,7 +41,7 @@ export const CanvasPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [searchResults, setSearchResults] = useState<Unit[]>([]);
   const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
-  const { viewUnits, createUnit } = useUnitStore();
+  const { viewUnits, createUnit, updateUnit } = useUnitStore();
 
   // State for creating a new unit
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
@@ -87,22 +86,38 @@ export const CanvasPage: React.FC = () => {
 
   function handleFormSave(formData: UnitFormData) {
     if (editingId) {
-      setUnitBoxes(unitBoxes.map(unit => 
-        unit.id === editingId 
-          ? { 
-              ...unit, 
-              name: formData.unitName || unit.name,
-              unitId: formData.unitId || unit.unitId,
-              description: formData.unitDesc || unit.description,
-              credits: formData.credits || unit.credits,
-              semestersOffered: formData.semestersOffered || unit.semestersOffered,
-              color: formData.color || unit.color
-            }
-          : unit
-      ));
+      const editedUnit = unitBoxes.find(unit => unit.id === editingId);
+
+      if (editedUnit) {
+        updateUnit(editedUnit.unitId, {
+          unitName: formData.unitName || editedUnit.name,
+          unitDesc: formData.unitDesc || editedUnit.description,
+          credits: formData.credits || editedUnit.credits,
+          semestersOffered: formData.semestersOffered || editedUnit.semestersOffered
+        })
+          .then(() => {
+            // Update the local state with the updated unit boxes
+            setUnitBoxes(unitBoxes.map(unit =>
+              unit.id === editingId
+                ? {
+                  ...unit,
+                  name: formData.unitName || unit.name,
+                  unitId: formData.unitId || unit.unitId,
+                  description: formData.unitDesc || unit.description,
+                  credits: formData.credits || unit.credits,
+                  semestersOffered: formData.semestersOffered || unit.semestersOffered,
+                  color: formData.color || unit.color
+                }
+                : unit
+            ));
+            setEditingId(null);
+            setShowForm(false);
+          })
+          .catch(error => {
+            console.error("Error updating unit:", error);
+          });
+      }
     }
-    setEditingId(null);
-    setShowForm(false);
   }
 
   function cancelEdit() {
