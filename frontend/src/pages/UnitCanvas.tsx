@@ -1,12 +1,22 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
-import { UnitBox } from "../components/common/UnitBox";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
+import { axiosInstance } from "../lib/axios";
+import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import Navbar from "../components/navbar";
 
+// Define the Unit interface
+interface Unit {
+  unitId: string;
+  unitName: string;
+  unitDesc: string;
+  credits: number;
+  semestersOffered: number[];
+}
+
 export const CanvasPage: React.FC = () => {
-  // State to store all created unit boxes with unit details and position
+  // ... (existing state variables and functions remain the same) ...
   const [unitBoxes, setUnitBoxes] = useState<
     Array<{
       id: number;
@@ -32,45 +42,93 @@ export const CanvasPage: React.FC = () => {
   const canvasRef = React.useRef<HTMLDivElement>(null);
   const { currentCourse } = useCourseStore();
 
-  // function to create/edit/delete unit boxes
-  function createUnitBox() {
+  // States for unit search
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [searchResults, setSearchResults] = useState<Unit[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
+  const { viewUnits, createUnit, updateUnit } = useUnitStore();
+
+  // State for creating a new unit
+  const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
+
+  useEffect(() => {
+    const loadUnits = async () => {
+      await viewUnits(); // assuming it returns data or updates the store
+    };
+    loadUnits();
+  }, []);
+
+  // ... (createUnitBox, startEdit, handleFormSave, cancelEdit, handleMouseDown, handleDoubleClick, deleteUnit functions remain the same) ...
+
+  const createUnitBox = (selectedUnit: Unit) => {
+    const unitExists = unitBoxes.some(
+      (unit) => unit.unitId === selectedUnit.unitId
+    );
+
+    if (unitExists) {
+      alert("This unit has already been added.");
+      setShowSearchResults(false);
+      return;
+    }
+
     const newUnit = {
       id: Date.now(),
-      name: `Unit ${unitBoxes.length + 1}`,
-      x: 100 + unitBoxes.length * 50, // Offset each new unit
-      y: 100 + unitBoxes.length * 30, // Stagger vertically too
-      color: "#3B82F6", // Default blue color
+      name: selectedUnit.unitName,
+      unitId: selectedUnit.unitId,
+      description: selectedUnit.unitDesc,
+      credits: selectedUnit.credits,
+      semestersOffered: selectedUnit.semestersOffered,
+      x: 100 + unitBoxes.length * 50,
+      y: 100 + unitBoxes.length * 30,
+      color: "#3B82F6",
     };
     setUnitBoxes([...unitBoxes, newUnit]);
-  }
+    setShowSearchResults(false);
+  };
 
   function startEdit(id: number) {
     setEditingId(id);
     setShowForm(true);
   }
 
-  // function to handle form save
   function handleFormSave(formData: UnitFormData) {
     if (editingId) {
-      setUnitBoxes(
-        unitBoxes.map((unit) =>
-          unit.id === editingId
-            ? {
-                ...unit,
-                name: formData.unitName || unit.name,
-                unitId: formData.unitId || unit.unitId,
-                description: formData.unitDesc || unit.description,
-                credits: formData.credits || unit.credits,
-                semestersOffered:
-                  formData.semestersOffered || unit.semestersOffered,
-                color: formData.color || unit.color,
-              }
-            : unit
-        )
-      );
+      const editedUnit = unitBoxes.find((unit) => unit.id === editingId);
+
+      if (editedUnit) {
+        updateUnit(editedUnit.unitId, {
+          unitName: formData.unitName || editedUnit.name,
+          unitDesc: formData.unitDesc || editedUnit.description,
+          credits: formData.credits || editedUnit.credits,
+          semestersOffered:
+            formData.semestersOffered || editedUnit.semestersOffered,
+        })
+          .then(() => {
+            // Update the local state with the updated unit boxes
+            setUnitBoxes(
+              unitBoxes.map((unit) =>
+                unit.id === editingId
+                  ? {
+                      ...unit,
+                      name: formData.unitName || unit.name,
+                      unitId: formData.unitId || unit.unitId,
+                      description: formData.unitDesc || unit.description,
+                      credits: formData.credits || unit.credits,
+                      semestersOffered:
+                        formData.semestersOffered || unit.semestersOffered,
+                      color: formData.color || unit.color,
+                    }
+                  : unit
+              )
+            );
+            setEditingId(null);
+            setShowForm(false);
+          })
+          .catch((error) => {
+            console.error("Error updating unit:", error);
+          });
+      }
     }
-    setEditingId(null);
-    setShowForm(false);
   }
 
   function cancelEdit() {
@@ -78,7 +136,6 @@ export const CanvasPage: React.FC = () => {
     setShowForm(false);
   }
 
-  // function to handel drag and drop
   function handleMouseDown(e: React.MouseEvent, id: number) {
     e.preventDefault();
     e.stopPropagation();
@@ -90,7 +147,6 @@ export const CanvasPage: React.FC = () => {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // calculate offset within the unit box
     const offset = {
       x: mouseX - unit.x,
       y: mouseY - unit.y,
@@ -99,7 +155,6 @@ export const CanvasPage: React.FC = () => {
     setDraggedUnit(id);
     setIsDragging(false);
 
-    // Create handler functions that capture current values
     const handleMove = (moveEvent: MouseEvent) => {
       if (!canvasRef.current) return;
 
@@ -135,13 +190,12 @@ export const CanvasPage: React.FC = () => {
       setTimeout(() => setIsDragging(false), 100);
     };
 
-    // add global mouse event listeners
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleUp);
   }
 
   function handleDoubleClick(unitId: number) {
-    if (isDragging) return; // Don't edit if we're dragging
+    if (isDragging) return;
     startEdit(unitId);
   }
 
@@ -149,28 +203,100 @@ export const CanvasPage: React.FC = () => {
     setUnitBoxes(unitBoxes.filter((unit) => unit.id !== unitId));
   }
 
+  const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const term = e.target.value;
+    setSearchTerm(term);
+    setShowSearchResults(true);
+
+    if (term) {
+      try {
+        const response = await axiosInstance.get(`/unit/view?search=${term}`);
+        setSearchResults(response.data);
+      } catch (error) {
+        console.error("Error fetching units:", error);
+        setSearchResults([]);
+      }
+    } else {
+      setSearchResults([]);
+    }
+  };
+
+  const handleCreateUnit = async (data: UnitFormData) => {
+    try {
+      await createUnit(data);
+      setShowCreateForm(false);
+      await viewUnits();
+    } catch (error) {
+      console.error("Error creating unit:", error);
+    }
+  };
+
   return (
     <div className="flex h-screen">
       <Navbar />
-      {/* Sidebar container*/}
-      <div></div>
-      <div className="w-1/4 flex flex-col relative">
+      {/* Sidebar container - Removed w-1/6 and relative, let CanvasSidebar define width */}
+      <div className="flex flex-col h-full">
         {/* Sidebar component */}
-        <CanvasSidebar />
+        <CanvasSidebar>
+          {/* Unit Add button - Now inside the sidebar */}
+          <button
+            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
+            onClick={() => setShowCreateForm(true)}
+          >
+            Create New Unit
+          </button>
 
-        {/* Unit Add button */}
-        <div className="absolute top-20 left-10 right-10 z-10 bg-white">
-          <UnitBox unitName="+" onClick={createUnitBox} />
-        </div>
+          {/* Search Input Container - Now inside the sidebar */}
+          <div className="relative mb-4">
+            <input
+              type="text"
+              placeholder="Search for a unit..."
+              // Using Tailwind classes for a standard input look
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              value={searchTerm}
+              onChange={handleSearchChange}
+              onFocus={() => setShowSearchResults(true)}
+              onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
+            />
+
+            {/* Search Results Dropdown */}
+            {showSearchResults &&
+              searchTerm.length > 0 &&
+              searchResults.length > 0 && (
+                <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                  {searchResults.map((unit) => (
+                    <div
+                      key={unit.unitId}
+                      className="px-4 py-2 text-black hover:bg-gray-100 cursor-pointer text-sm"
+                      onClick={() => createUnitBox(unit)}
+                    >
+                      <span className="font-semibold">{unit.unitId}</span> -{" "}
+                      {unit.unitName}
+                    </div>
+                  ))}
+                </div>
+              )}
+            {/* Added a prompt if search is active but no results are found */}
+            {showSearchResults &&
+              searchTerm.length > 0 &&
+              searchResults.length === 0 && (
+                <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50">
+                  <div className="px-4 py-2 text-gray-500 text-sm">
+                    No units found.
+                  </div>
+                </div>
+              )}
+          </div>
+        </CanvasSidebar>
       </div>
 
       {/* Main Canvas Area */}
       <div
         ref={canvasRef}
-        className="w-3/4 bg-white p-6 overflow-hidden relative"
-        style={{ userSelect: "none" }} // Prevent text selection while dragging
+        className="w-full bg-white p-6 overflow-hidden relative"
+        style={{ userSelect: "none" }}
       >
-        {/* Absolutely positioned unit boxes */}
+        {/* ... (Absolutely positioned unit boxes and Modals) ... */}
         {unitBoxes.map((unit) => (
           <div
             key={unit.id}
@@ -217,10 +343,10 @@ export const CanvasPage: React.FC = () => {
 
         {/* Popup Modal for UnitForm */}
         {showForm && editingId && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full max-h-96 overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">Edit Unit</h2>
+                <h2 className="text-black text-xl font-bold">Edit Unit</h2>
                 <button
                   onClick={cancelEdit}
                   className="text-gray-500 hover:text-gray-700 text-xl"
@@ -245,6 +371,34 @@ export const CanvasPage: React.FC = () => {
                       ?.semestersOffered || null,
                   color:
                     unitBoxes.find((u) => u.id === editingId)?.color || null,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Create Unit Form */}
+        {showCreateForm && (
+          <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full max-h-96 overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-black text-xl font-bold">Create Unit</h2>
+                <button
+                  onClick={() => setShowCreateForm(false)}
+                  className="text-gray-500 hover:text-gray-700 text-xl"
+                >
+                  ×
+                </button>
+              </div>
+              <UnitForm
+                onSave={handleCreateUnit}
+                initialData={{
+                  unitId: null,
+                  unitName: null,
+                  unitDesc: null,
+                  credits: null,
+                  semestersOffered: null,
+                  color: null,
                 }}
               />
             </div>

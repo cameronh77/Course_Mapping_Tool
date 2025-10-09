@@ -46,6 +46,13 @@ export const addUnit = async (req, res) => {
 export const deleteUnit = async (req, res) => {
   try {
     const { unitId } = req.body;
+
+    await prisma.unitLearningOutcome.deleteMany({
+      where: {
+        unitId: unitId,
+      },
+    });
+
     const deletedUnit = await prisma.unit.delete({
       where: {
         unitId: unitId,
@@ -90,8 +97,39 @@ export const updateUnit = async (req, res) => {
 
 export const viewUnits = async (req, res) => {
   try {
-    const units = await prisma.unit.findMany({});
-    res.status(200).json(units);
+    const searchTerm = req.query.search as string;
+
+    if (searchTerm) {
+      const units = await prisma.unit.findMany({
+        where: {
+          OR: [
+            {
+              unitName: {
+                contains: searchTerm,
+                mode: 'insensitive', // Makes the search case-insensitive
+              },
+            },
+            {
+              unitId: {
+                contains: searchTerm,
+                mode: 'insensitive',
+              },
+            },
+            {
+              unitDesc: {
+                contains: searchTerm,
+                mode: 'insensitive',
+              },
+            },
+          ],
+        },
+      });
+      return res.status(200).json(units);
+    } else {
+      // If no search term is provided, return all units
+      const units = await prisma.unit.findMany({});
+      return res.status(200).json(units);
+    }
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Server error" });
