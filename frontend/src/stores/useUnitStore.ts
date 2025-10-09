@@ -23,4 +23,18 @@ export const useUnitStore = create((set) => ({
       console.log(error.response.data.message);
     }
   },
+
+  updateUnit: async (unitId, data) => {
+    try {
+      const res = await axiosInstance.put(`/unit/update/${unitId}`, data);
+      set((state) => ({
+        existingUnits: state.existingUnits.map((unit) =>
+          unit.unitId === unitId ? { ...unit, ...data } : unit
+        ),
+      }));
+      console.log(res.data);
+    } catch (error) {
+      console.log(error.response.data.message);
+    }
+  },
 }));
