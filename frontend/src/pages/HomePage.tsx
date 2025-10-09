@@ -9,12 +9,12 @@ import {
   MessageSquare,
   User,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 export interface Course {
-  courseId: String;
-  courseName: String;
-  courseDesc: String;
+  courseId: string;
+  courseName: string;
+  courseDesc: string;
   expectedDuration: number;
   numberTeachingPeriods: number;
 }
@@ -28,8 +28,9 @@ export const HomePage = () => {
     numberTeachingPeriods: "",
   });
   const [loadedCourses, setLoadedCourses] = useState<Course[]>([]);
-
-  const { existingCourses, createCourse, viewCourses } = useCourseStore();
+  const navigate = useNavigate();
+  const { existingCourses, createCourse, viewCourses, setCurrentCourse } =
+    useCourseStore();
 
   useEffect(() => {
     setLoadedCourses(
@@ -52,10 +53,30 @@ export const HomePage = () => {
   }, []);
 
   const handleSubmit = (e) => {
-    console.log(courseData);
+    console.log("TEST");
     //e.preventDefault();
     //const success = validateForm();
+    setCurrentCourse(courseData);
     createCourse(courseData);
+    navigate("/UnitCanvas");
+  };
+
+  const handleViewCourse = (course: Course) => {
+    console.log("TESTSTETETETE");
+    // Update local state
+    setCourseData({
+      courseId: course.courseId,
+      courseName: course.courseName,
+      courseDesc: course.courseDesc,
+      expectedDuration: String(course.expectedDuration),
+      numberTeachingPeriods: String(course.numberTeachingPeriods),
+    });
+
+    // Store globally
+    setCurrentCourse(course);
+
+    // Navigate to edit or view page
+    navigate("/UnitCanvas");
   };
 
   return (
@@ -171,15 +192,14 @@ export const HomePage = () => {
               />
             </div>
           </div>
-          <Link to="/UnitCanvas" className="link link-primary">
-            <button
-              type="submit"
-              className="btn btn-primary w-full"
-              onClick={handleSubmit}
-            >
-              CREATE COURSE
-            </button>
-          </Link>
+
+          <button
+            type="submit"
+            className="btn btn-primary w-full"
+            onClick={handleSubmit}
+          >
+            CREATE COURSE
+          </button>
         </div>
       </div>
       <div className="flex flex-col justify-center items-center p-6 sm:p-12">
@@ -195,9 +215,12 @@ export const HomePage = () => {
                 <h2 className="card-title">{course.courseName}</h2>
                 <p>{course.courseDesc}</p>
                 <div className="card-actions justify-end">
-                  <Link to="/UnitCanvas" className="link link-primary">
-                    <button className="btn btn-primary">View Course</button>
-                  </Link>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleViewCourse(course)}
+                  >
+                    View Course
+                  </button>
                 </div>
               </div>
             </div>

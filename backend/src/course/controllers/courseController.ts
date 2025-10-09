@@ -78,7 +78,7 @@ export const updateCourse = async (req, res) => {
         courseId: courseId,
       },
       data: {
-        courseDesc,
+        courseDesc: courseDesc,
         expectedDuration: parseInt(expectedDuration),
         numberTeachingPeriods: parseInt(numberTeachingPeriods),
       },
