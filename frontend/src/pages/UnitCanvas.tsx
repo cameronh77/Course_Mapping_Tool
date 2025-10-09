@@ -15,6 +15,7 @@ export const CanvasPage: React.FC = () => {
     semestersOffered?: number[],
     x: number,
     y: number,
+    color?: string,
   }>>([]);
   
   // State for editing
@@ -33,7 +34,8 @@ export const CanvasPage: React.FC = () => {
       id: Date.now(),
       name: `Unit ${unitBoxes.length + 1}`,
       x: 100 + (unitBoxes.length * 50), // Offset each new unit
-      y: 100 + (unitBoxes.length * 30)  // Stagger vertically too
+      y: 100 + (unitBoxes.length * 30),  // Stagger vertically too
+      color: '#3B82F6' // Default blue color
     };
     setUnitBoxes([...unitBoxes, newUnit]);
   }
@@ -54,7 +56,8 @@ export const CanvasPage: React.FC = () => {
               unitId: formData.unitId || unit.unitId,
               description: formData.unitDesc || unit.description,
               credits: formData.credits || unit.credits,
-              semestersOffered: formData.semestersOffered || unit.semestersOffered
+              semestersOffered: formData.semestersOffered || unit.semestersOffered,
+              color: formData.color || unit.color
             }
           : unit
       ));
@@ -129,6 +132,10 @@ export const CanvasPage: React.FC = () => {
     startEdit(unitId);
   }
 
+  function deleteUnit(unitId: number) {
+    setUnitBoxes(unitBoxes.filter(unit => unit.id !== unitId));
+  }
+
   return (
     <div className=
     "flex h-screen">
@@ -155,7 +162,7 @@ export const CanvasPage: React.FC = () => {
         {unitBoxes.map((unit) => (
           <div
             key={unit.id}
-            className="absolute w-64 cursor-move select-none"
+            className="absolute w-64 cursor-move select-none group"
             style={{
               left: `${unit.x}px`,
               top: `${unit.y}px`,
@@ -164,12 +171,30 @@ export const CanvasPage: React.FC = () => {
             onMouseDown={(e) => handleMouseDown(e, unit.id)}
             onDoubleClick={() => handleDoubleClick(unit.id)}
           >
-            <div className={`transition-shadow duration-200 ${
+            <div className={`transition-shadow duration-200 relative ${
               draggedUnit === unit.id ? 'shadow-lg scale-105' : 'shadow-sm'
             }`}>
-              <div className="border border-gray-300 p-4 bg-white rounded shadow-sm hover:shadow-md transition-shadow duration-300">
-                <h2 className="text-lg font-semibold text-center">{unit.unitId || unit.name}</h2>
+              <div 
+                className="border border-gray-300 p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300"
+                style={{ 
+                  backgroundColor: unit.color || '#3B82F6',
+                  color: 'white'
+                }}
+              >
+                <h2 className="text-lg font-semibold text-center text-white">{unit.unitId || unit.name}</h2>
               </div>
+              
+              {/* Delete button - appears on hover */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteUnit(unit.id);
+                }}
+                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+                title="Delete unit"
+              >
+                ×
+              </button>
             </div>
           </div>
         ))}
@@ -195,6 +220,7 @@ export const CanvasPage: React.FC = () => {
                   unitDesc: unitBoxes.find(u => u.id === editingId)?.description || null,
                   credits: unitBoxes.find(u => u.id === editingId)?.credits || null,
                   semestersOffered: unitBoxes.find(u => u.id === editingId)?.semestersOffered || null,
+                  color: unitBoxes.find(u => u.id === editingId)?.color || null,
                 }}
               />
             </div>
