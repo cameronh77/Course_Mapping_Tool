@@ -32,23 +32,24 @@ export const HomePage = () => {
   const { existingCourses, createCourse, viewCourses } = useCourseStore();
 
   useEffect(() => {
+    setLoadedCourses(
+      existingCourses.map((c: any) => ({
+        courseId: c.courseId,
+        courseName: c.courseName,
+        courseDesc: c.courseDesc,
+        expectedDuration: Number(c.expectedDuration),
+        numberTeachingPeriods: Number(c.numberTeachingPeriods),
+      })) as Course[]
+    );
+    console.log("Existing Courses");
+  }, [existingCourses]);
+
+  useEffect(() => {
     const loadCourses = async () => {
       await viewCourses(); // assuming it returns data or updates the store
-      setLoadedCourses(
-        existingCourses.map((c: any) => ({
-          courseId: c.courseId,
-          courseName: c.courseName,
-          courseDesc: c.courseDesc,
-          expectedDuration: Number(c.expectedDuration),
-          numberTeachingPeriods: Number(c.numberTeachingPeriods),
-        })) as Course[]
-      );
     };
-
     loadCourses();
-    console.log("THESE ARE EXISTING COURSES", existingCourses);
-    console.log("THESE ARE LOADED COURSES", loadedCourses);
-  }, [existingCourses]);
+  }, []);
 
   const handleSubmit = (e) => {
     console.log(courseData);
