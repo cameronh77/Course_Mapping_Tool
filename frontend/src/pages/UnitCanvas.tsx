@@ -5,22 +5,36 @@ import UnitForm, { type UnitFormData } from '../components/common/UnitForm';
 
 export const CanvasPage: React.FC = () => {
 
-  // State to store all created unit boxes with more details
+  // State to store all created unit boxes with unit details and position
   const [unitBoxes, setUnitBoxes] = useState<Array<{
     id: number, 
     name: string,
     unitId?: string,
     description?: string,
     credits?: number,
-    semestersOffered?: number[]
+    semestersOffered?: number[],
+    x: number,
+    y: number,
   }>>([]);
   
   // State for editing
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState<boolean>(false);
 
+  // State for dragging
+  const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const canvasRef = React.useRef<HTMLDivElement>(null);
+
+  // function to create/edit/delete unit boxes
   function createUnitBox() {
-    const newUnit = { id: Date.now(), name: `Unit ${unitBoxes.length + 1}` };
+    const newUnit = { 
+      id: Date.now(),
+      name: `Unit ${unitBoxes.length + 1}`,
+      x: 100 + (unitBoxes.length * 50), // Offset each new unit
+      y: 100 + (unitBoxes.length * 30)  // Stagger vertically too
+    };
     setUnitBoxes([...unitBoxes, newUnit]);
   }
 
@@ -29,6 +43,7 @@ export const CanvasPage: React.FC = () => {
     setShowForm(true);
   }
 
+  // function to handle form save
   function handleFormSave(formData: UnitFormData) {
     if (editingId) {
       setUnitBoxes(unitBoxes.map(unit => 
@@ -53,6 +68,67 @@ export const CanvasPage: React.FC = () => {
     setShowForm(false);
   }
 
+  // function to handel drag and drop
+  function handleMouseDown(e: React.MouseEvent, id: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const unit = unitBoxes.find(u => u.id === id);
+    if (!unit || !canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // calculate offset within the unit box
+    const offset = { 
+      x: mouseX - unit.x, 
+      y: mouseY - unit.y
+    };
+    setDragOffset(offset);
+    setDraggedUnit(id);
+    setIsDragging(false);
+
+    // Create handler functions that capture current values
+    const handleMove = (moveEvent: MouseEvent) => {
+      if (!canvasRef.current) return;
+      
+      setIsDragging(true);
+      const moveRect = canvasRef.current.getBoundingClientRect();
+      const newMouseX = moveEvent.clientX - moveRect.left;
+      const newMouseY = moveEvent.clientY - moveRect.top;
+
+      setUnitBoxes((prevUnits) =>
+        prevUnits.map((unit) =>
+          unit.id === id
+            ? { 
+                ...unit, 
+                x: Math.max(0, Math.min(newMouseX - offset.x, moveRect.width - 256)),
+                y: Math.max(0, Math.min(newMouseY - offset.y, moveRect.height - 100))
+              }
+            : unit
+        )
+      );
+    };
+
+    const handleUp = () => {
+      setDraggedUnit(null);
+      setDragOffset({ x: 0, y: 0 });
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+      setTimeout(() => setIsDragging(false), 100);
+    };
+
+    // add global mouse event listeners
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+  }
+  
+  function handleDoubleClick(unitId: number) {
+    if (isDragging) return; // Don't edit if we're dragging
+    startEdit(unitId);
+  }
+
   return (
     <div className=
     "flex h-screen">
@@ -67,22 +143,36 @@ export const CanvasPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="w-2/3 bg-white p-6 overflow-y-auto">
-        <div className="mb-6">
-        </div>
+       {/* Main Canvas Area */}
+      <div 
+        ref={canvasRef}
+        className="w-3/4 bg-white p-6 overflow-hidden relative"
+        style={{ userSelect: 'none' }} // Prevent text selection while dragging
+      >
+       
         
-        {/* Display all created unit boxes in the main content area */}
-        <div className="flex flex-wrap gap-3 justify-center">
-          {unitBoxes.map((unit) => (
-            <div key={unit.id} className="w-64">
-              <UnitBox 
-                unitName={unit.unitId || unit.name} 
-                onClick={() => startEdit(unit.id)}
-              />
+        {/* Absolutely positioned unit boxes */}
+        {unitBoxes.map((unit) => (
+          <div
+            key={unit.id}
+            className="absolute w-64 cursor-move select-none"
+            style={{
+              left: `${unit.x}px`,
+              top: `${unit.y}px`,
+              zIndex: draggedUnit === unit.id ? 1000 : 1,
+            }}
+            onMouseDown={(e) => handleMouseDown(e, unit.id)}
+            onDoubleClick={() => handleDoubleClick(unit.id)}
+          >
+            <div className={`transition-shadow duration-200 ${
+              draggedUnit === unit.id ? 'shadow-lg scale-105' : 'shadow-sm'
+            }`}>
+              <div className="border border-gray-300 p-4 bg-white rounded shadow-sm hover:shadow-md transition-shadow duration-300">
+                <h2 className="text-lg font-semibold text-center">{unit.unitId || unit.name}</h2>
+              </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
         
         {/* Popup Modal for UnitForm */}
         {showForm && editingId && (
