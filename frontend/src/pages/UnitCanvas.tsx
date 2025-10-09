@@ -140,7 +140,7 @@ export const CanvasPage: React.FC = () => {
     <div className=
     "flex h-screen">
       {/* Sidebar container*/}
-      <div className="w-1/4 flex flex-col relative">
+      <div className="w-1/6 flex flex-col relative">
         {/* Sidebar component */}
         <CanvasSidebar />
         
@@ -153,7 +153,7 @@ export const CanvasPage: React.FC = () => {
        {/* Main Canvas Area */}
       <div 
         ref={canvasRef}
-        className="w-3/4 bg-white p-6 overflow-hidden relative"
+        className="w-full bg-white p-6 overflow-hidden relative"
         style={{ userSelect: 'none' }} // Prevent text selection while dragging
       >
        
