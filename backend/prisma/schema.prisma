@@ -15,38 +15,160 @@ datasource db {
 }
 
 model Course {
-  courseId                String        @id 
-  courseName              String      
-  courseDesc              String      //A description of the course
-  expectedDuration        Int         //The expected duration of the course
-  numberTeachingPeriods   Int         //How many teaching periods in a year
+  courseId              String @id
+  courseName            String
+  courseDesc            String //A description of the course
+  expectedDuration      Int //The expected duration of the course
+  numberTeachingPeriods Int //How many teaching periods in a year
 
-  unitsOffered            CourseUnit[] 
-
+  unitsOffered     CourseUnit[]
+  themes           CourseTheme[]
+  learningOutcomes CourseLearningOutcome[]
+  specialisations  Specialisation[]
+  UnitRelationship UnitRelationship[]
 }
 
 model Unit {
-  unitId            String      @id 
-  unitName          String      
-  unitDesc          String      //A description of the unit
-  credits           Int         //How many credits the unit is worth
-  semestersOffered  Int[]       //Which semesters the unit is offered in
+  unitId           String @id
+  unitName         String
+  unitDesc         String
+  credits          Int
+  semestersOffered Int[]
 
-  courseUnit        CourseUnit[]
+  courseUnits      CourseUnit[]
+  themes           UnitTheme[]
+  learningOutcomes UnitLearningOutcome[]
+  relationships    UnitRelationship[]    @relation("UnitRelations")
+  relatedTo        UnitRelationship[]    @relation("RelatedUnits")
+  AssessmentULO    AssessmentULO[]
 }
 
 model CourseUnit {
-  course    Course  @relation(fields: [courseId], references: [courseId])
-  courseId  String
+  course   Course @relation(fields: [courseId], references: [courseId])
+  courseId String
 
-  unit      Unit    @relation(fields: [unitId], references: [unitId])
-  unitId    String
+  unit   Unit   @relation(fields: [unitId], references: [unitId])
+  unitId String
 
-  semester  Int     //The reccomended semester for the unit in the course  
-  year      Int     //The reccomended year for the unit in the course
-  elective  Boolean //Whether of not the unit is an elective in the course
+  semester          Int //The reccomended semester for the unit in the course  
+  year              Int //The reccomended year for the unit in the course
+  elective          Boolean //Whether or not the unit is an elective in the course
+  Specialisation    Specialisation? @relation(fields: [specialisationSId], references: [sId])
+  specialisationSId Int?
 
   @@id([courseId, unitId])
 }
 
+model Theme {
+  themeId   Int    @id @default(autoincrement())
+  themeName String
 
+  courses CourseTheme[]
+  units   UnitTheme[]
+}
+
+model CourseTheme {
+  course   Course @relation(fields: [courseId], references: [courseId])
+  courseId String
+
+  theme   Theme @relation(fields: [themeId], references: [themeId])
+  themeId Int
+
+  @@id([courseId, themeId])
+}
+
+model UnitTheme {
+  unit   Unit   @relation(fields: [unitId], references: [unitId])
+  unitId String
+
+  theme   Theme @relation(fields: [themeId], references: [themeId])
+  themeId Int
+
+  @@id([unitId, themeId])
+}
+
+model CourseLearningOutcome {
+  cloId    Int    @id @default(autoincrement())
+  cloDesc  String
+  courseId String
+
+  course  Course                @relation(fields: [courseId], references: [courseId])
+  unitLos UnitLearningOutcome[]
+}
+
+model UnitLearningOutcome {
+  uloId   Int    @id @default(autoincrement())
+  uloDesc String
+  unitId  String
+  cloId   Int?
+
+  unit     Unit                   @relation(fields: [unitId], references: [unitId])
+  courseLO CourseLearningOutcome? @relation(fields: [cloId], references: [cloId])
+
+  assessments AssessmentULO[]
+}
+
+model Assessment {
+  assessmentId Int    @id @default(autoincrement())
+  aDesc        String
+
+  unitLos AssessmentULO[]
+
+  outgoingRelationships AssessmentRelationship[] @relation("AssessmentRelations")
+  incomingRelationships AssessmentRelationship[] @relation("RelatedAssessments")
+}
+
+model AssessmentULO {
+  assessment   Assessment @relation(fields: [assessmentId], references: [assessmentId])
+  assessmentId Int
+
+  unitLO UnitLearningOutcome @relation(fields: [uloId], references: [uloId])
+  uloId  Int
+
+  unit   Unit   @relation(fields: [unitId], references: [unitId])
+  unitId String
+
+  @@id([assessmentId, uloId, unitId])
+}
+
+model AssessmentRelationship {
+  assessment   Assessment @relation("AssessmentRelations", fields: [assessmentId], references: [assessmentId])
+  assessmentId Int
+
+  related   Assessment @relation("RelatedAssessments", fields: [relatedId], references: [assessmentId])
+  relatedId Int
+
+  @@id([assessmentId, relatedId])
+}
+
+model Specialisation {
+  sId      Int    @id @default(autoincrement())
+  sName    String
+  courseId String
+
+  course           Course             @relation(fields: [courseId], references: [courseId])
+  courseUnits      CourseUnit[]
+  UnitRelationship UnitRelationship[]
+}
+
+enum RelationshipType {
+  PREREQUISITE
+  COREQUISITE
+  PROGRESSION
+  CONNECTED
+}
+
+model UnitRelationship {
+  id               Int              @id @default(autoincrement())
+  unitId           String
+  relatedId        String
+  relationshipType RelationshipType
+  courseId         String?
+  sId              Int?
+  entryType        Int
+
+  unit           Unit            @relation("UnitRelations", fields: [unitId], references: [unitId])
+  related        Unit            @relation("RelatedUnits", fields: [relatedId], references: [unitId])
+  course         Course?         @relation(fields: [courseId], references: [courseId])
+  specialisation Specialisation? @relation(fields: [sId], references: [sId])
+}
