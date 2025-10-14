@@ -275,7 +275,6 @@ export const CanvasPage: React.FC = () => {
 
   return (
     <div className="flex h-screen">
-      <Navbar />
       {/* Sidebar container - Removed w-1/6 and relative, let CanvasSidebar define width */}
       <div className="flex flex-col h-full z-20">
         {/* Sidebar component */}
