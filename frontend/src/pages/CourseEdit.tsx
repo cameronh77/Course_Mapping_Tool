@@ -7,6 +7,7 @@ import {
   Lock,
   Mail,
   MessageSquare,
+  Trash2,
   User,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -49,7 +50,8 @@ export const CourseEdit = () => {
     updateCourse,
   } = useCourseStore();
 
-  const { currentCLOs, createCLO, viewCLOsByCourse, updateCLO } = useCLOStore();
+  const { currentCLOs, createCLO, viewCLOsByCourse, updateCLO, deleteCLO } =
+    useCLOStore();
 
   useEffect(() => {
     setCourseData(currentCourse);
@@ -89,6 +91,14 @@ export const CourseEdit = () => {
     console.log("Updating CLO", clo);
     updateAndRefresh(clo);
     setCLOEdit(null);
+  };
+
+  const handleDeleteClo = (clo: CourseLearningOutcome) => {
+    const deleteAndRefresh = async (clo: CourseLearningOutcome) => {
+      await deleteCLO(clo);
+    };
+    console.log("deleting clo", clo);
+    deleteAndRefresh(clo);
   };
 
   return (
@@ -186,13 +196,16 @@ export const CourseEdit = () => {
             </h1>
           </div>
         </div>
-        <div className="w-full max-w-md outline-solid ">
+        <div className="w-full max-w-md outline-solid max-h-[50vh] overflow-y-auto">
           {loadedCLOs.map((clo) => (
             <div className="card card-dash bg-base-100 w-96">
               <div className="card-body">
                 <h2 className="card-title">{clo.cloId}</h2>
                 <p>{clo.cloDesc}</p>
                 <div className="card-actions justify-end">
+                  <button onClick={() => handleDeleteClo(clo)}>
+                    <Trash2 />
+                  </button>
                   <button
                     className="btn btn-primary"
                     onClick={() => setCLOEdit(clo)}

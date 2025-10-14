@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
+import type { CourseLearningOutcome } from "../pages/CourseEdit";
 
 export const useCLOStore = create((set) => ({
   currentCLOs: [],
@@ -46,6 +47,20 @@ export const useCLOStore = create((set) => ({
           .sort((a, b) => a.cloId - b.cloId),
       }));
       console.log(res.data);
+    } catch (error) {
+      console.log(error.response.data.message);
+    }
+  },
+
+  deleteCLO: async (data: CourseLearningOutcome) => {
+    try {
+      const res = await axiosInstance.delete("/CLO/delete", { data });
+      console.log(res);
+      set((state) => ({
+        currentCLOs: state.currentCLOs
+          .filter((clo) => clo.cloId !== data.cloId)
+          .sort((a, b) => a.cloId - b.cloId),
+      }));
     } catch (error) {
       console.log(error.response.data.message);
     }
