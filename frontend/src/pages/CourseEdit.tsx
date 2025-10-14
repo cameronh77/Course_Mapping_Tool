@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/navbar";
+import { useCLOStore } from "../stores/useCLOStore";
+import CLOForm from "../components/common/CLOForm";
 
 export interface Course {
   courseId: String;
@@ -18,6 +20,12 @@ export interface Course {
   courseDesc: String;
   expectedDuration: number;
   numberTeachingPeriods: number;
+}
+
+export interface CourseLearningOutcome {
+  cloId?: number | null;
+  cloDesc: string;
+  courseId: string | undefined;
 }
 
 export const CourseEdit = () => {
@@ -28,7 +36,9 @@ export const CourseEdit = () => {
     expectedDuration: "",
     numberTeachingPeriods: "",
   });
-  const [loadedCourses, setLoadedCourses] = useState<Course[]>([]);
+  const [loadedCLOs, setLoadedCLOs] = useState<CourseLearningOutcome[]>([]);
+  const [addingCLO, setAddingCLO] = useState<boolean>();
+  const [cloEdit, setCLOEdit] = useState<CourseLearningOutcome | null>(null);
 
   const {
     currentCourse,
@@ -39,22 +49,50 @@ export const CourseEdit = () => {
     updateCourse,
   } = useCourseStore();
 
+  const { currentCLOs, createCLO, viewCLOsByCourse, updateCLO } = useCLOStore();
+
   useEffect(() => {
-    console.log(currentCourse);
     setCourseData(currentCourse);
+    const loadValues = async (course) => {
+      await viewCLOsByCourse(course);
+    };
+    loadValues(currentCourse);
+    setLoadedCLOs(currentCLOs);
   }, []);
 
-  const handleUpdate = (e) => {
-    console.log(courseData);
-    //e.preventDefault();
-    //const success = validateForm();
+  useEffect(() => {
+    setLoadedCLOs(currentCLOs);
+    console.log(currentCLOs);
+  }, [currentCLOs]);
 
+  const handleUpdate = (e) => {
     updateCourse(courseData);
+    setLoadedCLOs(currentCLOs);
+  };
+
+  const handleAddClo = (clo: CourseLearningOutcome) => {
+    const addAndRefresh = async (clo: CourseLearningOutcome) => {
+      await createCLO(clo);
+      //await viewCLOsByCourse(courseData.courseId);
+    };
+    console.log("Adding CLO", clo);
+    addAndRefresh(clo);
+    setCLOEdit(null);
+  };
+
+  const handleUpdateClo = (clo: CourseLearningOutcome) => {
+    const updateAndRefresh = async (clo: CourseLearningOutcome) => {
+      await updateCLO(clo);
+      //await viewCLOsByCourse(courseData.courseId);
+    };
+    console.log("course data", courseData);
+    console.log("Updating CLO", clo);
+    updateAndRefresh(clo);
+    setCLOEdit(null);
   };
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
-      <Navbar />
       <div className="flex flex-col justify-center items-center p-6 sm:p-12">
         <div className="w-full max-w-md space-y-8">
           <div className="text center mb-8">
@@ -140,6 +178,70 @@ export const CourseEdit = () => {
           </button>
         </div>
       </div>
+      <div className="flex flex-col justify-center items-center p-6 sm:p-12">
+        <div className="text center mb-8">
+          <div className="flex flex-col items-center gap-2 group">
+            <h1 className="text-2xl font-bold mt-2">
+              Current Course Learning Outcomes
+            </h1>
+          </div>
+        </div>
+        <div className="w-full max-w-md outline-solid ">
+          {loadedCLOs.map((clo) => (
+            <div className="card card-dash bg-base-100 w-96">
+              <div className="card-body">
+                <h2 className="card-title">{clo.cloId}</h2>
+                <p>{clo.cloDesc}</p>
+                <div className="card-actions justify-end">
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setCLOEdit(clo)}
+                  >
+                    View Outcome
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col justify-center items-center p-6 sm:p-12">
+          <button
+            className="btn btn-xs sm:btn-sm md:btn-md lg:btn-lg xl:btn-xl"
+            onClick={() =>
+              setCLOEdit({
+                cloDesc: "",
+                courseId: "",
+              })
+            }
+          >
+            Add Course Learning Outcome
+          </button>
+        </div>
+      </div>
+      {cloEdit && (
+        <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full max-h-96 overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-black text-xl font-bold">
+                {!cloEdit.cloId
+                  ? "New Learning Outcome"
+                  : `Learning Outcome ${cloEdit.cloId}`}
+              </h2>
+              <button
+                onClick={() => setCLOEdit(null)}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                ×
+              </button>
+            </div>
+            <CLOForm
+              onSave={!cloEdit.courseId ? handleAddClo : handleUpdateClo}
+              initialData={cloEdit}
+              courseId={courseData.courseId}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -11,11 +11,9 @@ import { CourseEdit } from "./pages/CourseEdit";
 const App = () => {
   const { currentCourse } = useCourseStore();
 
-  useEffect(() => {
-    console.log(currentCourse);
-  }, currentCourse);
   return (
     <div>
+      {currentCourse && <Navbar />}
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/UnitCanvas" element={<CanvasPage />} />

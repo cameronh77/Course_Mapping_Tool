@@ -3,6 +3,7 @@ import {
   addCourseLearningOutcome,
   deleteCourseLearningOutcome,
   updateCourseLearningOutcome,
+  viewCourseLearningOutcome,
   viewCourseLearningOutcomes,
 } from "../controllers/courseLearningOutcomeController.js";
 
@@ -10,7 +11,8 @@ const router = express.Router();
 
 router.post("/create", addCourseLearningOutcome);
 router.delete("/delete", deleteCourseLearningOutcome);
-router.get("/view", viewCourseLearningOutcomes);
+router.get("/viewAll/:courseId", viewCourseLearningOutcomes);
+router.get("/view/:cloId", viewCourseLearningOutcome);
 router.put("/update/:cloId", updateCourseLearningOutcome);
 
 export default router;
