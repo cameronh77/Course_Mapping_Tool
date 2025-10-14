@@ -16,7 +16,6 @@ interface Unit {
 }
 
 export const CanvasPage: React.FC = () => {
-  // ... (existing state variables and functions remain the same) ...
   const [unitBoxes, setUnitBoxes] = useState<
     Array<{
       id: number;
@@ -53,12 +52,55 @@ export const CanvasPage: React.FC = () => {
 
   useEffect(() => {
     const loadUnits = async () => {
-      await viewUnits(); // assuming it returns data or updates the store
+      await viewUnits();
     };
     loadUnits();
   }, []);
 
-  // ... (createUnitBox, startEdit, handleFormSave, cancelEdit, handleMouseDown, handleDoubleClick, deleteUnit functions remain the same) ...
+  useEffect(() => {
+    const loadCanvasState = async () => {
+      if (currentCourse?.courseId) {
+        try {
+          const response = await axiosInstance.get(
+            `/course-unit/view?courseId=${currentCourse.courseId}`
+          );
+          const courseUnits = response.data;
+          const loadedUnitBoxes = courseUnits.map((cu) => ({
+            id: Date.now() + Math.random(), // Simple unique ID
+            name: cu.unit.unitName,
+            unitId: cu.unitId,
+            description: cu.unit.unitDesc,
+            credits: cu.unit.credits,
+            semestersOffered: cu.unit.semestersOffered,
+            x: cu.position.x,
+            y: cu.position.y,
+            color: cu.color || "#3B82F6", // Default color
+          }));
+          setUnitBoxes(loadedUnitBoxes);
+        } catch (error) {
+          console.error("Error loading canvas state:", error);
+        }
+      }
+    };
+
+    loadCanvasState();
+  }, [currentCourse]);
+
+  const handleSaveCanvas = async () => {
+    if (currentCourse?.courseId) {
+      console.log("Save canvas button is triggered");
+      try {
+        await axiosInstance.post(
+          `/course-unit/canvas/${currentCourse.courseId}`,
+          { units: unitBoxes }
+        );
+        alert("Canvas saved successfully!");
+      } catch (error) {
+        console.error("Error saving canvas:", error);
+        alert("Failed to save canvas.");
+      }
+    }
+  };
 
   const createUnitBox = (selectedUnit: Unit) => {
     const unitExists = unitBoxes.some(
@@ -235,10 +277,16 @@ export const CanvasPage: React.FC = () => {
     <div className="flex h-screen">
       <Navbar />
       {/* Sidebar container - Removed w-1/6 and relative, let CanvasSidebar define width */}
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full z-20">
         {/* Sidebar component */}
         <CanvasSidebar>
           {/* Unit Add button - Now inside the sidebar */}
+          <button
+            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
+            onClick={handleSaveCanvas}
+          >
+            Save Canvas
+          </button>
           <button
             className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
             onClick={() => setShowCreateForm(true)}
