@@ -53,6 +53,8 @@ model CourseUnit {
   semester          Int //The reccomended semester for the unit in the course  
   year              Int //The reccomended year for the unit in the course
   elective          Boolean //Whether or not the unit is an elective in the course
+  position          Json?
+  color             String?
   Specialisation    Specialisation? @relation(fields: [specialisationSId], references: [sId])
   specialisationSId Int?
 
