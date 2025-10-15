@@ -41,6 +41,9 @@ export const CanvasPage: React.FC = () => {
   const canvasRef = React.useRef<HTMLDivElement>(null);
   const { currentCourse } = useCourseStore();
 
+  //State for multiple units selected
+  const [selectedUnits, setSelectedUnits] = useState<number[]>([]);
+
   // States for unit search
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Unit[]>([]);
@@ -176,6 +179,57 @@ export const CanvasPage: React.FC = () => {
   function cancelEdit() {
     setEditingId(null);
     setShowForm(false);
+  }
+
+  function handleMouseDownCanvas(e: React.MouseEvent) {
+    if (selectedUnits.length !== 0) {
+      setSelectedUnits([]);
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const start = {
+      initialX: mouseX,
+      initialY: mouseY,
+    };
+
+    const handleMove = (moveEvent: MouseEvent) => {};
+
+    const handleCanvasUp = (MouseEvent: MouseEvent) => {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const mouseX = MouseEvent.clientX - rect.left;
+      const mouseY = MouseEvent.clientY - rect.top;
+
+      const selectedRect = {
+        x1: start.initialX,
+        x2: mouseX,
+        y1: start.initialY,
+        y2: mouseY,
+      };
+
+      const selected = unitBoxes
+        .filter((unit) => {
+          return (
+            unit.x > selectedRect.x1 &&
+            unit.x < selectedRect.x2 &&
+            unit.y > selectedRect.y1 &&
+            unit.y < selectedRect.y2
+          );
+        })
+        .map((unit) => unit.id);
+      setSelectedUnits(selected);
+      console.log(selectedUnits);
+      document.removeEventListener("mouseup", handleCanvasUp);
+    };
+
+    document.addEventListener("mouseup", handleCanvasUp);
   }
 
   function handleMouseDown(e: React.MouseEvent, id: number) {
@@ -342,6 +396,7 @@ export const CanvasPage: React.FC = () => {
         ref={canvasRef}
         className="w-full bg-white p-6 overflow-hidden relative"
         style={{ userSelect: "none" }}
+        onMouseDown={handleMouseDownCanvas}
       >
         {/* ... (Absolutely positioned unit boxes and Modals) ... */}
         {unitBoxes.map((unit) => (
@@ -362,7 +417,11 @@ export const CanvasPage: React.FC = () => {
               }`}
             >
               <div
-                className="border border-gray-300 p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300"
+                className={`border ${
+                  selectedUnits.includes(unit.id)
+                    ? `border-4 border-blue-400 ring-4 ring-blue-300`
+                    : `border-gray-300`
+                } p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300`}
                 style={{
                   backgroundColor: unit.color || "#3B82F6",
                   color: "white",
