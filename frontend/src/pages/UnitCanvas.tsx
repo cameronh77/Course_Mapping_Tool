@@ -65,7 +65,7 @@ export const CanvasPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Unit[]>([]);
   const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
-  const { viewUnits, createUnit, updateUnit } = useUnitStore();
+  const { checkUnitExists, viewUnits, createUnit, updateUnit } = useUnitStore();
 
   // State for creating a new unit
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
@@ -160,7 +160,7 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  const createUnitBox = (selectedUnit: Unit) => {
+  const createUnitBox = (selectedUnit: Unit & { color?: string }) => {
     const unitExists = unitBoxes.some(
       (unit) => unit.unitId === selectedUnit.unitId
     );
@@ -180,7 +180,7 @@ export const CanvasPage: React.FC = () => {
       semestersOffered: selectedUnit.semestersOffered,
       x: 100 + unitBoxes.length * 50,
       y: 100 + unitBoxes.length * 30,
-      color: "#3B82F6",
+      color: selectedUnit.color || "#3B82F6",
     };
     setUnitBoxes([...unitBoxes, newUnit]);
     setShowSearchResults(false);
@@ -380,11 +380,42 @@ export const CanvasPage: React.FC = () => {
 
   const handleCreateUnit = async (data: UnitFormData) => {
     try {
-      await createUnit(data);
-      setShowCreateForm(false);
-      await viewUnits();
+      if (data.unitId) {
+        const checkResults = await checkUnitExists(data.unitId);
+
+        if (checkResults.isDuplicate) {
+          alert(`A unit with ID: "${data.unitId}" already exists.`);
+          return;
+        }
+      }
     } catch (error) {
-      console.error("Error creating unit:", error);
+      console.error("Duplicate check failed", error);
+      alert("Failed to check for duplicates. Please try again.");
+      return;
+    }
+
+    try {
+      const newUnit = await createUnit(data);
+
+      setShowCreateForm(false);
+
+      if (newUnit && newUnit.unitId) {
+        const unitToAdd: Unit & { color?: string } = {
+          unitId: newUnit.unitId,
+          unitName: newUnit.unitName,
+          unitDesc: newUnit.unitDesc || '',
+          credits: newUnit.credits || 0,
+          semestersOffered: newUnit.semestersOffered || [],
+          color: data.color || '#3B82F6', 
+        };
+        createUnitBox(unitToAdd);
+      } else {
+        console.error("New data is incomplete");
+        alert("Unit created successfully, but missing data to display the box");
+      }
+    } catch(error) {
+      console.error("Error creating unit: ", error);
+      alert("Failed to create unit. It might already exist or server error.");
     }
   };
 
