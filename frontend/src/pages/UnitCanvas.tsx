@@ -337,6 +337,27 @@ export const CanvasPage: React.FC = () => {
       );
     };
 
+    const handleUp = () => {
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  }
+
+  const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const handlePositionChange = (id: number, x: number, y: number) => {
+    setUnitBoxes((prevUnits) =>
+      prevUnits.map((unit) =>
+        unit.id === id ? { ...unit, x, y } : unit
+      )
+    );
+  };
+
   function handleDoubleClick(unitId: number | string) {
     startEdit(unitId as number);
   }
@@ -574,7 +595,7 @@ export const CanvasPage: React.FC = () => {
                 ×
               </button>
             </div>
-          </div>
+          </Draggable>
         ))}
 
         {/* Popup Modal for UnitForm */}
