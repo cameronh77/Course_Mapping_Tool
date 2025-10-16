@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
+import Draggable from "../components/common/Draggable";
+import { UnitBox } from "../components/common/UnitBox";
 import { axiosInstance } from "../lib/axios";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
-import Navbar from "../components/navbar";
 
 // Define the Unit interface
 interface Unit {
@@ -34,10 +35,6 @@ export const CanvasPage: React.FC = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState<boolean>(false);
 
-  // State for dragging
-  const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState<boolean>(false);
   const canvasRef = React.useRef<HTMLDivElement>(null);
   const { currentCourse } = useCourseStore();
 
@@ -178,67 +175,16 @@ export const CanvasPage: React.FC = () => {
     setShowForm(false);
   }
 
-  function handleMouseDown(e: React.MouseEvent, id: number) {
-    e.preventDefault();
-    e.stopPropagation();
+  const handlePositionChange = (id: number | string, x: number, y: number) => {
+    setUnitBoxes((prevUnits) =>
+      prevUnits.map((unit) =>
+        unit.id === id ? { ...unit, x, y } : unit
+      )
+    );
+  };
 
-    const unit = unitBoxes.find((u) => u.id === id);
-    if (!unit || !canvasRef.current) return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const offset = {
-      x: mouseX - unit.x,
-      y: mouseY - unit.y,
-    };
-    setDragOffset(offset);
-    setDraggedUnit(id);
-    setIsDragging(false);
-
-    const handleMove = (moveEvent: MouseEvent) => {
-      if (!canvasRef.current) return;
-
-      setIsDragging(true);
-      const moveRect = canvasRef.current.getBoundingClientRect();
-      const newMouseX = moveEvent.clientX - moveRect.left;
-      const newMouseY = moveEvent.clientY - moveRect.top;
-
-      setUnitBoxes((prevUnits) =>
-        prevUnits.map((unit) =>
-          unit.id === id
-            ? {
-                ...unit,
-                x: Math.max(
-                  0,
-                  Math.min(newMouseX - offset.x, moveRect.width - 256)
-                ),
-                y: Math.max(
-                  0,
-                  Math.min(newMouseY - offset.y, moveRect.height - 100)
-                ),
-              }
-            : unit
-        )
-      );
-    };
-
-    const handleUp = () => {
-      setDraggedUnit(null);
-      setDragOffset({ x: 0, y: 0 });
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-      setTimeout(() => setIsDragging(false), 100);
-    };
-
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleUp);
-  }
-
-  function handleDoubleClick(unitId: number) {
-    if (isDragging) return;
-    startEdit(unitId);
+  function handleDoubleClick(unitId: number | string) {
+    startEdit(unitId as number);
   }
 
   function deleteUnit(unitId: number) {
@@ -345,47 +291,23 @@ export const CanvasPage: React.FC = () => {
       >
         {/* ... (Absolutely positioned unit boxes and Modals) ... */}
         {unitBoxes.map((unit) => (
-          <div
+          <Draggable
             key={unit.id}
-            className="absolute w-64 cursor-move select-none group"
-            style={{
-              left: `${unit.x}px`,
-              top: `${unit.y}px`,
-              zIndex: draggedUnit === unit.id ? 1000 : 1,
-            }}
-            onMouseDown={(e) => handleMouseDown(e, unit.id)}
-            onDoubleClick={() => handleDoubleClick(unit.id)}
+            id={unit.id}
+            x={unit.x}
+            y={unit.y}
+            canvasRef={canvasRef}
+            onPositionChange={handlePositionChange}
+            onDoubleClick={handleDoubleClick}
           >
-            <div
-              className={`transition-shadow duration-200 relative ${
-                draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"
-              }`}
-            >
-              <div
-                className="border border-gray-300 p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300"
-                style={{
-                  backgroundColor: unit.color || "#3B82F6",
-                  color: "white",
-                }}
-              >
-                <h2 className="text-lg font-semibold text-center text-white">
-                  {unit.unitId || unit.name}
-                </h2>
-              </div>
-
-              {/* Delete button - appears on hover */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteUnit(unit.id);
-                }}
-                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-                title="Delete unit"
-              >
-                ×
-              </button>
-            </div>
-          </div>
+            <UnitBox
+              unitId={unit.unitId}
+              unitName={unit.name}
+              color={unit.color}
+              onDelete={() => deleteUnit(unit.id)}
+              showDelete={true}
+            />
+          </Draggable>
         ))}
 
         {/* Popup Modal for UnitForm */}
