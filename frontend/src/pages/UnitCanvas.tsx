@@ -6,6 +6,11 @@ import { UnitBox } from "../components/common/UnitBox";
 import { axiosInstance } from "../lib/axios";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
+import Navbar from "../components/navbar";
+import { AddTagMenu } from "../components/common/AddTagMenu";
+
+import { useCLOStore } from "../stores/useCLOStore";
+import { useTagStore } from "../stores/useTagStore";
 
 // Define the Unit interface
 interface Unit {
@@ -14,6 +19,18 @@ interface Unit {
   unitDesc: string;
   credits: number;
   semestersOffered: number[];
+}
+
+export interface CourseLearningOutcome {
+  cloId?: number | null;
+  cloDesc: string;
+  courseId: string | undefined;
+}
+
+export interface Tag {
+  tagId: number;
+  tagName: string;
+  courseId: string;
 }
 
 export const CanvasPage: React.FC = () => {
@@ -37,19 +54,44 @@ export const CanvasPage: React.FC = () => {
 
   const canvasRef = React.useRef<HTMLDivElement>(null);
   const { currentCourse } = useCourseStore();
+  const { currentCLOs } = useCLOStore();
+
+  //State for multiple units selected
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
   // States for unit search
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Unit[]>([]);
   const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
-  const { viewUnits, createUnit, updateUnit } = useUnitStore();
+  const { checkUnitExists, viewUnits, createUnit, updateUnit } = useUnitStore();
 
   // State for creating a new unit
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
 
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    unitId?: number;
+  }>({ visible: false, x: 0, y: 0 });
+
+  const [viewingTagMenu, setViewingTagMenu] = useState<boolean>(false);
+  const [tagData, setTagData] = useState<CourseLearningOutcome[] | null>(null);
+  const [newTag, setNewTag] = useState<string>("");
+  const {
+    existingTags,
+    existingTagConnections,
+    createTag,
+    addUnitTags,
+    viewCourseTags,
+    viewUnitTagsByCourse,
+  } = useTagStore();
+
   useEffect(() => {
     const loadUnits = async () => {
       await viewUnits();
+      await viewCourseTags(currentCourse.courseId);
+      await viewUnitTagsByCourse(currentCourse.courseId);
     };
     loadUnits();
   }, []);
@@ -83,6 +125,23 @@ export const CanvasPage: React.FC = () => {
     loadCanvasState();
   }, [currentCourse]);
 
+  const handleAddTagToUnits = (tag: number) => {
+    console.log("Tag being added", tag);
+    const apiData = selectedUnits.map((unit) => {
+      return {
+        courseId: currentCourse.courseId,
+        unitId: unit,
+        tagId: tag,
+      };
+    });
+    const addData = async (apiData) => {
+      await addUnitTags(apiData);
+    };
+
+    addData(apiData);
+    setViewingTagMenu(false);
+  };
+
   const handleSaveCanvas = async () => {
     if (currentCourse?.courseId) {
       console.log("Save canvas button is triggered");
@@ -99,7 +158,7 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  const createUnitBox = (selectedUnit: Unit) => {
+  const createUnitBox = (selectedUnit: Unit & { color?: string }) => {
     const unitExists = unitBoxes.some(
       (unit) => unit.unitId === selectedUnit.unitId
     );
@@ -119,7 +178,7 @@ export const CanvasPage: React.FC = () => {
       semestersOffered: selectedUnit.semestersOffered,
       x: 100 + unitBoxes.length * 50,
       y: 100 + unitBoxes.length * 30,
-      color: "#3B82F6",
+      color: selectedUnit.color || "#3B82F6",
     };
     setUnitBoxes([...unitBoxes, newUnit]);
     setShowSearchResults(false);
@@ -175,13 +234,108 @@ export const CanvasPage: React.FC = () => {
     setShowForm(false);
   }
 
-  const handlePositionChange = (id: number | string, x: number, y: number) => {
-    setUnitBoxes((prevUnits) =>
-      prevUnits.map((unit) =>
-        unit.id === id ? { ...unit, x, y } : unit
-      )
-    );
-  };
+  function handleMouseDownCanvas(e: React.MouseEvent) {
+    if (e.button !== 0) {
+      return;
+    }
+    if (selectedUnits.length !== 0) {
+      setSelectedUnits([]);
+      return;
+    }
+
+    setContextMenu({ ...contextMenu, visible: false });
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const start = {
+      initialX: mouseX,
+      initialY: mouseY,
+    };
+
+    const handleMove = (moveEvent: MouseEvent) => {};
+
+    const handleCanvasUp = (MouseEvent: MouseEvent) => {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const mouseX = MouseEvent.clientX - rect.left;
+      const mouseY = MouseEvent.clientY - rect.top;
+
+      const selectedRect = {
+        x1: start.initialX,
+        x2: mouseX,
+        y1: start.initialY,
+        y2: mouseY,
+      };
+
+      const selected = unitBoxes
+        .filter((unit) => {
+          return (
+            unit.x > selectedRect.x1 &&
+            unit.x < selectedRect.x2 &&
+            unit.y > selectedRect.y1 &&
+            unit.y < selectedRect.y2
+          );
+        })
+        .map((unit) => unit.unitId);
+      setSelectedUnits(selected);
+      console.log(selectedUnits);
+      document.removeEventListener("mouseup", handleCanvasUp);
+    };
+
+    document.addEventListener("mouseup", handleCanvasUp);
+  }
+
+  function handleMouseDown(e: React.MouseEvent, id: number) {
+    setContextMenu({ ...contextMenu, visible: false });
+    e.preventDefault();
+    e.stopPropagation();
+
+    const unit = unitBoxes.find((u) => u.id === id);
+    if (!unit || !canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const offset = {
+      x: mouseX - unit.x,
+      y: mouseY - unit.y,
+    };
+    setDragOffset(offset);
+    setDraggedUnit(id);
+    setIsDragging(false);
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      if (!canvasRef.current) return;
+
+      setIsDragging(true);
+      const moveRect = canvasRef.current.getBoundingClientRect();
+      const newMouseX = moveEvent.clientX - moveRect.left;
+      const newMouseY = moveEvent.clientY - moveRect.top;
+
+      setUnitBoxes((prevUnits) =>
+        prevUnits.map((unit) =>
+          unit.id === id
+            ? {
+                ...unit,
+                x: Math.max(
+                  0,
+                  Math.min(newMouseX - offset.x, moveRect.width - 256)
+                ),
+                y: Math.max(
+                  0,
+                  Math.min(newMouseY - offset.y, moveRect.height - 100)
+                ),
+              }
+            : unit
+        )
+      );
+    };
 
   function handleDoubleClick(unitId: number | string) {
     startEdit(unitId as number);
@@ -211,13 +365,55 @@ export const CanvasPage: React.FC = () => {
 
   const handleCreateUnit = async (data: UnitFormData) => {
     try {
-      await createUnit(data);
-      setShowCreateForm(false);
-      await viewUnits();
+      if (data.unitId) {
+        const checkResults = await checkUnitExists(data.unitId);
+
+        if (checkResults.isDuplicate) {
+          alert(`A unit with ID: "${data.unitId}" already exists.`);
+          return;
+        }
+      }
     } catch (error) {
-      console.error("Error creating unit:", error);
+      console.error("Duplicate check failed", error);
+      alert("Failed to check for duplicates. Please try again.");
+      return;
+    }
+
+    try {
+      const newUnit = await createUnit(data);
+
+      setShowCreateForm(false);
+
+      if (newUnit && newUnit.unitId) {
+        const unitToAdd: Unit & { color?: string } = {
+          unitId: newUnit.unitId,
+          unitName: newUnit.unitName,
+          unitDesc: newUnit.unitDesc || '',
+          credits: newUnit.credits || 0,
+          semestersOffered: newUnit.semestersOffered || [],
+          color: data.color || '#3B82F6', 
+        };
+        createUnitBox(unitToAdd);
+      } else {
+        console.error("New data is incomplete");
+        alert("Unit created successfully, but missing data to display the box");
+      }
+    } catch(error) {
+      console.error("Error creating unit: ", error);
+      alert("Failed to create unit. It might already exist or server error.");
     }
   };
+
+  function handleRightClick(e: React.MouseEvent) {
+    e.preventDefault(); // prevent default browser context menu
+    e.stopPropagation();
+
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+    });
+  }
 
   return (
     <div className="flex h-screen">
@@ -280,6 +476,49 @@ export const CanvasPage: React.FC = () => {
                 </div>
               )}
           </div>
+          <h2 className="text-lg font-bold mb-4 text-gray-800 pt-15">Tags</h2>
+          <input
+            type="text"
+            placeholder="Create a tag..."
+            // Using Tailwind classes for a standard input look
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline my-5"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+          />
+          <button
+            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
+            onClick={() => {
+              createTag({ tagName: newTag, courseId: currentCourse.courseId });
+              setNewTag("");
+            }}
+          >
+            Create New Tag
+          </button>
+
+          <h2 className="text-md font-bold mb-4 text-gray-800 pt-10">
+            Existing Tags
+          </h2>
+          <div className="flex flex-col max-h-[10vh] overflow-y-auto">
+            {existingTags.map((tag: Tag) => {
+              return (
+                <button
+                  className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
+                  onClick={() => {
+                    setSelectedUnits([]);
+                    const newArr: [] = existingTagConnections
+                      .filter((conn) => {
+                        return conn.tagId === tag.tagId;
+                      })
+                      .map((conn) => conn.unitId);
+
+                    setSelectedUnits(newArr);
+                  }}
+                >
+                  {tag.tagName}
+                </button>
+              );
+            })}
+          </div>
         </CanvasSidebar>
       </div>
 
@@ -288,6 +527,8 @@ export const CanvasPage: React.FC = () => {
         ref={canvasRef}
         className="w-full bg-white p-6 overflow-hidden relative"
         style={{ userSelect: "none" }}
+        onMouseDown={handleMouseDownCanvas}
+        onContextMenu={(e) => handleRightClick(e)}
       >
         {/* ... (Absolutely positioned unit boxes and Modals) ... */}
         {unitBoxes.map((unit) => (
@@ -300,14 +541,40 @@ export const CanvasPage: React.FC = () => {
             onPositionChange={handlePositionChange}
             onDoubleClick={handleDoubleClick}
           >
-            <UnitBox
-              unitId={unit.unitId}
-              unitName={unit.name}
-              color={unit.color}
-              onDelete={() => deleteUnit(unit.id)}
-              showDelete={true}
-            />
-          </Draggable>
+            <div
+              className={`transition-shadow duration-200 relative ${
+                draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"
+              }`}
+            >
+              <div
+                className={`border ${
+                  selectedUnits.includes(unit.unitId)
+                    ? `border-4 border-blue-400 ring-4 ring-blue-300`
+                    : `border-gray-300`
+                } p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300`}
+                style={{
+                  backgroundColor: unit.color || "#3B82F6",
+                  color: "white",
+                }}
+              >
+                <h2 className="text-lg font-semibold text-center text-white">
+                  {unit.unitId || unit.name}
+                </h2>
+              </div>
+
+              {/* Delete button - appears on hover */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteUnit(unit.id);
+                }}
+                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+                title="Delete unit"
+              >
+                ×
+              </button>
+            </div>
+          </div>
         ))}
 
         {/* Popup Modal for UnitForm */}
@@ -374,6 +641,60 @@ export const CanvasPage: React.FC = () => {
           </div>
         )}
       </div>
+      {contextMenu.visible && (
+        <div
+          className="fixed bg-white border border-gray-300 shadow-lg rounded-md flex flex-col text-left z-50"
+          style={{
+            top: contextMenu.y,
+            left: contextMenu.x,
+            minWidth: "150px",
+            padding: "0.5rem",
+          }}
+          onClick={() => setContextMenu({ ...contextMenu, visible: false })}
+        >
+          <button
+            className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left"
+            onClick={() => {
+              setViewingTagMenu(true);
+              setTagData(
+                currentCLOs.map((clo: CourseLearningOutcome) => {
+                  return {
+                    name: clo.cloDesc,
+                    id: clo.cloId,
+                  };
+                })
+              );
+            }}
+          >
+            Add Learning Outcome
+          </button>
+          <button
+            className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left"
+            onClick={() => {
+              setViewingTagMenu(true);
+              setTagData(
+                existingTags.map((tag: Tag) => {
+                  return {
+                    name: tag.tagName,
+                    id: tag.tagId,
+                  };
+                })
+              );
+            }}
+          >
+            Add Tag
+          </button>
+        </div>
+      )}
+      {viewingTagMenu && (
+        <AddTagMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          data={tagData}
+          onClose={() => setViewingTagMenu(false)}
+          onSave={handleAddTagToUnits}
+        ></AddTagMenu>
+      )}
     </div>
   );
 };
