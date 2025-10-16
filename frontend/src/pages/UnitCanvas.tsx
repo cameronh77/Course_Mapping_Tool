@@ -99,6 +99,10 @@ export const CanvasPage: React.FC = () => {
       color: string;
       strokeWidth: number;
       showArrowhead: boolean;
+      // Relationship properties
+      startUnitId?: number;
+      endUnitId?: number;
+      relationshipType?: string;
     }>
   >([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
@@ -129,6 +133,22 @@ export const CanvasPage: React.FC = () => {
     lineId?: string;
     segmentIndex?: number;
   }>({ visible: false, x: 0, y: 0 });
+
+  // Effect to detect arrow relationships when arrows or units change
+  useEffect(() => {
+    detectAndUpdateArrowRelationships();
+  }, [polyLines.length, unitBoxes.length]); // Re-check when arrows or units are added/removed
+
+  // Effect to update relationships when arrow positions or segments change
+  useEffect(() => {
+    if (polyLines.length > 0 && unitBoxes.length > 0) {
+      const timeoutId = setTimeout(() => {
+        detectAndUpdateArrowRelationships();
+      }, 100); // Debounce to avoid too many updates during dragging
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [polyLines, unitBoxes]);
 
   useEffect(() => {
     const loadUnits = async () => {
@@ -533,6 +553,111 @@ export const CanvasPage: React.FC = () => {
     }
     
     return { shouldSnap: false, snapX: lineX, snapY: lineY };
+  };
+
+  // Helper function to calculate arrow endpoints based on segments
+  const calculateArrowEndpoints = (line: typeof polyLines[0]): {
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } => {
+    const ARROW_OFFSET = 10; // The internal offset in the PolyLine SVG
+    
+    // Start point is always at the line's x, y position (adjusted for offset)
+    const startX = line.x + ARROW_OFFSET;
+    const startY = line.y + ARROW_OFFSET;
+    
+    // Calculate end point by following all segments
+    let currentX = 0;
+    let currentY = 0;
+    
+    line.segments.forEach((segment) => {
+      switch (segment.direction) {
+        case 'north':
+          currentY -= segment.length;
+          break;
+        case 'south':
+          currentY += segment.length;
+          break;
+        case 'east':
+          currentX += segment.length;
+          break;
+        case 'west':
+          currentX -= segment.length;
+          break;
+      }
+    });
+    
+    // End point is relative to start, so add to line position
+    const endX = line.x + currentX + ARROW_OFFSET;
+    const endY = line.y + currentY + ARROW_OFFSET;
+    
+    return { startX, startY, endX, endY };
+  };
+
+  // Helper function to find if a point is inside a unit box
+  const findUnitAtPoint = (x: number, y: number): number | undefined => {
+    const UNIT_WIDTH = 256;
+    const UNIT_HEIGHT = 64;
+    const SNAP_TOLERANCE = 30; // Allow some tolerance for endpoint snapping
+    
+    for (const unit of unitBoxes) {
+      // Check if point is within or near the unit box
+      const unitCenterX = unit.x + UNIT_WIDTH / 2;
+      const unitCenterY = unit.y + UNIT_HEIGHT / 2;
+      
+      const distance = Math.sqrt(
+        Math.pow(x - unitCenterX, 2) + Math.pow(y - unitCenterY, 2)
+      );
+      
+      // If point is close to unit center, consider it connected
+      if (distance < UNIT_WIDTH / 2 + SNAP_TOLERANCE) {
+        return unit.id;
+      }
+    }
+    
+    return undefined;
+  };
+
+  // Function to detect and update arrow relationships
+  const detectAndUpdateArrowRelationships = () => {
+    setPolyLines((prevLines) =>
+      prevLines.map((line) => {
+        const { startX, startY, endX, endY } = calculateArrowEndpoints(line);
+        
+        // Find units at start and end
+        const startUnitId = findUnitAtPoint(startX, startY);
+        const endUnitId = findUnitAtPoint(endX, endY);
+        
+        // Update line with relationship information
+        if (startUnitId && endUnitId) {
+          console.log(`Arrow ${line.id} forms relationship: Unit ${startUnitId} -> Unit ${endUnitId}`);
+          return {
+            ...line,
+            startUnitId,
+            endUnitId,
+            relationshipType: 'connected'
+          };
+        } else if (startUnitId || endUnitId) {
+          // Partial connection
+          return {
+            ...line,
+            startUnitId,
+            endUnitId,
+            relationshipType: startUnitId && endUnitId ? 'connected' : 'partial'
+          };
+        } else {
+          // No connection
+          return {
+            ...line,
+            startUnitId: undefined,
+            endUnitId: undefined,
+            relationshipType: undefined
+          };
+        }
+      })
+    );
   };
 
   const handleLinePositionChange = (id: string | number, x: number, y: number) => {
@@ -1085,6 +1210,10 @@ export const CanvasPage: React.FC = () => {
         {/* Render polylines */}
         {polyLines.map((line) => {
           const isSnapped = snappedLines[line.id] !== undefined;
+          const hasRelationship = line.startUnitId && line.endUnitId;
+          const startUnit = unitBoxes.find((u) => u.id === line.startUnitId);
+          const endUnit = unitBoxes.find((u) => u.id === line.endUnitId);
+          
           return (
             <div
               key={line.id}
@@ -1106,10 +1235,22 @@ export const CanvasPage: React.FC = () => {
                     Relationship
                   </div>
                 )}
+                
+                {/* Relationship indicator - shows connected units */}
+                {hasRelationship && (
+                  <div 
+                    className="absolute -top-16 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white text-xs px-3 py-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap shadow-lg"
+                    style={{ pointerEvents: 'none', zIndex: 10 }}
+                  >
+                    <div className="font-semibold">Connected:</div>
+                    <div>{startUnit?.unitId || startUnit?.name} → {endUnit?.unitId || endUnit?.name}</div>
+                  </div>
+                )}
+                
                 <PolyLine
                   id={line.id}
                   segments={line.segments}
-                  color={line.color}
+                  color={hasRelationship ? '#10b981' : line.color} // Green if connected
                   strokeWidth={line.strokeWidth}
                   showArrowhead={line.showArrowhead}
                   onSegmentDrag={(segmentIndex) =>
@@ -1226,6 +1367,24 @@ export const CanvasPage: React.FC = () => {
                                 unit2Name: unit2.unitId || unit2.name,
                               }
                             : null;
+                        })()
+                      : null
+                  }
+                  relationshipInfo={
+                    editingLineId
+                      ? (() => {
+                          const line = polyLines.find((l) => l.id === editingLineId);
+                          if (line && (line.startUnitId || line.endUnitId)) {
+                            const startUnit = unitBoxes.find((u) => u.id === line.startUnitId);
+                            const endUnit = unitBoxes.find((u) => u.id === line.endUnitId);
+                            return {
+                              startUnitId: line.startUnitId,
+                              endUnitId: line.endUnitId,
+                              startUnitName: startUnit ? (startUnit.unitId || startUnit.name) : undefined,
+                              endUnitName: endUnit ? (endUnit.unitId || endUnit.name) : undefined,
+                            };
+                          }
+                          return null;
                         })()
                       : null
                   }

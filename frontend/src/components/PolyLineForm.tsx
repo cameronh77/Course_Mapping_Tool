@@ -16,9 +16,21 @@ interface PolyLineFormProps {
     unit1Name: string;
     unit2Name: string;
   } | null;
+  relationshipInfo?: {
+    startUnitId?: number;
+    endUnitId?: number;
+    startUnitName?: string;
+    endUnitName?: string;
+  } | null;
 }
 
-const PolyLineForm: React.FC<PolyLineFormProps> = ({ initialData, onSave, onCancel, snappedToUnits }) => {
+const PolyLineForm: React.FC<PolyLineFormProps> = ({ 
+  initialData, 
+  onSave, 
+  onCancel, 
+  snappedToUnits,
+  relationshipInfo 
+}) => {
   const [formData, setFormData] = useState<PolyLineFormData>(
     initialData || {
       segments: [{ direction: 'east', length: 100 }],
@@ -79,19 +91,51 @@ const PolyLineForm: React.FC<PolyLineFormProps> = ({ initialData, onSave, onCanc
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Relationship Info Display - Endpoint Connections */}
+      {relationshipInfo && (relationshipInfo.startUnitId || relationshipInfo.endUnitId) && (
+        <div className="bg-blue-50 border-2 border-blue-500 rounded-lg p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-blue-700">Relationship</span>
+          </div>
+          <div className="text-xs text-gray-700 space-y-1">
+            {relationshipInfo.startUnitId && (
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Type: </span>
+                <span className="bg-white px-2 py-1 rounded border border-blue-300">
+                  {relationshipInfo.startUnitName || `Unit ${relationshipInfo.startUnitId}`}
+                </span>
+              </div>
+            )}
+            {relationshipInfo.endUnitId && (
+              <div className="flex items-center gap-2">
+                <span className="font-medium">connected to:</span>
+                <span className="bg-white px-2 py-1 rounded border border-blue-300">
+                  {relationshipInfo.endUnitName || `Unit ${relationshipInfo.endUnitId}`}
+                </span>
+              </div>
+            )}
+          </div>
+          {relationshipInfo.startUnitId && relationshipInfo.endUnitId && (
+            <p className="text-xs text-green-600 font-medium">
+              ✓ Connected
+            </p>
+          )}
+        </div>
+      )}
+      
       {/* Snapped Units Display */}
       {snappedToUnits && (
         <div className="bg-green-50 border-2 border-green-500 rounded-lg p-3 space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-green-700">Relationship</span>
+            <span className="text-sm font-semibold text-green-700">Midpoint Snap</span>
           </div>
           <div className="text-xs text-gray-700 space-y-1">
             <div className="flex items-center gap-2">
-              <span className="font-medium">From:</span>
+              <span className="font-medium">Between:</span>
               <span className="bg-white px-2 py-1 rounded border border-green-300">{snappedToUnits.unit1Name}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-medium">To:</span>
+              <span className="font-medium">And:</span>
               <span className="bg-white px-2 py-1 rounded border border-green-300">{snappedToUnits.unit2Name}</span>
             </div>
           </div>
