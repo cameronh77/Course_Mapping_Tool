@@ -80,13 +80,20 @@ export const CanvasPage: React.FC = () => {
   const [viewingTagMenu, setViewingTagMenu] = useState<boolean>(false);
   const [tagData, setTagData] = useState<CourseLearningOutcome[] | null>(null);
   const [newTag, setNewTag] = useState<string>("");
-  const { existingTags, createTag, addUnitTags, viewCourseTags } =
-    useTagStore();
+  const {
+    existingTags,
+    existingTagConnections,
+    createTag,
+    addUnitTags,
+    viewCourseTags,
+    viewUnitTagsByCourse,
+  } = useTagStore();
 
   useEffect(() => {
     const loadUnits = async () => {
       await viewUnits();
       await viewCourseTags(currentCourse.courseId);
+      await viewUnitTagsByCourse(currentCourse.courseId);
     };
     loadUnits();
   }, []);
@@ -475,6 +482,27 @@ export const CanvasPage: React.FC = () => {
           <h2 className="text-md font-bold mb-4 text-gray-800 pt-10">
             Existing Tags
           </h2>
+          <div className="flex flex-col max-h-[10vh] overflow-y-auto">
+            {existingTags.map((tag: Tag) => {
+              return (
+                <button
+                  className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
+                  onClick={() => {
+                    setSelectedUnits([]);
+                    const newArr: [] = existingTagConnections
+                      .filter((conn) => {
+                        return conn.tagId === tag.tagId;
+                      })
+                      .map((conn) => conn.unitId);
+
+                    setSelectedUnits(newArr);
+                  }}
+                >
+                  {tag.tagName}
+                </button>
+              );
+            })}
+          </div>
         </CanvasSidebar>
       </div>
 

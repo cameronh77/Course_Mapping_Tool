@@ -58,6 +58,23 @@ export const viewTagsByCourse = async (req, res) => {
   }
 };
 
+export const viewUnitTagsByCourse = async (req, res) => {
+  const { courseId } = req.params;
+
+  try {
+    const tags = await prisma.courseUnitTags.findMany({
+      where: {
+        courseId: courseId,
+      },
+    });
+    console.log("heyjey", tags);
+    res.status(200).json(tags);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 export const viewTagsByUnit = async (req, res) => {
   const { unitId, courseId } = req.body;
 
