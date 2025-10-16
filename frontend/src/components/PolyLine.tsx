@@ -12,6 +12,7 @@ export interface PolyLineProps {
   strokeWidth: number;
   showArrowhead?: boolean;
   onSegmentDrag?: (segmentIndex: number) => (e: React.MouseEvent) => void;
+  onAddSegmentDrag?: (e: React.MouseEvent) => void;
 }
 
 const PolyLine: React.FC<PolyLineProps> = ({ 
@@ -19,7 +20,8 @@ const PolyLine: React.FC<PolyLineProps> = ({
   color, 
   strokeWidth, 
   showArrowhead = true,
-  onSegmentDrag 
+  onSegmentDrag,
+  onAddSegmentDrag
 }) => {
   // Calculate the path and bounding box
   const calculatePath = () => {
@@ -142,6 +144,38 @@ const PolyLine: React.FC<PolyLineProps> = ({
             onMouseDown={onSegmentDrag(index)}
           />
         ))}
+        
+        {/* Add new segment handle at the end of the arrow */}
+        {onAddSegmentDrag && segmentPoints.length > 0 && (
+          <g>
+            {/* Outer ring for visibility */}
+            <circle
+              cx={segmentPoints[segmentPoints.length - 1].x}
+              cy={segmentPoints[segmentPoints.length - 1].y}
+              r={10}
+              fill="none"
+              stroke={color}
+              strokeWidth={2}
+              opacity={0.5}
+              className="cursor-pointer hover:opacity-90"
+              onMouseDown={onAddSegmentDrag}
+            />
+            {/* Plus sign */}
+            <text
+              x={segmentPoints[segmentPoints.length - 1].x}
+              y={segmentPoints[segmentPoints.length - 1].y}
+              fill={color}
+              fontSize="16"
+              fontWeight="bold"
+              textAnchor="middle"
+              dominantBaseline="central"
+              opacity={0.6}
+              className="cursor-pointer hover:opacity-100 pointer-events-none"
+            >
+              +
+            </text>
+          </g>
+        )}
       </g>
     </svg>
   );

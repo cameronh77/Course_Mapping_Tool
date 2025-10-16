@@ -109,6 +109,14 @@ export const CanvasPage: React.FC = () => {
     startMousePos: { x: number; y: number };
     startLength: number;
   } | null>(null);
+  const [snappedLines, setSnappedLines] = useState<{
+    [lineId: string]: {
+      unit1Id: number;
+      unit2Id: number;
+      snapX: number;
+      snapY: number;
+    };
+  }>({});
 
   useEffect(() => {
     const loadUnits = async () => {
@@ -379,6 +387,53 @@ export const CanvasPage: React.FC = () => {
         unit.id === id ? { ...unit, x, y } : unit
       )
     );
+    
+    // Update any lines that are snapped to this unit
+    const UNIT_WIDTH = 256;
+    const UNIT_HEIGHT = 64; // Match the height used in findSnapPosition
+    const ARROW_OFFSET = 10; // The internal offset in the PolyLine SVG
+    
+    setPolyLines((prevLines) => {
+      return prevLines.map((line) => {
+        const snapInfo = snappedLines[line.id];
+        if (snapInfo && (snapInfo.unit1Id === id || snapInfo.unit2Id === id)) {
+          // Recalculate the snap position
+          const unit1 = unitBoxes.find((u) => u.id === snapInfo.unit1Id);
+          const unit2 = unitBoxes.find((u) => u.id === snapInfo.unit2Id);
+          
+          if (unit1 && unit2) {
+            // Apply the new position if this is the unit being moved
+            const updatedUnit1 = snapInfo.unit1Id === id ? { ...unit1, x, y } : unit1;
+            const updatedUnit2 = snapInfo.unit2Id === id ? { ...unit2, x, y } : unit2;
+            
+            const unit1CenterX = updatedUnit1.x + UNIT_WIDTH / 2;
+            const unit1CenterY = updatedUnit1.y + UNIT_HEIGHT / 2;
+            const unit2CenterX = updatedUnit2.x + UNIT_WIDTH / 2;
+            const unit2CenterY = updatedUnit2.y + UNIT_HEIGHT / 2;
+            
+            const midX = (unit1CenterX + unit2CenterX) / 2;
+            const midY = (unit1CenterY + unit2CenterY) / 2;
+            
+            // Adjust for the arrow's internal offset
+            const adjustedMidX = midX - ARROW_OFFSET;
+            const adjustedMidY = midY - ARROW_OFFSET;
+            
+            // Update the snap info
+            setSnappedLines((prev) => ({
+              ...prev,
+              [line.id]: {
+                ...snapInfo,
+                snapX: adjustedMidX,
+                snapY: adjustedMidY,
+              },
+            }));
+            
+            return { ...line, x: adjustedMidX, y: adjustedMidY };
+          }
+        }
+        return line;
+      });
+    });
   };
 
   function handleDoubleClick(unitId: number | string) {
@@ -390,12 +445,118 @@ export const CanvasPage: React.FC = () => {
   }
 
   // PolyLine handlers
+  // Helper function to calculate total arrow length from segments
+  const calculateArrowLength = (segments: LineSegment[]): number => {
+    return segments.reduce((total, segment) => total + segment.length, 0);
+  };
+
+  // Helper function to find if a line should snap between two unit boxes
+  const findSnapPosition = (lineX: number, lineY: number, lineId: string): { 
+    shouldSnap: boolean; 
+    snapX: number; 
+    snapY: number; 
+    unit1Id?: number; 
+    unit2Id?: number;
+  } => {
+    const SNAP_THRESHOLD = 120; // Distance threshold for snapping (increased for easier testing)
+    const UNIT_WIDTH = 256; // w-64 = 16rem = 256px
+    const UNIT_HEIGHT = 64; // More accurate: p-4 (1rem = 16px padding) + text-lg + border
+    const ARROW_OFFSET = 10; // The internal offset in the PolyLine SVG
+    
+    // Get the current arrow's length
+    const currentLine = polyLines.find((l) => l.id === lineId);
+    const MAX_UNIT_DISTANCE = currentLine 
+      ? calculateArrowLength(currentLine.segments) 
+      : 800; // Fallback to 800 if line not found
+    
+    // Check all pairs of unit boxes
+    for (let i = 0; i < unitBoxes.length; i++) {
+      for (let j = i + 1; j < unitBoxes.length; j++) {
+        const unit1 = unitBoxes[i];
+        const unit2 = unitBoxes[j];
+        
+        // Calculate center points of the units
+        const unit1CenterX = unit1.x + UNIT_WIDTH / 2;
+        const unit1CenterY = unit1.y + UNIT_HEIGHT / 2;
+        const unit2CenterX = unit2.x + UNIT_WIDTH / 2;
+        const unit2CenterY = unit2.y + UNIT_HEIGHT / 2;
+        
+        // Check if units are too far apart
+        const unitDistance = Math.sqrt(
+          Math.pow(unit2CenterX - unit1CenterX, 2) + Math.pow(unit2CenterY - unit1CenterY, 2)
+        );
+        
+        // Skip this pair if units are too far apart
+        if (unitDistance > MAX_UNIT_DISTANCE) {
+          continue;
+        }
+        
+        // Calculate midpoint between the two units
+        const midX = (unit1CenterX + unit2CenterX) / 2;
+        const midY = (unit1CenterY + unit2CenterY) / 2;
+        
+        // Check if line is close to this midpoint (without offset adjustment for distance check)
+        // We need to add the offset to lineX/lineY to get the visual arrow position
+        const visualArrowX = lineX + ARROW_OFFSET;
+        const visualArrowY = lineY + ARROW_OFFSET;
+        
+        const distance = Math.sqrt(
+          Math.pow(visualArrowX - midX, 2) + Math.pow(visualArrowY - midY, 2)
+        );
+        
+        if (distance < SNAP_THRESHOLD) {
+          // Adjust for the arrow's internal offset so the visual start is at the midpoint
+          const adjustedMidX = midX - ARROW_OFFSET;
+          const adjustedMidY = midY - ARROW_OFFSET;
+          
+          return {
+            shouldSnap: true,
+            snapX: adjustedMidX,
+            snapY: adjustedMidY,
+            unit1Id: unit1.id,
+            unit2Id: unit2.id,
+          };
+        }
+      }
+    }
+    
+    return { shouldSnap: false, snapX: lineX, snapY: lineY };
+  };
+
   const handleLinePositionChange = (id: string | number, x: number, y: number) => {
-    setPolyLines((prevLines) =>
-      prevLines.map((line) =>
-        line.id === id ? { ...line, x, y } : line
-      )
-    );
+    const lineId = id as string;
+    const snapResult = findSnapPosition(x, y, lineId);
+    
+    if (snapResult.shouldSnap && snapResult.unit1Id !== undefined && snapResult.unit2Id !== undefined) {
+      // Snap the line to the position between units
+      setPolyLines((prevLines) =>
+        prevLines.map((line) =>
+          line.id === lineId ? { ...line, x: snapResult.snapX, y: snapResult.snapY } : line
+        )
+      );
+      // Store the snap relationship
+      setSnappedLines((prev) => ({
+        ...prev,
+        [lineId]: {
+          unit1Id: snapResult.unit1Id!,
+          unit2Id: snapResult.unit2Id!,
+          snapX: snapResult.snapX,
+          snapY: snapResult.snapY,
+        },
+      }));
+    } else {
+      // Not snapping - remove from snapped lines if it was previously snapped
+      setPolyLines((prevLines) =>
+        prevLines.map((line) =>
+          line.id === lineId ? { ...line, x, y } : line
+        )
+      );
+      setSnappedLines((prev) => {
+        const newSnapped = { ...prev };
+        delete newSnapped[lineId];
+        return newSnapped;
+      });
+    }
   };
 
   const handleLineDoubleClick = (lineId: string | number) => {
@@ -450,6 +611,69 @@ export const CanvasPage: React.FC = () => {
       startMousePos: { x: e.clientX, y: e.clientY },
       startLength: line.segments[segmentIndex].length,
     });
+  };
+
+  const handleAddSegmentDragStart = (lineId: string) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const line = polyLines.find((l) => l.id === lineId);
+    if (!line) return;
+
+    const startMousePos = { x: e.clientX, y: e.clientY };
+    let directionDetermined = false;
+
+    // Track initial mouse movement to determine direction
+    const handleInitialMove = (moveEvent: MouseEvent) => {
+      if (directionDetermined) return;
+
+      const deltaX = moveEvent.clientX - startMousePos.x;
+      const deltaY = moveEvent.clientY - startMousePos.y;
+      const totalMovement = Math.abs(deltaX) + Math.abs(deltaY);
+
+      // Wait until user has moved at least 10px to determine direction
+      if (totalMovement < 10) return;
+
+      directionDetermined = true;
+
+      // Determine direction based on largest movement
+      let newDirection: 'north' | 'south' | 'east' | 'west';
+      if (Math.abs(deltaX) > Math.abs(deltaY)) {
+        newDirection = deltaX > 0 ? 'east' : 'west';
+      } else {
+        newDirection = deltaY > 0 ? 'south' : 'north';
+      }
+
+      // Add new segment with determined direction
+      setPolyLines((prevLines) =>
+        prevLines.map((l) => {
+          if (l.id === lineId) {
+            return {
+              ...l,
+              segments: [...l.segments, { direction: newDirection, length: 20 }],
+            };
+          }
+          return l;
+        })
+      );
+
+      // Start dragging the new segment
+      setDraggingSegment({
+        lineId,
+        segmentIndex: line.segments.length,
+        startMousePos: startMousePos,
+        startLength: 20,
+      });
+
+      // Remove this listener, the main drag handler will take over
+      window.removeEventListener('mousemove', handleInitialMove);
+    };
+
+    const handleInitialUp = () => {
+      window.removeEventListener('mousemove', handleInitialMove);
+      window.removeEventListener('mouseup', handleInitialUp);
+    };
+
+    window.addEventListener('mousemove', handleInitialMove);
+    window.addEventListener('mouseup', handleInitialUp);
   };
 
   // Handle mouse move for segment length dragging
@@ -716,7 +940,7 @@ export const CanvasPage: React.FC = () => {
             onDoubleClick={handleDoubleClick}
           >
             <div
-              className={`transition-shadow duration-200 relative ${
+              className={`w-64 transition-shadow duration-200 relative ${
                 draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"
               }`}
             >
@@ -752,41 +976,54 @@ export const CanvasPage: React.FC = () => {
         ))}
 
         {/* Render polylines */}
-        {polyLines.map((line) => (
-          <Draggable
-            key={line.id}
-            id={line.id}
-            x={line.x}
-            y={line.y}
-            canvasRef={canvasRef}
-            onPositionChange={handleLinePositionChange}
-            onDoubleClick={handleLineDoubleClick}
-          >
-            <div className="relative group">
-              <PolyLine
-                id={line.id}
-                segments={line.segments}
-                color={line.color}
-                strokeWidth={line.strokeWidth}
-                showArrowhead={line.showArrowhead}
-                onSegmentDrag={(segmentIndex) =>
-                  handleSegmentDragStart(line.id, segmentIndex)
-                }
-              />
-              {/* Delete button for line */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteLine(line.id);
-                }}
-                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-                title="Delete line"
-              >
-                ×
-              </button>
-            </div>
-          </Draggable>
-        ))}
+        {polyLines.map((line) => {
+          const isSnapped = snappedLines[line.id] !== undefined;
+          return (
+            <Draggable
+              key={line.id}
+              id={line.id}
+              x={line.x}
+              y={line.y}
+              canvasRef={canvasRef}
+              onPositionChange={handleLinePositionChange}
+              onDoubleClick={handleLineDoubleClick}
+            >
+              <div className="relative group">
+                {/* Snap indicator */}
+                {isSnapped && (
+                  <div 
+                    className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-green-500 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap"
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    Relationship
+                  </div>
+                )}
+                <PolyLine
+                  id={line.id}
+                  segments={line.segments}
+                  color={line.color}
+                  strokeWidth={line.strokeWidth}
+                  showArrowhead={line.showArrowhead}
+                  onSegmentDrag={(segmentIndex) =>
+                    handleSegmentDragStart(line.id, segmentIndex)
+                  }
+                  onAddSegmentDrag={handleAddSegmentDragStart(line.id)}
+                />
+                {/* Delete button for line */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteLine(line.id);
+                  }}
+                  className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+                  title="Delete line"
+                >
+                  ×
+                </button>
+              </div>
+            </Draggable>
+          );
+        })}
 
         {/* Popup Modal for UnitForm */}
         {showForm && editingId && (
@@ -876,6 +1113,21 @@ export const CanvasPage: React.FC = () => {
                   initialData={polyLines.find((l) => l.id === editingLineId)}
                   onSave={handleLineFormSave}
                   onCancel={cancelLineEdit}
+                  snappedToUnits={
+                    editingLineId && snappedLines[editingLineId]
+                      ? (() => {
+                          const snapInfo = snappedLines[editingLineId];
+                          const unit1 = unitBoxes.find((u) => u.id === snapInfo.unit1Id);
+                          const unit2 = unitBoxes.find((u) => u.id === snapInfo.unit2Id);
+                          return unit1 && unit2
+                            ? {
+                                unit1Name: unit1.unitId || unit1.name,
+                                unit2Name: unit2.unitId || unit2.name,
+                              }
+                            : null;
+                        })()
+                      : null
+                  }
                 />
               </div>
             </div>

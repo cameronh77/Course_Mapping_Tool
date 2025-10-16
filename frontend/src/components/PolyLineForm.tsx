@@ -12,9 +12,13 @@ interface PolyLineFormProps {
   initialData?: PolyLineFormData;
   onSave: (data: PolyLineFormData) => void;
   onCancel: () => void;
+  snappedToUnits?: {
+    unit1Name: string;
+    unit2Name: string;
+  } | null;
 }
 
-const PolyLineForm: React.FC<PolyLineFormProps> = ({ initialData, onSave, onCancel }) => {
+const PolyLineForm: React.FC<PolyLineFormProps> = ({ initialData, onSave, onCancel, snappedToUnits }) => {
   const [formData, setFormData] = useState<PolyLineFormData>(
     initialData || {
       segments: [{ direction: 'east', length: 100 }],
@@ -75,6 +79,28 @@ const PolyLineForm: React.FC<PolyLineFormProps> = ({ initialData, onSave, onCanc
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Snapped Units Display */}
+      {snappedToUnits && (
+        <div className="bg-green-50 border-2 border-green-500 rounded-lg p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-green-700">Relationship</span>
+          </div>
+          <div className="text-xs text-gray-700 space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">From:</span>
+              <span className="bg-white px-2 py-1 rounded border border-green-300">{snappedToUnits.unit1Name}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">To:</span>
+              <span className="bg-white px-2 py-1 rounded border border-green-300">{snappedToUnits.unit2Name}</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-600 italic">
+            This arrow is locked between these units. Drag it away to unsnap.
+          </p>
+        </div>
+      )}
+      
       <div className="space-y-2">
         <div className="flex justify-between items-center">
           <label className="block text-sm font-medium">Segments</label>
