@@ -86,9 +86,9 @@ const PolyLine: React.FC<PolyLineProps> = ({
     if (!showArrowhead || segments.length === 0) return null;
     
     const lastSegment = segments[segments.length - 1];
-    const arrowSize = 10;
-    const endPoint = { x: endX + offsetX, y: endY + offsetY };
-    
+    const arrowSize = 14;
+    const endPoint = { x: endX + offsetX, y: endY + offsetY - 10 };
+
     let arrowPath = '';
     
     switch (lastSegment.direction) {
