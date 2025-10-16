@@ -122,6 +122,13 @@ export const CanvasPage: React.FC = () => {
       snapY: number;
     };
   }>({});
+  const [arrowContextMenu, setArrowContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    lineId?: string;
+    segmentIndex?: number;
+  }>({ visible: false, x: 0, y: 0 });
 
   useEffect(() => {
     const loadUnits = async () => {
@@ -386,7 +393,7 @@ export const CanvasPage: React.FC = () => {
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  const handlePositionChange = (id: number, x: number, y: number) => {
+  const handlePositionChange = (id: number | string, x: number, y: number) => {
     setUnitBoxes((prevUnits) =>
       prevUnits.map((unit) =>
         unit.id === id ? { ...unit, x, y } : unit
@@ -445,7 +452,7 @@ export const CanvasPage: React.FC = () => {
     startEdit(unitId as number);
   }
 
-  function deleteUnit(unitId: number) {
+  function deleteUnit(unitId: number | string) {
     setUnitBoxes(unitBoxes.filter((unit) => unit.id !== unitId));
   }
 
@@ -571,6 +578,57 @@ export const CanvasPage: React.FC = () => {
 
   const deleteLine = (lineId: string) => {
     setPolyLines((prevLines) => prevLines.filter((line) => line.id !== lineId));
+    // Also remove from snapped lines if present
+    setSnappedLines((prev) => {
+      const newSnapped = { ...prev };
+      delete newSnapped[lineId];
+      return newSnapped;
+    });
+  };
+
+  const deleteSegment = (lineId: string, segmentIndex: number) => {
+    setPolyLines((prevLines) =>
+      prevLines.map((line) => {
+        if (line.id === lineId) {
+          const newSegments = [...line.segments];
+          newSegments.splice(segmentIndex, 1);
+          // If no segments left, return null to filter out later
+          if (newSegments.length === 0) return null;
+          return { ...line, segments: newSegments };
+        }
+        return line;
+      }).filter(Boolean) as typeof prevLines
+    );
+  };
+
+  const handleArrowContextMenu = (lineId: string, segmentIndex?: number) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setArrowContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      lineId,
+      segmentIndex,
+    });
+  };
+
+  const handleCloseContextMenu = () => {
+    setArrowContextMenu({ visible: false, x: 0, y: 0 });
+  };
+
+  const handleDeleteSegmentFromContextMenu = () => {
+    if (arrowContextMenu.lineId && arrowContextMenu.segmentIndex !== undefined) {
+      deleteSegment(arrowContextMenu.lineId, arrowContextMenu.segmentIndex);
+    }
+    handleCloseContextMenu();
+  };
+
+  const handleDeleteEntireArrowFromContextMenu = () => {
+    if (arrowContextMenu.lineId) {
+      deleteLine(arrowContextMenu.lineId);
+    }
+    handleCloseContextMenu();
   };
 
   const handleCreateLine = () => {
@@ -784,6 +842,19 @@ export const CanvasPage: React.FC = () => {
     };
   }, [draggingLine]);
 
+  // Handle global clicks to close context menu
+  useEffect(() => {
+    if (arrowContextMenu.visible) {
+      const handleGlobalClick = () => {
+        handleCloseContextMenu();
+      };
+      document.addEventListener('click', handleGlobalClick);
+      return () => {
+        document.removeEventListener('click', handleGlobalClick);
+      };
+    }
+  }, [arrowContextMenu.visible]);
+
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const term = e.target.value;
     setSearchTerm(term);
@@ -985,6 +1056,7 @@ export const CanvasPage: React.FC = () => {
             canvasRef={canvasRef}
             onPositionChange={handlePositionChange}
             onDoubleClick={handleDoubleClick}
+            onDelete={deleteUnit}
           >
             <div
               className={`w-64 transition-shadow duration-200 relative ${
@@ -1006,18 +1078,6 @@ export const CanvasPage: React.FC = () => {
                   {unit.unitId || unit.name}
                 </h2>
               </div>
-
-              {/* Delete button - appears on hover */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteUnit(unit.id);
-                }}
-                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-                title="Delete unit"
-              >
-                ×
-              </button>
             </div>
           </Draggable>
         ))}
@@ -1057,19 +1117,10 @@ export const CanvasPage: React.FC = () => {
                   }
                   onAddSegmentDrag={handleAddSegmentDragStart(line.id)}
                   onLineDragStart={handleLineDragStart(line.id)}
+                  onContextMenu={(segmentIndex) =>
+                    handleArrowContextMenu(line.id, segmentIndex)
+                  }
                 />
-                {/* Delete button for line */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteLine(line.id);
-                  }}
-                  className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-                  style={{ pointerEvents: 'all' }}
-                  title="Delete line"
-                >
-                  ×
-                </button>
               </div>
             </div>
           );
@@ -1237,6 +1288,33 @@ export const CanvasPage: React.FC = () => {
           onClose={() => setViewingTagMenu(false)}
           onSave={handleAddTagToUnits}
         ></AddTagMenu>
+      )}
+
+      {/* Arrow Context Menu */}
+      {arrowContextMenu.visible && (
+        <div
+          className="fixed bg-white border border-gray-300 rounded shadow-lg py-1 z-[9999]"
+          style={{
+            left: `${arrowContextMenu.x}px`,
+            top: `${arrowContextMenu.y}px`,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {arrowContextMenu.segmentIndex !== undefined && (
+            <button
+              className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-gray-700"
+              onClick={handleDeleteSegmentFromContextMenu}
+            >
+              Delete Segment
+            </button>
+          )}
+          <button
+            className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-red-600"
+            onClick={handleDeleteEntireArrowFromContextMenu}
+          >
+            {arrowContextMenu.segmentIndex !== undefined ? 'Delete Entire Arrow' : 'Delete Arrow'}
+          </button>
+        </div>
       )}
     </div>
   );

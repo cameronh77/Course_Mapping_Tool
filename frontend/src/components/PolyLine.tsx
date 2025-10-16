@@ -14,6 +14,7 @@ export interface PolyLineProps {
   onSegmentDrag?: (segmentIndex: number) => (e: React.MouseEvent) => void;
   onAddSegmentDrag?: (e: React.MouseEvent) => void;
   onLineDragStart?: (e: React.MouseEvent) => void;
+  onContextMenu?: (segmentIndex?: number) => (e: React.MouseEvent) => void;
 }
 
 const PolyLine: React.FC<PolyLineProps> = ({ 
@@ -23,7 +24,8 @@ const PolyLine: React.FC<PolyLineProps> = ({
   showArrowhead = true,
   onSegmentDrag,
   onAddSegmentDrag,
-  onLineDragStart
+  onLineDragStart,
+  onContextMenu
 }) => {
   // Calculate the path and bounding box
   const calculatePath = () => {
@@ -130,6 +132,7 @@ const PolyLine: React.FC<PolyLineProps> = ({
           strokeLinejoin="round"
           style={{ pointerEvents: 'stroke', cursor: onLineDragStart ? 'move' : 'default' }}
           onMouseDown={onLineDragStart}
+          onContextMenu={onContextMenu ? onContextMenu() : undefined}
         />
         
         {/* Arrowhead */}
@@ -146,6 +149,7 @@ const PolyLine: React.FC<PolyLineProps> = ({
             opacity={0.4}
             className="cursor-move hover:opacity-70"
             onMouseDown={onSegmentDrag(index)}
+            onContextMenu={onContextMenu ? onContextMenu(index) : undefined}
             style={{ pointerEvents: 'all' }}
           />
         ))}

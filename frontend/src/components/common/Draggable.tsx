@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 interface DraggableProps {
   id: number | string;
@@ -7,6 +7,7 @@ interface DraggableProps {
   canvasRef: React.RefObject<HTMLDivElement | null>;
   onPositionChange: (id: number | string, x: number, y: number) => void;
   onDoubleClick?: (id: number | string) => void;
+  onDelete?: (id: number | string) => void;
   children: React.ReactNode;
   className?: string;
   disabled?: boolean;
@@ -35,11 +36,17 @@ const Draggable: React.FC<DraggableProps> = ({
   canvasRef,
   onPositionChange,
   onDoubleClick,
+  onDelete,
   children,
   className = "",
   disabled = false,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+  }>({ visible: false, x: 0, y: 0 });
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (disabled) return;
@@ -86,20 +93,75 @@ const Draggable: React.FC<DraggableProps> = ({
     onDoubleClick?.(id);
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (!onDelete) return; // Only show context menu if onDelete is provided
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+    });
+  };
+
+  const handleCloseContextMenu = () => {
+    setContextMenu({ visible: false, x: 0, y: 0 });
+  };
+
+  const handleDelete = () => {
+    onDelete?.(id);
+    handleCloseContextMenu();
+  };
+
+  // Close context menu when clicking anywhere else
+  useEffect(() => {
+    if (contextMenu.visible) {
+      const handleGlobalClick = () => {
+        handleCloseContextMenu();
+      };
+      document.addEventListener('click', handleGlobalClick);
+      return () => {
+        document.removeEventListener('click', handleGlobalClick);
+      };
+    }
+  }, [contextMenu.visible]);
+
   return (
-    <div
-      className={`absolute ${className}`}
-      style={{ 
-        left: `${x}px`, 
-        top: `${y}px`, 
-        zIndex: isDragging ? 1000 : 1,
-        cursor: disabled ? 'default' : 'move'
-      }}
-      onMouseDown={handleMouseDown}
-      onDoubleClick={handleDoubleClick}
-    >
-      {children}
-    </div>
+    <>
+      <div
+        className={`absolute ${className}`}
+        style={{ 
+          left: `${x}px`, 
+          top: `${y}px`, 
+          zIndex: isDragging ? 1000 : 1,
+          cursor: disabled ? 'default' : 'move'
+        }}
+        onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
+        onContextMenu={handleContextMenu}
+      >
+        {children}
+      </div>
+
+      {/* Context Menu */}
+      {contextMenu.visible && onDelete && (
+        <div
+          className="fixed bg-white border border-gray-300 rounded shadow-lg py-1 z-[9999]"
+          style={{
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-red-600"
+            onClick={handleDelete}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </>
   );
 };
 
