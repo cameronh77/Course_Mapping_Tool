@@ -109,6 +109,11 @@ export const CanvasPage: React.FC = () => {
     startMousePos: { x: number; y: number };
     startLength: number;
   } | null>(null);
+  const [draggingLine, setDraggingLine] = useState<{
+    lineId: string;
+    startMousePos: { x: number; y: number };
+    startLinePos: { x: number; y: number };
+  } | null>(null);
   const [snappedLines, setSnappedLines] = useState<{
     [lineId: string]: {
       unit1Id: number;
@@ -613,6 +618,19 @@ export const CanvasPage: React.FC = () => {
     });
   };
 
+  const handleLineDragStart = (lineId: string) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const line = polyLines.find((l) => l.id === lineId);
+    if (!line) return;
+
+    setDraggingLine({
+      lineId,
+      startMousePos: { x: e.clientX, y: e.clientY },
+      startLinePos: { x: line.x, y: line.y },
+    });
+  };
+
   const handleAddSegmentDragStart = (lineId: string) => (e: React.MouseEvent) => {
     e.stopPropagation();
     const line = polyLines.find((l) => l.id === lineId);
@@ -723,8 +741,7 @@ export const CanvasPage: React.FC = () => {
         })
       );
     };
-
-    const handleMouseUp = () => {
+   const handleMouseUp = () => {
       setDraggingSegment(null);
     };
 
@@ -736,6 +753,36 @@ export const CanvasPage: React.FC = () => {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [draggingSegment, polyLines]);
+
+  // Handle line dragging
+  useEffect(() => {
+    if (!draggingLine || !canvasRef.current) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!canvasRef.current) return;
+      
+      const rect = canvasRef.current.getBoundingClientRect();
+      const deltaX = e.clientX - draggingLine.startMousePos.x;
+      const deltaY = e.clientY - draggingLine.startMousePos.y;
+      
+      const newX = draggingLine.startLinePos.x + deltaX;
+      const newY = draggingLine.startLinePos.y + deltaY;
+      
+      handleLinePositionChange(draggingLine.lineId, newX, newY);
+    };
+
+    const handleMouseUp = () => {
+      setDraggingLine(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingLine]);
 
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const term = e.target.value;
@@ -979,16 +1026,17 @@ export const CanvasPage: React.FC = () => {
         {polyLines.map((line) => {
           const isSnapped = snappedLines[line.id] !== undefined;
           return (
-            <Draggable
+            <div
               key={line.id}
-              id={line.id}
-              x={line.x}
-              y={line.y}
-              canvasRef={canvasRef}
-              onPositionChange={handleLinePositionChange}
-              onDoubleClick={handleLineDoubleClick}
+              className="absolute"
+              style={{
+                left: `${line.x}px`,
+                top: `${line.y}px`,
+                zIndex: draggingLine?.lineId === line.id ? 1000 : 1,
+              }}
+              onDoubleClick={() => handleLineDoubleClick(line.id)}
             >
-              <div className="relative group">
+              <div className="relative group" style={{ pointerEvents: 'none' }}>
                 {/* Snap indicator */}
                 {isSnapped && (
                   <div 
@@ -1008,6 +1056,7 @@ export const CanvasPage: React.FC = () => {
                     handleSegmentDragStart(line.id, segmentIndex)
                   }
                   onAddSegmentDrag={handleAddSegmentDragStart(line.id)}
+                  onLineDragStart={handleLineDragStart(line.id)}
                 />
                 {/* Delete button for line */}
                 <button
@@ -1016,12 +1065,13 @@ export const CanvasPage: React.FC = () => {
                     deleteLine(line.id);
                   }}
                   className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+                  style={{ pointerEvents: 'all' }}
                   title="Delete line"
                 >
                   ×
                 </button>
               </div>
-            </Draggable>
+            </div>
           );
         })}
 

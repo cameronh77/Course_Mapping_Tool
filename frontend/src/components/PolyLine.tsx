@@ -13,6 +13,7 @@ export interface PolyLineProps {
   showArrowhead?: boolean;
   onSegmentDrag?: (segmentIndex: number) => (e: React.MouseEvent) => void;
   onAddSegmentDrag?: (e: React.MouseEvent) => void;
+  onLineDragStart?: (e: React.MouseEvent) => void;
 }
 
 const PolyLine: React.FC<PolyLineProps> = ({ 
@@ -21,7 +22,8 @@ const PolyLine: React.FC<PolyLineProps> = ({
   strokeWidth, 
   showArrowhead = true,
   onSegmentDrag,
-  onAddSegmentDrag
+  onAddSegmentDrag,
+  onLineDragStart
 }) => {
   // Calculate the path and bounding box
   const calculatePath = () => {
@@ -115,7 +117,7 @@ const PolyLine: React.FC<PolyLineProps> = ({
     <svg
       width={width}
       height={height}
-      style={{ overflow: 'visible' }}
+      style={{ overflow: 'visible', pointerEvents: 'none' }}
     >
       <g transform={`translate(${offsetX}, ${offsetY})`}>
         {/* Main path */}
@@ -126,6 +128,8 @@ const PolyLine: React.FC<PolyLineProps> = ({
           fill="none"
           strokeLinecap="round"
           strokeLinejoin="round"
+          style={{ pointerEvents: 'stroke', cursor: onLineDragStart ? 'move' : 'default' }}
+          onMouseDown={onLineDragStart}
         />
         
         {/* Arrowhead */}
@@ -142,12 +146,13 @@ const PolyLine: React.FC<PolyLineProps> = ({
             opacity={0.4}
             className="cursor-move hover:opacity-70"
             onMouseDown={onSegmentDrag(index)}
+            style={{ pointerEvents: 'all' }}
           />
         ))}
         
         {/* Add new segment handle at the end of the arrow */}
         {onAddSegmentDrag && segmentPoints.length > 0 && (
-          <g>
+          <g style={{ pointerEvents: 'all' }}>
             {/* Outer ring for visibility */}
             <circle
               cx={segmentPoints[segmentPoints.length - 1].x}
