@@ -8,6 +8,8 @@ import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import Navbar from "../components/navbar";
 import { AddTagMenu } from "../components/common/AddTagMenu";
+import PolyLine, { type LineSegment } from "../components/PolyLine";
+import PolyLineForm, { type PolyLineFormData } from "../components/PolyLineForm";
 
 import { useCLOStore } from "../stores/useCLOStore";
 import { useTagStore } from "../stores/useTagStore";
@@ -86,6 +88,27 @@ export const CanvasPage: React.FC = () => {
     viewCourseTags,
     viewUnitTagsByCourse,
   } = useTagStore();
+
+  // PolyLine state
+  const [polyLines, setPolyLines] = useState<
+    Array<{
+      id: string;
+      segments: LineSegment[];
+      x: number;
+      y: number;
+      color: string;
+      strokeWidth: number;
+      showArrowhead: boolean;
+    }>
+  >([]);
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [showLineForm, setShowLineForm] = useState<boolean>(false);
+  const [draggingSegment, setDraggingSegment] = useState<{
+    lineId: string;
+    segmentIndex: number;
+    startMousePos: { x: number; y: number };
+    startLength: number;
+  } | null>(null);
 
   useEffect(() => {
     const loadUnits = async () => {
@@ -366,6 +389,130 @@ export const CanvasPage: React.FC = () => {
     setUnitBoxes(unitBoxes.filter((unit) => unit.id !== unitId));
   }
 
+  // PolyLine handlers
+  const handleLinePositionChange = (id: string | number, x: number, y: number) => {
+    setPolyLines((prevLines) =>
+      prevLines.map((line) =>
+        line.id === id ? { ...line, x, y } : line
+      )
+    );
+  };
+
+  const handleLineDoubleClick = (lineId: string | number) => {
+    setEditingLineId(lineId as string);
+    setShowLineForm(true);
+  };
+
+  const deleteLine = (lineId: string) => {
+    setPolyLines((prevLines) => prevLines.filter((line) => line.id !== lineId));
+  };
+
+  const handleCreateLine = () => {
+    const newLine = {
+      id: `line-${Date.now()}`,
+      segments: [
+        { direction: 'east' as const, length: 100 },
+      ],
+      x: 200,
+      y: 200,
+      color: '#000000',
+      strokeWidth: 2,
+      showArrowhead: true,
+    };
+    setPolyLines((prevLines) => [...prevLines, newLine]);
+  };
+
+  const handleLineFormSave = (data: PolyLineFormData) => {
+    if (editingLineId) {
+      setPolyLines((prevLines) =>
+        prevLines.map((line) =>
+          line.id === editingLineId ? { ...line, ...data } : line
+        )
+      );
+      setEditingLineId(null);
+      setShowLineForm(false);
+    }
+  };
+
+  const cancelLineEdit = () => {
+    setEditingLineId(null);
+    setShowLineForm(false);
+  };
+
+  const handleSegmentDragStart = (lineId: string, segmentIndex: number) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const line = polyLines.find((l) => l.id === lineId);
+    if (!line || segmentIndex >= line.segments.length) return;
+
+    setDraggingSegment({
+      lineId,
+      segmentIndex,
+      startMousePos: { x: e.clientX, y: e.clientY },
+      startLength: line.segments[segmentIndex].length,
+    });
+  };
+
+  // Handle mouse move for segment length dragging
+  useEffect(() => {
+    if (!draggingSegment) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const line = polyLines.find((l) => l.id === draggingSegment.lineId);
+      if (!line) return;
+
+      const segment = line.segments[draggingSegment.segmentIndex];
+      const deltaX = e.clientX - draggingSegment.startMousePos.x;
+      const deltaY = e.clientY - draggingSegment.startMousePos.y;
+
+      let newLength = draggingSegment.startLength;
+
+      // Calculate length based on direction
+      switch (segment.direction) {
+        case 'north':
+          newLength = draggingSegment.startLength - deltaY;
+          break;
+        case 'south':
+          newLength = draggingSegment.startLength + deltaY;
+          break;
+        case 'east':
+          newLength = draggingSegment.startLength + deltaX;
+          break;
+        case 'west':
+          newLength = draggingSegment.startLength - deltaX;
+          break;
+      }
+
+      // Constrain length
+      newLength = Math.max(20, Math.min(500, newLength));
+
+      setPolyLines((prevLines) =>
+        prevLines.map((line) => {
+          if (line.id === draggingSegment.lineId) {
+            const newSegments = [...line.segments];
+            newSegments[draggingSegment.segmentIndex] = {
+              ...newSegments[draggingSegment.segmentIndex],
+              length: Math.round(newLength),
+            };
+            return { ...line, segments: newSegments };
+          }
+          return line;
+        })
+      );
+    };
+
+    const handleMouseUp = () => {
+      setDraggingSegment(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingSegment, polyLines]);
+
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const term = e.target.value;
     setSearchTerm(term);
@@ -454,6 +601,12 @@ export const CanvasPage: React.FC = () => {
             onClick={() => setShowCreateForm(true)}
           >
             Create New Unit
+          </button>
+          <button
+            className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
+            onClick={handleCreateLine}
+          >
+            Add Line
           </button>
 
           {/* Search Input Container - Now inside the sidebar */}
@@ -598,6 +751,43 @@ export const CanvasPage: React.FC = () => {
           </Draggable>
         ))}
 
+        {/* Render polylines */}
+        {polyLines.map((line) => (
+          <Draggable
+            key={line.id}
+            id={line.id}
+            x={line.x}
+            y={line.y}
+            canvasRef={canvasRef}
+            onPositionChange={handleLinePositionChange}
+            onDoubleClick={handleLineDoubleClick}
+          >
+            <div className="relative group">
+              <PolyLine
+                id={line.id}
+                segments={line.segments}
+                color={line.color}
+                strokeWidth={line.strokeWidth}
+                showArrowhead={line.showArrowhead}
+                onSegmentDrag={(segmentIndex) =>
+                  handleSegmentDragStart(line.id, segmentIndex)
+                }
+              />
+              {/* Delete button for line */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteLine(line.id);
+                }}
+                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+                title="Delete line"
+              >
+                ×
+              </button>
+            </div>
+          </Draggable>
+        ))}
+
         {/* Popup Modal for UnitForm */}
         {showForm && editingId && (
           <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
@@ -658,6 +848,36 @@ export const CanvasPage: React.FC = () => {
                   color: null,
                 }}
               />
+            </div>
+          </div>
+        )}
+
+        {/* PolyLine Edit Modal */}
+        {showLineForm && editingLineId && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={cancelLineEdit}
+          >
+            <div 
+              className="bg-white rounded-lg shadow-lg max-w-md w-full max-h-[80vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center p-6 pb-4 flex-shrink-0">
+                <h2 className="text-black text-xl font-bold">Edit Line</h2>
+                <button
+                  onClick={cancelLineEdit}
+                  className="text-gray-500 hover:text-gray-700 text-xl"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="px-6 pb-6 overflow-y-auto flex-1">
+                <PolyLineForm
+                  initialData={polyLines.find((l) => l.id === editingLineId)}
+                  onSave={handleLineFormSave}
+                  onCancel={cancelLineEdit}
+                />
+              </div>
             </div>
           </div>
         )}
