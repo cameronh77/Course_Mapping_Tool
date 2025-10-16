@@ -59,10 +59,17 @@ const PolyLineForm: React.FC<PolyLineFormProps> = ({ initialData, onSave, onCanc
 
   const updateSegment = (index: number, field: 'direction' | 'length', value: any) => {
     const newSegments = [...formData.segments];
-    newSegments[index] = {
-      ...newSegments[index],
-      [field]: field === 'length' ? parseInt(value) : value,
-    };
+    if (field === 'direction') {
+      newSegments[index] = {
+        ...newSegments[index],
+        direction: value as 'north' | 'south' | 'east' | 'west',
+      };
+    } else {
+      newSegments[index] = {
+        ...newSegments[index],
+        length: parseInt(value),
+      };
+    }
     setFormData({ ...formData, segments: newSegments });
   };
 
@@ -99,12 +106,14 @@ const PolyLineForm: React.FC<PolyLineFormProps> = ({ initialData, onSave, onCanc
               <label className="block text-xs font-medium mb-1">Direction</label>
               <select
                 value={segment.direction}
-                onChange={(e) =>
-                  updateSegment(index, 'direction', e.target.value)
-                }
+                onChange={(e) => {
+                  e.stopPropagation();
+                  updateSegment(index, 'direction', e.target.value);
+                }}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md bg-white cursor-pointer"
-                style={{ pointerEvents: 'auto' }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onFocus={(e) => e.stopPropagation()}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="north">North (↑)</option>
                 <option value="south">South (↓)</option>
