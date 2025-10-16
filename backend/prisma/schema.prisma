@@ -21,11 +21,15 @@ model Course {
   expectedDuration      Int //The expected duration of the course
   numberTeachingPeriods Int //How many teaching periods in a year
 
-  unitsOffered     CourseUnit[]
-  themes           CourseTheme[]
-  learningOutcomes CourseLearningOutcome[]
-  specialisations  Specialisation[]
-  UnitRelationship UnitRelationship[]
+  unitsOffered     CourseUnit[]             
+  themes           CourseTheme[]            
+  learningOutcomes CourseLearningOutcome[]  
+  specialisations  Specialisation[]         
+  UnitRelationship UnitRelationship[]       
+
+  existingTagsUnit CourseUnitTags[]         
+  existingTags     Tag[]                    
+
 }
 
 model Unit {
@@ -35,19 +39,21 @@ model Unit {
   credits          Int
   semestersOffered Int[]
 
-  courseUnits      CourseUnit[]
-  themes           UnitTheme[]
-  learningOutcomes UnitLearningOutcome[]
-  relationships    UnitRelationship[]    @relation("UnitRelations")
-  relatedTo        UnitRelationship[]    @relation("RelatedUnits")
-  AssessmentULO    AssessmentULO[]
+  courseUnits      CourseUnit[]           
+  themes           UnitTheme[]            
+  learningOutcomes UnitLearningOutcome[]  
+  relationships    UnitRelationship[]     @relation("UnitRelations")
+  relatedTo        UnitRelationship[]     @relation("RelatedUnits")
+  AssessmentULO    AssessmentULO[]        
+
+  existingTags      CourseUnitTags[]      
 }
 
 model CourseUnit {
-  course   Course @relation(fields: [courseId], references: [courseId])
+  course   Course @relation(fields: [courseId], references: [courseId], onDelete:Cascade)
   courseId String
 
-  unit   Unit   @relation(fields: [unitId], references: [unitId])
+  unit   Unit   @relation(fields: [unitId], references: [unitId], onDelete:Cascade)
   unitId String
 
   semester          Int //The reccomended semester for the unit in the course  
@@ -58,32 +64,57 @@ model CourseUnit {
   Specialisation    Specialisation? @relation(fields: [specialisationSId], references: [sId])
   specialisationSId Int?
 
+  
+
   @@id([courseId, unitId])
+}
+
+model Tag {
+  tagId     Int   @id @default(autoincrement())
+  tagName   String
+
+  course    Course @relation(fields: [courseId], references: [courseId], onDelete:Cascade)
+  courseId  String
+
+  taggedUnits CourseUnitTags[] 
+}
+
+model CourseUnitTags {
+  course    Course @relation(fields: [courseId], references: [courseId], onDelete:Cascade)
+  courseId  String
+
+  unit      Unit   @relation(fields: [unitId], references: [unitId], onDelete:Cascade)
+  unitId    String
+
+  tag       Tag    @relation(fields: [tagId], references: [tagId], onDelete:Cascade)
+  tagId     Int
+
+  @@id([courseId, unitId, tagId])
 }
 
 model Theme {
   themeId   Int    @id @default(autoincrement())
   themeName String
 
-  courses CourseTheme[]
-  units   UnitTheme[]
+  courses CourseTheme[]   
+  units   UnitTheme[]     
 }
 
 model CourseTheme {
-  course   Course @relation(fields: [courseId], references: [courseId])
+  course   Course @relation(fields: [courseId], references: [courseId], onDelete:Cascade)
   courseId String
 
-  theme   Theme @relation(fields: [themeId], references: [themeId])
+  theme   Theme @relation(fields: [themeId], references: [themeId], onDelete:Cascade)
   themeId Int
 
   @@id([courseId, themeId])
 }
 
 model UnitTheme {
-  unit   Unit   @relation(fields: [unitId], references: [unitId])
+  unit   Unit   @relation(fields: [unitId], references: [unitId], onDelete:Cascade)
   unitId String
 
-  theme   Theme @relation(fields: [themeId], references: [themeId])
+  theme   Theme @relation(fields: [themeId], references: [themeId], onDelete:Cascade)
   themeId Int
 
   @@id([unitId, themeId])
@@ -94,8 +125,8 @@ model CourseLearningOutcome {
   cloDesc  String
   courseId String
 
-  course  Course                @relation(fields: [courseId], references: [courseId])
-  unitLos UnitLearningOutcome[]
+  course  Course                @relation(fields: [courseId], references: [courseId], onDelete:Cascade)
+  unitLos UnitLearningOutcome[] 
 }
 
 model UnitLearningOutcome {
@@ -104,7 +135,7 @@ model UnitLearningOutcome {
   unitId  String
   cloId   Int?
 
-  unit     Unit                   @relation(fields: [unitId], references: [unitId])
+  unit     Unit                   @relation(fields: [unitId], references: [unitId], onDelete:Cascade)
   courseLO CourseLearningOutcome? @relation(fields: [cloId], references: [cloId])
 
   assessments AssessmentULO[]

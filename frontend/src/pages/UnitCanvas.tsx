@@ -5,6 +5,10 @@ import { axiosInstance } from "../lib/axios";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import Navbar from "../components/navbar";
+import { AddTagMenu } from "../components/common/AddTagMenu";
+
+import { useCLOStore } from "../stores/useCLOStore";
+import { useTagStore } from "../stores/useTagStore";
 
 // Define the Unit interface
 interface Unit {
@@ -13,6 +17,18 @@ interface Unit {
   unitDesc: string;
   credits: number;
   semestersOffered: number[];
+}
+
+export interface CourseLearningOutcome {
+  cloId?: number | null;
+  cloDesc: string;
+  courseId: string | undefined;
+}
+
+export interface Tag {
+  tagId: number;
+  tagName: string;
+  courseId: string;
 }
 
 export const CanvasPage: React.FC = () => {
@@ -40,9 +56,10 @@ export const CanvasPage: React.FC = () => {
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const canvasRef = React.useRef<HTMLDivElement>(null);
   const { currentCourse } = useCourseStore();
+  const { currentCLOs } = useCLOStore();
 
   //State for multiple units selected
-  const [selectedUnits, setSelectedUnits] = useState<number[]>([]);
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
   // States for unit search
   const [searchTerm, setSearchTerm] = useState<string>("");
@@ -53,9 +70,23 @@ export const CanvasPage: React.FC = () => {
   // State for creating a new unit
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
 
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    unitId?: number;
+  }>({ visible: false, x: 0, y: 0 });
+
+  const [viewingTagMenu, setViewingTagMenu] = useState<boolean>(false);
+  const [tagData, setTagData] = useState<CourseLearningOutcome[] | null>(null);
+  const [newTag, setNewTag] = useState<string>("");
+  const { existingTags, createTag, addUnitTags, viewCourseTags } =
+    useTagStore();
+
   useEffect(() => {
     const loadUnits = async () => {
       await viewUnits();
+      await viewCourseTags(currentCourse.courseId);
     };
     loadUnits();
   }, []);
@@ -88,6 +119,23 @@ export const CanvasPage: React.FC = () => {
 
     loadCanvasState();
   }, [currentCourse]);
+
+  const handleAddTagToUnits = (tag: number) => {
+    console.log("Tag being added", tag);
+    const apiData = selectedUnits.map((unit) => {
+      return {
+        courseId: currentCourse.courseId,
+        unitId: unit,
+        tagId: tag,
+      };
+    });
+    const addData = async (apiData) => {
+      await addUnitTags(apiData);
+    };
+
+    addData(apiData);
+    setViewingTagMenu(false);
+  };
 
   const handleSaveCanvas = async () => {
     if (currentCourse?.courseId) {
@@ -182,10 +230,15 @@ export const CanvasPage: React.FC = () => {
   }
 
   function handleMouseDownCanvas(e: React.MouseEvent) {
+    if (e.button !== 0) {
+      return;
+    }
     if (selectedUnits.length !== 0) {
       setSelectedUnits([]);
       return;
     }
+
+    setContextMenu({ ...contextMenu, visible: false });
     e.preventDefault();
     e.stopPropagation();
 
@@ -223,7 +276,7 @@ export const CanvasPage: React.FC = () => {
             unit.y < selectedRect.y2
           );
         })
-        .map((unit) => unit.id);
+        .map((unit) => unit.unitId);
       setSelectedUnits(selected);
       console.log(selectedUnits);
       document.removeEventListener("mouseup", handleCanvasUp);
@@ -233,6 +286,7 @@ export const CanvasPage: React.FC = () => {
   }
 
   function handleMouseDown(e: React.MouseEvent, id: number) {
+    setContextMenu({ ...contextMenu, visible: false });
     e.preventDefault();
     e.stopPropagation();
 
@@ -327,6 +381,17 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
+  function handleRightClick(e: React.MouseEvent) {
+    e.preventDefault(); // prevent default browser context menu
+    e.stopPropagation();
+
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+    });
+  }
+
   return (
     <div className="flex h-screen">
       {/* Sidebar container - Removed w-1/6 and relative, let CanvasSidebar define width */}
@@ -388,6 +453,28 @@ export const CanvasPage: React.FC = () => {
                 </div>
               )}
           </div>
+          <h2 className="text-lg font-bold mb-4 text-gray-800 pt-15">Tags</h2>
+          <input
+            type="text"
+            placeholder="Create a tag..."
+            // Using Tailwind classes for a standard input look
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline my-5"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+          />
+          <button
+            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
+            onClick={() => {
+              createTag({ tagName: newTag, courseId: currentCourse.courseId });
+              setNewTag("");
+            }}
+          >
+            Create New Tag
+          </button>
+
+          <h2 className="text-md font-bold mb-4 text-gray-800 pt-10">
+            Existing Tags
+          </h2>
         </CanvasSidebar>
       </div>
 
@@ -397,6 +484,7 @@ export const CanvasPage: React.FC = () => {
         className="w-full bg-white p-6 overflow-hidden relative"
         style={{ userSelect: "none" }}
         onMouseDown={handleMouseDownCanvas}
+        onContextMenu={(e) => handleRightClick(e)}
       >
         {/* ... (Absolutely positioned unit boxes and Modals) ... */}
         {unitBoxes.map((unit) => (
@@ -418,7 +506,7 @@ export const CanvasPage: React.FC = () => {
             >
               <div
                 className={`border ${
-                  selectedUnits.includes(unit.id)
+                  selectedUnits.includes(unit.unitId)
                     ? `border-4 border-blue-400 ring-4 ring-blue-300`
                     : `border-gray-300`
                 } p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300`}
@@ -511,6 +599,60 @@ export const CanvasPage: React.FC = () => {
           </div>
         )}
       </div>
+      {contextMenu.visible && (
+        <div
+          className="fixed bg-white border border-gray-300 shadow-lg rounded-md flex flex-col text-left z-50"
+          style={{
+            top: contextMenu.y,
+            left: contextMenu.x,
+            minWidth: "150px",
+            padding: "0.5rem",
+          }}
+          onClick={() => setContextMenu({ ...contextMenu, visible: false })}
+        >
+          <button
+            className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left"
+            onClick={() => {
+              setViewingTagMenu(true);
+              setTagData(
+                currentCLOs.map((clo: CourseLearningOutcome) => {
+                  return {
+                    name: clo.cloDesc,
+                    id: clo.cloId,
+                  };
+                })
+              );
+            }}
+          >
+            Add Learning Outcome
+          </button>
+          <button
+            className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left"
+            onClick={() => {
+              setViewingTagMenu(true);
+              setTagData(
+                existingTags.map((tag: Tag) => {
+                  return {
+                    name: tag.tagName,
+                    id: tag.tagId,
+                  };
+                })
+              );
+            }}
+          >
+            Add Tag
+          </button>
+        </div>
+      )}
+      {viewingTagMenu && (
+        <AddTagMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          data={tagData}
+          onClose={() => setViewingTagMenu(false)}
+          onSave={handleAddTagToUnits}
+        ></AddTagMenu>
+      )}
     </div>
   );
 };
