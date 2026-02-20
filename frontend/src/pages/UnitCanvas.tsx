@@ -115,6 +115,23 @@ export const CanvasPage: React.FC = () => {
     loadUnits();
   }, []);
 
+  // Fetch relationships when course changes
+  useEffect(() => {
+    const loadRelationships = async () => {
+      if (currentCourse?.courseId) {
+        try {
+          const response = await axiosInstance.get(
+            `/unit-relationship/view?courseId=${currentCourse.courseId}`
+          );
+          setRelationships(response.data);
+        } catch (error) {
+          console.error("Error loading relationships:", error);
+        }
+      }
+    };
+    loadRelationships();
+  }, [currentCourse]);
+
   useEffect(() => {
     const loadCanvasState = async () => {
       if (currentCourse?.courseId) {
@@ -436,6 +453,183 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
+  // Handle creating a new relationship
+  const handleCreateRelationship = async (targetUnitId: string) => {
+    if (!connectionSource || connectionSource === targetUnitId) {
+      setConnectionSource(null);
+      return;
+    }
+
+    try {
+      const response = await axiosInstance.post("/unit-relationship/create", {
+        unitId: connectionSource,
+        relatedId: targetUnitId,
+        relationshipType: selectedRelationType,
+        courseId: currentCourse.courseId,
+        entryType: 0,
+      });
+
+      setRelationships([...relationships, response.data]);
+      setConnectionSource(null);
+      setConnectionMode(false);
+    } catch (error: any) {
+      console.error("Error creating relationship:", error);
+      alert(error.response?.data?.message || "Failed to create relationship");
+      setConnectionSource(null);
+    }
+  };
+
+  // Handle deleting a relationship
+  const handleDeleteRelationship = async (relationshipId: number) => {
+    try {
+      await axiosInstance.delete(`/unit-relationship/delete/${relationshipId}`);
+      setRelationships(relationships.filter((r) => r.id !== relationshipId));
+    } catch (error) {
+      console.error("Error deleting relationship:", error);
+      alert("Failed to delete relationship");
+    }
+  };
+
+  // Handle unit click in connection mode
+  const handleUnitClickForConnection = (unitId: string) => {
+    if (!connectionMode) return;
+
+    if (!connectionSource) {
+      setConnectionSource(unitId);
+    } else {
+      handleCreateRelationship(unitId);
+    }
+  };
+
+  // Get relationship line color based on type
+  const getRelationshipColor = (type: UnitRelationship["relationshipType"]) => {
+    switch (type) {
+      case "PREREQUISITE":
+        return "#EF4444"; // red
+      case "COREQUISITE":
+        return "#F59E0B"; // amber
+      case "PROGRESSION":
+        return "#10B981"; // green
+      case "CONNECTED":
+        return "#6366F1"; // indigo
+      default:
+        return "#6B7280"; // gray
+    }
+  };
+
+  // Render connection lines between units
+  const renderConnectionLines = () => {
+    const UNIT_WIDTH = 256; // w-64 = 256px
+    const UNIT_HEIGHT = 56; // approximate height with padding
+
+    // Helper function to find intersection point of line from center to edge of rectangle
+    const getBoxEdgePoint = (
+      centerX: number,
+      centerY: number,
+      targetX: number,
+      targetY: number,
+      width: number,
+      height: number
+    ) => {
+      const dx = targetX - centerX;
+      const dy = targetY - centerY;
+
+      if (dx === 0 && dy === 0) return { x: centerX, y: centerY };
+
+      const halfWidth = width / 2;
+      const halfHeight = height / 2;
+
+      // Calculate the scale factor to reach the edge
+      const scaleX = dx !== 0 ? halfWidth / Math.abs(dx) : Infinity;
+      const scaleY = dy !== 0 ? halfHeight / Math.abs(dy) : Infinity;
+      const scale = Math.min(scaleX, scaleY);
+
+      return {
+        x: centerX + dx * scale,
+        y: centerY + dy * scale,
+      };
+    };
+
+    return relationships.map((rel) => {
+      const sourceUnit = unitBoxes.find((u) => u.unitId === rel.unitId);
+      const targetUnit = unitBoxes.find((u) => u.unitId === rel.relatedId);
+
+      if (!sourceUnit || !targetUnit) return null;
+
+      // Calculate center points of units
+      const sourceCenterX = sourceUnit.x + UNIT_WIDTH / 2;
+      const sourceCenterY = sourceUnit.y + UNIT_HEIGHT / 2;
+      const targetCenterX = targetUnit.x + UNIT_WIDTH / 2;
+      const targetCenterY = targetUnit.y + UNIT_HEIGHT / 2;
+
+      // Get the edge points where the line should start and end
+      const startPoint = getBoxEdgePoint(
+        sourceCenterX,
+        sourceCenterY,
+        targetCenterX,
+        targetCenterY,
+        UNIT_WIDTH,
+        UNIT_HEIGHT
+      );
+
+      const endPoint = getBoxEdgePoint(
+        targetCenterX,
+        targetCenterY,
+        sourceCenterX,
+        sourceCenterY,
+        UNIT_WIDTH,
+        UNIT_HEIGHT
+      );
+
+      const color = getRelationshipColor(rel.relationshipType);
+
+      // Calculate arrow head
+      const angle = Math.atan2(
+        targetCenterY - sourceCenterY,
+        targetCenterX - sourceCenterX
+      );
+      const arrowLength = 10;
+      const arrowAngle = Math.PI / 6;
+
+      // Pull back the end point slightly for the arrow head
+      const arrowTipX = endPoint.x;
+      const arrowTipY = endPoint.y;
+      const lineEndX = endPoint.x - arrowLength * Math.cos(angle);
+      const lineEndY = endPoint.y - arrowLength * Math.sin(angle);
+
+      return (
+        <g
+          key={rel.id}
+          className="cursor-pointer pointer-events-auto"
+          onClick={() => handleDeleteRelationship(rel.id)}
+        >
+          <line
+            x1={startPoint.x}
+            y1={startPoint.y}
+            x2={lineEndX}
+            y2={lineEndY}
+            stroke={color}
+            strokeWidth="2"
+          />
+          {/* Arrow head */}
+          <polygon
+            points={`${arrowTipX},${arrowTipY} ${arrowTipX - arrowLength * Math.cos(angle - arrowAngle)},${arrowTipY - arrowLength * Math.sin(angle - arrowAngle)} ${arrowTipX - arrowLength * Math.cos(angle + arrowAngle)},${arrowTipY - arrowLength * Math.sin(angle + arrowAngle)}`}
+            fill={color}
+          />
+          {/* Hover area for easier clicking */}
+          <line
+            x1={startPoint.x}
+            y1={startPoint.y}
+            x2={endPoint.x}
+            y2={endPoint.y}
+            stroke="transparent"
+            strokeWidth="12"
+          />
+        </g>
+      );
+    });
+  };
+
   function handleRightClick(e: React.MouseEvent) {
     e.preventDefault(); // prevent default browser context menu
     e.stopPropagation();
@@ -467,8 +661,85 @@ export const CanvasPage: React.FC = () => {
             Create New Unit
           </button>
 
+          {/* Connection Mode Section */}
+          <div className="border-t border-gray-200 pt-4 mt-4">
+            <h2 className="text-lg font-bold mb-2 text-gray-800">Connection Mode</h2>
+            <button
+              className={`${
+                connectionMode
+                  ? "bg-red-500 hover:bg-red-600"
+                  : "bg-purple-500 hover:bg-purple-600"
+              } text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-2`}
+              onClick={() => {
+                setConnectionMode(!connectionMode);
+                setConnectionSource(null);
+              }}
+            >
+              {connectionMode ? "Exit Connection Mode" : "Enter Connection Mode"}
+            </button>
+            
+            {connectionMode && (
+              <>
+                <label className="block text-gray-700 text-sm font-bold mb-2">
+                  Relationship Type:
+                </label>
+                <select
+                  className="shadow border rounded w-full py-2 px-3 text-gray-700 mb-2"
+                  value={selectedRelationType}
+                  onChange={(e) =>
+                    setSelectedRelationType(
+                      e.target.value as UnitRelationship["relationshipType"]
+                    )
+                  }
+                >
+                  <option value="PREREQUISITE">Prerequisite</option>
+                  <option value="COREQUISITE">Corequisite</option>
+                  <option value="PROGRESSION">Progression</option>
+                  <option value="CONNECTED">Connected</option>
+                </select>
+                <p className="text-sm text-gray-600 mb-2">
+                  {connectionSource
+                    ? `Click another unit to connect from "${connectionSource}"`
+                    : "Click a unit to start connection"}
+                </p>
+                {connectionSource && (
+                  <button
+                    className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded text-sm w-full"
+                    onClick={() => setConnectionSource(null)}
+                  >
+                    Cancel Selection
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Legend */}
+            <div className="mt-4">
+              <h3 className="text-sm font-bold text-gray-700 mb-2">Legend:</h3>
+              <div className="space-y-1 text-xs">
+                <div className="flex items-center">
+                  <div className="w-4 h-1 bg-red-500 mr-2"></div>
+                  <span className="text-gray-600">Prerequisite</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-4 h-1 bg-amber-500 mr-2"></div>
+                  <span className="text-gray-600">Corequisite</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-4 h-1 bg-green-500 mr-2"></div>
+                  <span className="text-gray-600">Progression</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-4 h-1 bg-indigo-500 mr-2"></div>
+                  <span className="text-gray-600">Connected</span>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Click a line to delete it</p>
+            </div>
+          </div>
+
           {/* Search Input Container - Now inside the sidebar */}
-          <div className="relative mb-4">
+          <div className="relative mb-4 mt-4">
             <input
               type="text"
               placeholder="Search for a unit..."
@@ -562,7 +833,6 @@ export const CanvasPage: React.FC = () => {
         onMouseDown={handleMouseDownCanvas}
         onContextMenu={(e) => handleRightClick(e)}
       >
-        {/* ... (Absolutely positioned unit boxes and Modals) ... */}
         {unitBoxes.map((unit) => (
           <div
             key={unit.id}
@@ -570,10 +840,11 @@ export const CanvasPage: React.FC = () => {
             style={{
               left: `${unit.x}px`,
               top: `${unit.y}px`,
-              zIndex: draggedUnit === unit.id ? 1000 : 1,
+              zIndex: draggedUnit === unit.id ? 10 : 1,
             }}
             onMouseDown={(e) => handleMouseDown(e, unit.id)}
             onDoubleClick={() => handleDoubleClick(unit.id)}
+            onClick={() => handleUnitClickForConnection(unit.unitId!)}
           >
             <div
               className={`transition-shadow duration-200 relative ${
@@ -610,6 +881,9 @@ export const CanvasPage: React.FC = () => {
             </div>
           </div>
         ))}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 20 }}>
+          {renderConnectionLines()}
+        </svg>
 
         {/* Popup Modal for UnitForm */}
         {showForm && editingId && (
