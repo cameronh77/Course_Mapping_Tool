@@ -31,6 +31,17 @@ export interface Tag {
   courseId: string;
 }
 
+// Define the UnitRelationship interface
+export interface UnitRelationship {
+  id: number;
+  unitId: string;
+  relatedId: string;
+  relationshipType: "PREREQUISITE" | "COREQUISITE" | "PROGRESSION" | "CONNECTED";
+  courseId: string | null;
+  sId: number | null;
+  entryType: number;
+}
+
 export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<
     Array<{
@@ -88,6 +99,12 @@ export const CanvasPage: React.FC = () => {
     viewCourseTags,
     viewUnitTagsByCourse,
   } = useTagStore();
+
+  // State for connection mode
+  const [connectionMode, setConnectionMode] = useState<boolean>(false);
+  const [connectionSource, setConnectionSource] = useState<string | null>(null);
+  const [relationships, setRelationships] = useState<UnitRelationship[]>([]);
+  const [selectedRelationType, setSelectedRelationType] = useState<UnitRelationship["relationshipType"]>("PREREQUISITE");
 
   useEffect(() => {
     const loadUnits = async () => {
