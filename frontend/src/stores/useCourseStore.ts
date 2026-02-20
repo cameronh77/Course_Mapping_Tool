@@ -1,8 +1,18 @@
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 
+// Helper function to get persisted course from localStorage
+const getPersistedCourse = () => {
+  try {
+    const stored = localStorage.getItem("currentCourse");
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+};
+
 export const useCourseStore = create((set) => ({
-  currentCourse: null,
+  currentCourse: getPersistedCourse(),
   existingCourses: [],
 
   createCourse: async (data) => {
@@ -28,8 +38,13 @@ export const useCourseStore = create((set) => ({
   setCurrentCourse: async (data) => {
     try {
       console.log(data);
+      // Persist to localStorage
+      if (data) {
+        localStorage.setItem("currentCourse", JSON.stringify(data));
+      } else {
+        localStorage.removeItem("currentCourse");
+      }
       set({ currentCourse: data });
-      console.log({ currentCourse });
     } catch (error) {
       console.log(error.response.data.message);
     }
