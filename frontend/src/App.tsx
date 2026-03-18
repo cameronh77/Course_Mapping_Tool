@@ -7,15 +7,16 @@ import { CanvasPage } from "./pages/UnitCanvas";
 import Navbar from "./components/navbar";
 import { useCourseStore } from "./stores/useCourseStore";
 import { CourseEdit } from "./pages/CourseEdit";
+import { TmpNewHomePage } from "./pages/TmpNewHomePage";
 
 const App = () => {
   const { currentCourse } = useCourseStore();
 
   return (
     <div>
-      {currentCourse && <Navbar />}
+      {/*currentCourse && <Navbar />**/}
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<TmpNewHomePage />} />
         <Route path="/UnitCanvas" element={<CanvasPage />} />
         <Route path="/CourseEdit" element={<CourseEdit />} />
       </Routes>
