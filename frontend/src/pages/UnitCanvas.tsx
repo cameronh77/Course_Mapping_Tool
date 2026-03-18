@@ -139,16 +139,16 @@ export const CanvasPage: React.FC = () => {
           const response = await axiosInstance.get(
             `/unit-relationship/view?courseId=${currentCourse.courseId}`
           );
-          // Only load relationships - don't auto-display them
-          // Users must manually create relationships in Connection Mode
-          setRelationships([]);
+          // Only load relationships if this is the first time loading for this course
+          // Don't reload on every render/unit drop
+          setRelationships(response.data);
         } catch (error) {
           console.error("Error loading relationships:", error);
         }
       }
     };
     loadRelationships();
-  }, [currentCourse]);
+  }, [currentCourse?.courseId]); // Only depend on courseId, not entire currentCourse object
 
   useEffect(() => {
     const loadCanvasState = async () => {
