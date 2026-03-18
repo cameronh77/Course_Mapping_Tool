@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { axiosInstance } from "../lib/axios";
@@ -43,14 +43,14 @@ export interface UnitRelationship {
 }
 
 // Grid Layout Constants
-const COL_WIDTH = 600; // Increased to 600 to provide a massive routing corridor between years
-const ROW_HEIGHT = 150; // Increased to 150 to give more vertical breathing room
-const START_X = 80;  // Room for Semester labels on the left vertically
+const COL_WIDTH = 600; 
+const ROW_HEIGHT = 150; 
+const START_X = 80;  
 const START_Y = 80;  
 const DEFAULT_YEARS = 3;
 const DEFAULT_SEMESTERS = 2;
-const MAX_UNITS_PER_SEM = 4; // 4 units per semester -> 8 rows total for 2 semesters
-const UNIT_BOX_WIDTH = 256; // 64 * 4 for Tailwind w-64
+const MAX_UNITS_PER_SEM = 4; 
+const UNIT_BOX_WIDTH = 256; 
 
 export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<
@@ -71,15 +71,22 @@ export const CanvasPage: React.FC = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState<boolean>(false);
 
-  // State for dragging
+  // State for dragging existing units
   const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
-  const canvasRef = React.useRef<HTMLDivElement>(null);
+  
+  // State for dragging NEW units from sidebar
+  const [draggedNewUnit, setDraggedNewUnit] = useState<{
+    unit: Unit;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const canvasRef = useRef<HTMLDivElement>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
 
-  //State for multiple units selected
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
   // States for unit search
@@ -88,7 +95,6 @@ export const CanvasPage: React.FC = () => {
   const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
   const { checkUnitExists, viewUnits, createUnit, updateUnit } = useUnitStore();
 
-  // State for creating a new unit
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
 
   const [contextMenu, setContextMenu] = useState<{
@@ -110,7 +116,6 @@ export const CanvasPage: React.FC = () => {
     viewUnitTagsByCourse,
   } = useTagStore();
 
-  // State for connection mode
   const [connectionMode, setConnectionMode] = useState<boolean>(false);
   const [connectionSource, setConnectionSource] = useState<string | null>(null);
   const [relationships, setRelationships] = useState<UnitRelationship[]>([]);
@@ -127,7 +132,6 @@ export const CanvasPage: React.FC = () => {
     loadUnits();
   }, [currentCourse?.courseId]);
 
-  // Fetch relationships when course changes
   useEffect(() => {
     const loadRelationships = async () => {
       if (currentCourse?.courseId) {
@@ -153,7 +157,7 @@ export const CanvasPage: React.FC = () => {
           );
           const courseUnits = response.data;
           const loadedUnitBoxes = courseUnits.map((cu: any) => ({
-            id: Date.now() + Math.random(), // Simple unique ID
+            id: Date.now() + Math.random(),
             name: cu.unit.unitName,
             unitId: cu.unitId,
             description: cu.unit.unitDesc,
@@ -161,7 +165,7 @@ export const CanvasPage: React.FC = () => {
             semestersOffered: cu.unit.semestersOffered,
             x: cu.position.x,
             y: cu.position.y,
-            color: cu.color || "#3B82F6", // Default color
+            color: cu.color || "#3B82F6",
           }));
           setUnitBoxes(loadedUnitBoxes);
         } catch (error) {
@@ -169,11 +173,9 @@ export const CanvasPage: React.FC = () => {
         }
       }
     };
-
     loadCanvasState();
   }, [currentCourse]);
 
-  // Calculate actual coordinates accounting for potential scrolling
   const getMouseCoords = (e: MouseEvent | React.MouseEvent, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect();
     return {
@@ -183,17 +185,14 @@ export const CanvasPage: React.FC = () => {
   };
 
   const handleAddTagToUnits = (tag: number) => {
-    const apiData = selectedUnits.map((unit) => {
-      return {
-        courseId: currentCourse.courseId,
-        unitId: unit,
-        tagId: tag,
-      };
-    });
+    const apiData = selectedUnits.map((unit) => ({
+      courseId: currentCourse.courseId,
+      unitId: unit,
+      tagId: tag,
+    }));
     const addData = async (data: any) => {
       await addUnitTags(data);
     };
-
     addData(apiData);
     setViewingTagMenu(false);
   };
@@ -213,58 +212,32 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  const createUnitBox = (selectedUnit: Unit & { color?: string }) => {
-    const unitExists = unitBoxes.some(
-      (unit) => unit.unitId === selectedUnit.unitId
-    );
-
+  // Logic to add a unit at a specific coordinate (with snapping)
+  const addUnitToCanvasAtPos = (selectedUnit: Unit, x: number, y: number, color?: string) => {
+    const unitExists = unitBoxes.some((u) => u.unitId === selectedUnit.unitId);
     if (unitExists) {
       alert("This unit has already been added.");
-      setShowSearchResults(false);
       return;
     }
 
-    // Determine grid size based on course settings
-    const years = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
     const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
-    const totalCols = years; // 1 column per year
-    const totalRows = semestersPerYear * MAX_UNITS_PER_SEM; // e.g. 2 * 4 = 8 rows total
+    const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
 
-    let nextCol = 0;
-    let nextRow = 0;
-    let foundSlot = false;
-
-    // Scan grid top-to-bottom (slots), left-to-right (years)
-    for (let col = 0; col < totalCols; col++) {
-      for (let row = 0; row < totalRows; row++) {
-        const expectedX = START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
-        const expectedY = START_Y + row * ROW_HEIGHT + 20;
-        
-        // Check if any unit is currently occupying this grid slot
-        const isOccupied = unitBoxes.some(u => 
-          Math.abs(u.x - expectedX) < 50 && Math.abs(u.y - expectedY) < 50
-        );
-
-        if (!isOccupied) {
-          nextCol = col;
-          nextRow = row;
-          foundSlot = true;
-          break;
-        }
+    // Snap logic
+    const col = Math.max(0, Math.round((x - START_X) / COL_WIDTH));
+    let closestRow = 0;
+    let minDistance = Infinity;
+    for (let r = 0; r < totalRows; r++) {
+      const expectedY = START_Y + r * ROW_HEIGHT + 20;
+      const dist = Math.abs(y - expectedY);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestRow = r;
       }
-      if (foundSlot) break;
     }
 
-    const defaultX = 100 + unitBoxes.length * 50;
-    const defaultY = 100 + unitBoxes.length * 30;
-
-    let finalX = defaultX;
-    let finalY = defaultY;
-
-    if (foundSlot) {
-      finalX = START_X + nextCol * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
-      finalY = START_Y + nextRow * ROW_HEIGHT + 20;
-    }
+    const snappedX = START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+    const snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
 
     const newUnit = {
       id: Date.now(),
@@ -273,13 +246,50 @@ export const CanvasPage: React.FC = () => {
       description: selectedUnit.unitDesc,
       credits: selectedUnit.credits,
       semestersOffered: selectedUnit.semestersOffered,
-      x: finalX,
-      y: finalY,
-      color: selectedUnit.color || "#3B82F6",
+      x: snappedX,
+      y: snappedY,
+      color: color || "#3B82F6",
     };
     
-    setUnitBoxes([...unitBoxes, newUnit]);
-    setShowSearchResults(false);
+    setUnitBoxes((prev) => [...prev, newUnit]);
+  };
+
+  // Initiate drag for a new unit from the sidebar
+  const handleNewUnitMouseDown = (e: React.MouseEvent, unit: Unit) => {
+    e.preventDefault();
+    // Use screen coordinates to track the initial "floating" drag
+    setDraggedNewUnit({
+      unit,
+      x: e.clientX,
+      y: e.clientY
+    });
+
+    const handleGlobalMove = (moveEvent: MouseEvent) => {
+      setDraggedNewUnit(prev => prev ? { ...prev, x: moveEvent.clientX, y: moveEvent.clientY } : null);
+    };
+
+    const handleGlobalUp = (upEvent: MouseEvent) => {
+      document.removeEventListener("mousemove", handleGlobalMove);
+      document.removeEventListener("mouseup", handleGlobalUp);
+
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        // Check if dropped within canvas bounds
+        if (
+          upEvent.clientX >= rect.left &&
+          upEvent.clientX <= rect.right &&
+          upEvent.clientY >= rect.top &&
+          upEvent.clientY <= rect.bottom
+        ) {
+          const canvasCoords = getMouseCoords(upEvent as unknown as React.MouseEvent, canvasRef.current);
+          addUnitToCanvasAtPos(unit, canvasCoords.x - (UNIT_BOX_WIDTH / 2), canvasCoords.y - 40);
+        }
+      }
+      setDraggedNewUnit(null);
+    };
+
+    document.addEventListener("mousemove", handleGlobalMove);
+    document.addEventListener("mouseup", handleGlobalUp);
   };
 
   function startEdit(id: number) {
@@ -290,38 +300,29 @@ export const CanvasPage: React.FC = () => {
   function handleFormSave(formData: UnitFormData) {
     if (editingId) {
       const editedUnit = unitBoxes.find((unit) => unit.id === editingId);
-
       if (editedUnit) {
         updateUnit(editedUnit.unitId!, {
           unitName: formData.unitName || editedUnit.name,
           unitDesc: formData.unitDesc || editedUnit.description,
           credits: formData.credits || editedUnit.credits,
-          semestersOffered:
-            formData.semestersOffered || editedUnit.semestersOffered,
+          semestersOffered: formData.semestersOffered || editedUnit.semestersOffered,
         })
           .then(() => {
-            setUnitBoxes(
-              unitBoxes.map((unit) =>
-                unit.id === editingId
-                  ? {
-                      ...unit,
-                      name: formData.unitName || unit.name,
-                      unitId: formData.unitId || unit.unitId,
-                      description: formData.unitDesc || unit.description,
-                      credits: formData.credits || unit.credits,
-                      semestersOffered:
-                        formData.semestersOffered || unit.semestersOffered,
-                      color: formData.color || unit.color,
-                    }
-                  : unit
-              )
-            );
+            setUnitBoxes(unitBoxes.map((unit) =>
+                unit.id === editingId ? {
+                  ...unit,
+                  name: formData.unitName || unit.name,
+                  unitId: formData.unitId || unit.unitId,
+                  description: formData.unitDesc || unit.description,
+                  credits: formData.credits || unit.credits,
+                  semestersOffered: formData.semestersOffered || unit.semestersOffered,
+                  color: formData.color || unit.color,
+                } : unit
+            ));
             setEditingId(null);
             setShowForm(false);
           })
-          .catch((error) => {
-            console.error("Error updating unit:", error);
-          });
+          .catch((err) => console.error("Error updating unit:", err));
       }
     }
   }
@@ -333,16 +334,11 @@ export const CanvasPage: React.FC = () => {
 
   function handleMouseDownCanvas(e: React.MouseEvent) {
     if (e.button !== 0) return;
-
     if (selectedUnits.length !== 0) {
       setSelectedUnits([]);
       return;
     }
-
     setContextMenu({ ...contextMenu, visible: false });
-    e.preventDefault();
-    e.stopPropagation();
-
     if (!canvasRef.current) return;
 
     const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
@@ -350,29 +346,18 @@ export const CanvasPage: React.FC = () => {
 
     const handleCanvasUp = (mouseEvent: MouseEvent) => {
       const { x: endX, y: endY } = getMouseCoords(mouseEvent, canvasRef.current!);
-
       const selectedRect = {
         x1: Math.min(start.initialX, endX),
         x2: Math.max(start.initialX, endX),
         y1: Math.min(start.initialY, endY),
         y2: Math.max(start.initialY, endY),
       };
-
       const selected = unitBoxes
-        .filter((unit) => {
-          return (
-            unit.x > selectedRect.x1 &&
-            unit.x < selectedRect.x2 &&
-            unit.y > selectedRect.y1 &&
-            unit.y < selectedRect.y2
-          );
-        })
+        .filter((unit) => unit.x > selectedRect.x1 && unit.x < selectedRect.x2 && unit.y > selectedRect.y1 && unit.y < selectedRect.y2)
         .map((unit) => unit.unitId as string);
-        
       setSelectedUnits(selected);
       document.removeEventListener("mouseup", handleCanvasUp);
     };
-
     document.addEventListener("mouseup", handleCanvasUp);
   }
 
@@ -386,77 +371,49 @@ export const CanvasPage: React.FC = () => {
 
     const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
     const offset = { x: mouseX - unit.x, y: mouseY - unit.y };
-    
     setDragOffset(offset);
     setDraggedUnit(id);
     setIsDragging(false);
 
     const handleMove = (moveEvent: MouseEvent) => {
       if (!canvasRef.current) return;
-
       setIsDragging(true);
       const { x: newMouseX, y: newMouseY } = getMouseCoords(moveEvent, canvasRef.current);
-
-      setUnitBoxes((prevUnits) =>
-        prevUnits.map((unit) =>
-          unit.id === id
-            ? {
-                ...unit,
-                x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH)),
-                y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 100)),
-              }
-            : unit
-        )
-      );
+      setUnitBoxes((prevUnits) => prevUnits.map((u) => u.id === id ? {
+          ...u,
+          x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH)),
+          y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 100)),
+      } : u));
     };
 
     const handleUp = () => {
-      // Upon dropping, implement "Snap to Grid" functionality
-      setUnitBoxes((prevUnits) =>
-        prevUnits.map((unit) => {
-          if (unit.id === id) {
-            let snappedX = unit.x;
-            let snappedY = unit.y;
-
-            // Only snap if dropped within the general grid area
-            if (unit.x >= START_X - 100 && unit.y >= START_Y - 50) {
-              const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
-              const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
-
-              // Snap to closest column (Year)
-              const col = Math.max(0, Math.round((unit.x - START_X) / COL_WIDTH));
-              
-              // Snap to closest row (Unit Slot) using distance logic
-              let closestRow = 0;
-              let minDistance = Infinity;
-              
-              for (let r = 0; r < totalRows; r++) {
-                const expectedY = START_Y + r * ROW_HEIGHT + 20;
-                
-                const dist = Math.abs(unit.y - expectedY);
-                if (dist < minDistance) {
-                  minDistance = dist;
-                  closestRow = r;
-                }
-              }
-
-              snappedX = START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
-              snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
+      setUnitBoxes((prevUnits) => prevUnits.map((u) => {
+        if (u.id === id) {
+          let snappedX = u.x;
+          let snappedY = u.y;
+          if (u.x >= START_X - 100 && u.y >= START_Y - 50) {
+            const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+            const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+            const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
+            let closestRow = 0;
+            let minDistance = Infinity;
+            for (let r = 0; r < totalRows; r++) {
+              const expectedY = START_Y + r * ROW_HEIGHT + 20;
+              const dist = Math.abs(u.y - expectedY);
+              if (dist < minDistance) { minDistance = dist; closestRow = r; }
             }
-
-            return { ...unit, x: snappedX, y: snappedY };
+            snappedX = START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+            snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
           }
-          return unit;
-        })
-      );
-
+          return { ...u, x: snappedX, y: snappedY };
+        }
+        return u;
+      }));
       setDraggedUnit(null);
-      setDragOffset({ x: 0, y: 0 });
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
       setTimeout(() => setIsDragging(false), 100);
     };
-
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleUp);
   }
@@ -474,7 +431,6 @@ export const CanvasPage: React.FC = () => {
     const term = e.target.value;
     setSearchTerm(term);
     setShowSearchResults(true);
-
     if (term) {
       try {
         const response = await axiosInstance.get(`/unit/view?search=${term}`);
@@ -497,33 +453,15 @@ export const CanvasPage: React.FC = () => {
           return;
         }
       }
-    } catch (error) {
-      console.error("Duplicate check failed", error);
-      alert("Failed to check for duplicates. Please try again.");
-      return;
-    }
-
-    try {
       const newUnit = await createUnit(data);
       setShowCreateForm(false);
-
       if (newUnit && newUnit.unitId) {
-        const unitToAdd: Unit & { color?: string } = {
-          unitId: newUnit.unitId,
-          unitName: newUnit.unitName,
-          unitDesc: newUnit.unitDesc || '',
-          credits: newUnit.credits || 0,
-          semestersOffered: newUnit.semestersOffered || [],
-          color: data.color || '#3B82F6', 
-        };
-        createUnitBox(unitToAdd);
-      } else {
-        alert("Unit created successfully, but missing data to display the box");
+          // Instead of auto-dropping, we could just alert it's created or clear search
+          // But usually, users might want to immediately find it in search to drag it.
+          setSearchTerm(newUnit.unitId);
+          handleSearchChange({ target: { value: newUnit.unitId } } as any);
       }
-    } catch(error) {
-      console.error("Error creating unit: ", error);
-      alert("Failed to create unit. It might already exist or server error.");
-    }
+    } catch(err) { console.error(err); alert("Failed to create unit."); }
   };
 
   const handleCreateRelationship = async (targetUnitId: string) => {
@@ -531,7 +469,6 @@ export const CanvasPage: React.FC = () => {
       setConnectionSource(null);
       return;
     }
-
     try {
       const response = await axiosInstance.post("/unit-relationship/create", {
         unitId: connectionSource,
@@ -540,34 +477,23 @@ export const CanvasPage: React.FC = () => {
         courseId: currentCourse.courseId,
         entryType: 0,
       });
-
       setRelationships([...relationships, response.data]);
       setConnectionSource(null);
       setConnectionMode(false);
-    } catch (error: any) {
-      console.error("Error creating relationship:", error);
-      alert(error.response?.data?.message || "Failed to create relationship");
-      setConnectionSource(null);
-    }
+    } catch (error: any) { alert(error.response?.data?.message || "Failed to create relationship"); setConnectionSource(null); }
   };
 
   const handleDeleteRelationship = async (relationshipId: number) => {
     try {
       await axiosInstance.delete(`/unit-relationship/delete/${relationshipId}`);
       setRelationships(relationships.filter((r) => r.id !== relationshipId));
-    } catch (error) {
-      console.error("Error deleting relationship:", error);
-      alert("Failed to delete relationship");
-    }
+    } catch (err) { alert("Failed to delete relationship"); }
   };
 
   const handleUnitClickForConnection = (unitId: string) => {
     if (!connectionMode) return;
-    if (!connectionSource) {
-      setConnectionSource(unitId);
-    } else {
-      handleCreateRelationship(unitId);
-    }
+    if (!connectionSource) setConnectionSource(unitId);
+    else handleCreateRelationship(unitId);
   };
 
   const getRelationshipColor = (type: UnitRelationship["relationshipType"]) => {
@@ -582,187 +508,95 @@ export const CanvasPage: React.FC = () => {
 
   const renderConnectionLines = () => {
     const UNIT_HEIGHT = 80;
-
-    // Helper to calculate bezier curve points perfectly routed through the vertical voids
     const getCurvePath = (source: any, target: any, relId: number) => {
       const sx = source.x + UNIT_BOX_WIDTH / 2;
       const sy = source.y + UNIT_HEIGHT / 2;
       const tx = target.x + UNIT_BOX_WIDTH / 2;
       const ty = target.y + UNIT_HEIGHT / 2;
-
-      // Determine the column (Year) index of the units
       const colS = Math.max(0, Math.round((source.x - START_X) / COL_WIDTH));
       const colT = Math.max(0, Math.round((target.x - START_X) / COL_WIDTH));
       const isSameCol = colS === colT;
-      
-      // Fan offset prevents parallel connections from completely overlapping
       const fanOffset = (relId % 7) * 15 - 45; 
-
       let d = "";
       let endX, endY, angle;
 
       if (isSameCol) {
-        // Same Year -> Route out to the right corridor, down/up, and back into the right side
         const startX = sx + UNIT_BOX_WIDTH / 2;
         endX = tx + UNIT_BOX_WIDTH / 2;
         endY = ty;
-        
-        // Exact mathematical center of the void to the right of this column
         const corridorX = START_X + (colS + 1) * COL_WIDTH + fanOffset;
-
         d = `M ${startX} ${sy} C ${corridorX} ${sy}, ${corridorX} ${ty}, ${endX} ${ty}`;
-        angle = Math.PI; // Arrow points left, back into the right-edge
+        angle = Math.PI;
       } else if (Math.abs(colS - colT) === 1) {
-        // Adjacent Years -> Route perfectly down the middle of the void separating them
         const isLtoR = colT > colS;
         const startX = sx + (isLtoR ? 1 : -1) * (UNIT_BOX_WIDTH / 2);
         endX = tx + (isLtoR ? -1 : 1) * (UNIT_BOX_WIDTH / 2);
         endY = ty;
-
-        // Exact mathematical center of the void directly between the two adjacent columns
         const corridorX = START_X + Math.max(colS, colT) * COL_WIDTH + fanOffset;
-
         d = `M ${startX} ${sy} C ${corridorX} ${sy}, ${corridorX} ${ty}, ${endX} ${ty}`;
-        angle = isLtoR ? 0 : Math.PI; // Arrow points in matching direction
+        angle = isLtoR ? 0 : Math.PI;
       } else {
-        // Skipping Years -> Route out, drop entirely below the unit grid, across, and back up
         const isLtoR = colT > colS;
         const startX = sx + (isLtoR ? 1 : -1) * (UNIT_BOX_WIDTH / 2);
         endX = tx + (isLtoR ? -1 : 1) * (UNIT_BOX_WIDTH / 2);
         endY = ty;
-
-        // First void right after source, second void right before target
         const corridor1X = START_X + (isLtoR ? colS + 1 : colS) * COL_WIDTH + fanOffset;
         const corridor2X = START_X + (isLtoR ? colT : colT + 1) * COL_WIDTH + fanOffset;
-
-        // Find the safe bottom Y value below all units
         const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
         const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
         const bottomY = START_Y + totalRows * ROW_HEIGHT + 60 + Math.abs(fanOffset) * 2;
         const midX = (corridor1X + corridor2X) / 2;
-
-        // Sweeping U-shape curve routing strictly through the empty corridors and below the grid
         d = `M ${startX} ${sy} C ${corridor1X} ${sy}, ${corridor1X} ${bottomY}, ${midX} ${bottomY} C ${corridor2X} ${bottomY}, ${corridor2X} ${ty}, ${endX} ${ty}`;
         angle = isLtoR ? 0 : Math.PI;
       }
-
       return { d, endX, endY, angle };
     };
 
     return relationships.map((rel) => {
       const sourceUnit = unitBoxes.find((u) => u.unitId === rel.unitId);
       const targetUnit = unitBoxes.find((u) => u.unitId === rel.relatedId);
-
       if (!sourceUnit || !targetUnit) return null;
-
       const { d, endX, endY, angle } = getCurvePath(sourceUnit, targetUnit, rel.id);
       const color = getRelationshipColor(rel.relationshipType);
-
       const arrowLength = 12;
       const arrowAngle = Math.PI / 6;
-
       return (
-        <g
-          key={rel.id}
-          className="cursor-pointer pointer-events-auto transition-opacity duration-200 hover:opacity-100 opacity-50"
-          onClick={() => handleDeleteRelationship(rel.id)}
-        >
-          {/* The Bezier Curve Path */}
+        <g key={rel.id} className="cursor-pointer pointer-events-auto transition-opacity duration-200 hover:opacity-100 opacity-50" onClick={() => handleDeleteRelationship(rel.id)}>
           <path d={d} stroke={color} strokeWidth="3" fill="none" className="drop-shadow-sm" />
-          
-          {/* Arrow Head */}
-          <polygon
-            points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`}
-            fill={color}
-          />
-          
-          {/* Invisible thicker path for easier hover/clicking */}
+          <polygon points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`} fill={color} />
           <path d={d} stroke="transparent" strokeWidth="16" fill="none" />
         </g>
       );
     });
   };
 
-  function handleRightClick(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({
-      visible: true,
-      x: e.clientX,
-      y: e.clientY,
-    });
-  }
-
-  // Visual layout for dynamic grid zones behind drag/drop layer
   const renderGridBackground = () => {
     const years = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
     const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
     const totalCols = years;
     const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
-
     return (
       <div className="absolute inset-0 pointer-events-none" style={{ minWidth: START_X + totalCols * COL_WIDTH, minHeight: START_Y + totalRows * ROW_HEIGHT + 100 }}>
-        {/* Year Headers (Horizontal across the top) */}
         {Array.from({ length: totalCols }).map((_, col) => (
-          <div
-            key={`year-${col}`}
-            className="absolute border-b-2 border-gray-300 flex items-center justify-center font-bold text-gray-700 text-xl"
-            style={{
-              top: 20,
-              left: START_X + col * COL_WIDTH,
-              width: COL_WIDTH,
-              height: 40,
-            }}
-          >
+          <div key={`year-${col}`} className="absolute border-b-2 border-gray-300 flex items-center justify-center font-bold text-gray-700 text-xl" style={{ top: 20, left: START_X + col * COL_WIDTH, width: COL_WIDTH, height: 40 }}>
             Year {col + 1}
           </div>
         ))}
-
-        {/* Semester Headers (Vertical on the left) and their Dropzone Slots */}
         {Array.from({ length: semestersPerYear }).map((_, s) => {
           const semStartY = START_Y + s * (MAX_UNITS_PER_SEM * ROW_HEIGHT);
           const semHeight = MAX_UNITS_PER_SEM * ROW_HEIGHT;
-
           return (
             <div key={`sem-group-${s}`}>
-              {/* Semester Vertical Heading */}
-              <div
-                className="absolute border-r-2 border-gray-300 bg-gray-50 flex items-center justify-center font-bold text-gray-600 uppercase tracking-widest text-lg"
-                style={{
-                  top: semStartY,
-                  left: 0,
-                  width: START_X,
-                  height: semHeight,
-                  writingMode: 'vertical-rl', // Renders text vertically
-                  transform: 'rotate(180deg)', // Read from bottom to top
-                }}
-              >
+              <div className="absolute border-r-2 border-gray-300 bg-gray-50 flex items-center justify-center font-bold text-gray-600 uppercase tracking-widest text-lg" style={{ top: semStartY, left: 0, width: START_X, height: semHeight, writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
                 Semester {s + 1}
               </div>
-
-              {/* Horizontal dividers to separate semesters visually */}
-              {s > 0 && (
-                 <div className="absolute border-t-2 border-gray-300" 
-                      style={{ top: semStartY, left: 0, width: START_X + totalCols * COL_WIDTH }} />
-              )}
-
-              {/* Grid Slots for this Semester */}
+              {s > 0 && <div className="absolute border-t-2 border-gray-300" style={{ top: semStartY, left: 0, width: START_X + totalCols * COL_WIDTH }} />}
               {Array.from({ length: MAX_UNITS_PER_SEM }).map((_, unitInSem) => {
                 const absRow = s * MAX_UNITS_PER_SEM + unitInSem;
-
                 return (
                   <div key={`sem-${s}-unit-${unitInSem}`}>
                     {Array.from({ length: totalCols }).map((_, col) => (
-                      <div
-                        key={`slot-${col}-${absRow}`}
-                        className="absolute border-2 border-dashed border-gray-300 rounded-lg bg-gray-50/50 flex items-center justify-center"
-                        style={{
-                          top: START_Y + absRow * ROW_HEIGHT + 20,
-                          left: START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2,
-                          width: UNIT_BOX_WIDTH,
-                          height: 80, 
-                        }}
-                      >
+                      <div key={`slot-${col}-${absRow}`} className="absolute border-2 border-dashed border-gray-300 rounded-lg bg-gray-50/50 flex items-center justify-center" style={{ top: START_Y + absRow * ROW_HEIGHT + 20, left: START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2, width: UNIT_BOX_WIDTH, height: 80 }}>
                         <span className="text-gray-400 font-medium text-xs opacity-50">Drop Unit Here</span>
                       </div>
                     ))}
@@ -776,235 +610,93 @@ export const CanvasPage: React.FC = () => {
     );
   };
 
-  // Dimensions of the scrollable inner area based on the required grid cells
-  const years = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
-  const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
-  const totalCols = years;
-  const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
-  const innerWidth = Math.max(1200, START_X + totalCols * COL_WIDTH + 100);
-  const innerHeight = Math.max(800, START_Y + totalRows * ROW_HEIGHT + 100);
+  const yearsCount = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
+  const semPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+  const innerWidth = Math.max(1200, START_X + yearsCount * COL_WIDTH + 100);
+  const innerHeight = Math.max(800, START_Y + (semPerYear * MAX_UNITS_PER_SEM) * ROW_HEIGHT + 100);
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen relative overflow-hidden">
       <div className="flex flex-col h-full z-20">
         <CanvasSidebar>
-          <button
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
-            onClick={handleSaveCanvas}
-          >
+          <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4" onClick={handleSaveCanvas}>
             Save Canvas
           </button>
-          <button
-            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
-            onClick={() => setShowCreateForm(true)}
-          >
+          <button className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4" onClick={() => setShowCreateForm(true)}>
             Create New Unit
           </button>
 
           <div className="border-t border-gray-200 pt-4 mt-4">
             <h2 className="text-lg font-bold mb-2 text-gray-800">Connection Mode</h2>
-            <button
-              className={`${
-                connectionMode ? "bg-red-500 hover:bg-red-600" : "bg-purple-500 hover:bg-purple-600"
-              } text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-2`}
-              onClick={() => {
-                setConnectionMode(!connectionMode);
-                setConnectionSource(null);
-              }}
-            >
+            <button className={`${connectionMode ? "bg-red-500 hover:bg-red-600" : "bg-purple-500 hover:bg-purple-600"} text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-2`} onClick={() => { setConnectionMode(!connectionMode); setConnectionSource(null); }}>
               {connectionMode ? "Exit Connection Mode" : "Enter Connection Mode"}
             </button>
-            
             {connectionMode && (
               <>
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Relationship Type:
-                </label>
-                <select
-                  className="shadow border rounded w-full py-2 px-3 text-gray-700 mb-2"
-                  value={selectedRelationType}
-                  onChange={(e) =>
-                    setSelectedRelationType(e.target.value as UnitRelationship["relationshipType"])
-                  }
-                >
+                <label className="block text-gray-700 text-sm font-bold mb-2">Relationship Type:</label>
+                <select className="shadow border rounded w-full py-2 px-3 text-gray-700 mb-2" value={selectedRelationType} onChange={(e) => setSelectedRelationType(e.target.value as UnitRelationship["relationshipType"])}>
                   <option value="PREREQUISITE">Prerequisite</option>
                   <option value="COREQUISITE">Corequisite</option>
                   <option value="PROGRESSION">Progression</option>
                   <option value="CONNECTED">Connected</option>
                 </select>
-                <p className="text-sm text-gray-600 mb-2">
-                  {connectionSource
-                    ? `Click another unit to connect from "${connectionSource}"`
-                    : "Click a unit to start connection"}
-                </p>
-                {connectionSource && (
-                  <button
-                    className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded text-sm w-full"
-                    onClick={() => setConnectionSource(null)}
-                  >
-                    Cancel Selection
-                  </button>
-                )}
               </>
             )}
-
-            <div className="mt-4">
-              <h3 className="text-sm font-bold text-gray-700 mb-2">Legend:</h3>
-              <div className="space-y-1 text-xs">
-                <div className="flex items-center"><div className="w-4 h-1 bg-red-500 mr-2"></div><span className="text-gray-600">Prerequisite</span></div>
-                <div className="flex items-center"><div className="w-4 h-1 bg-amber-500 mr-2"></div><span className="text-gray-600">Corequisite</span></div>
-                <div className="flex items-center"><div className="w-4 h-1 bg-green-500 mr-2"></div><span className="text-gray-600">Progression</span></div>
-                <div className="flex items-center"><div className="w-4 h-1 bg-indigo-500 mr-2"></div><span className="text-gray-600">Connected</span></div>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">Click a line to delete it</p>
-            </div>
           </div>
 
           <div className="relative mb-4 mt-4">
-            <input
-              type="text"
-              placeholder="Search for a unit..."
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-              value={searchTerm}
-              onChange={handleSearchChange}
-              onFocus={() => setShowSearchResults(true)}
-              onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
-            />
+            <label className="block text-gray-700 text-sm font-bold mb-2 uppercase tracking-wide">Search & Drag Units</label>
+            <input type="text" placeholder="Search to drag..." className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" value={searchTerm} onChange={handleSearchChange} onFocus={() => setShowSearchResults(true)} />
             {showSearchResults && searchTerm.length > 0 && searchResults.length > 0 && (
               <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
                 {searchResults.map((unit) => (
                   <div
                     key={unit.unitId}
-                    className="px-4 py-2 text-black hover:bg-gray-100 cursor-pointer text-sm"
-                    onClick={() => createUnitBox(unit)}
+                    className="px-4 py-3 text-black hover:bg-blue-50 cursor-grab active:cursor-grabbing border-b border-gray-100 last:border-0"
+                    onMouseDown={(e) => handleNewUnitMouseDown(e, unit)}
                   >
-                    <span className="font-semibold">{unit.unitId}</span> - {unit.unitName}
+                    <div className="flex flex-col">
+                      <span className="font-bold text-blue-700 text-xs">{unit.unitId}</span>
+                      <span className="text-sm font-medium">{unit.unitName}</span>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-            {showSearchResults && searchTerm.length > 0 && searchResults.length === 0 && (
-              <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50">
-                <div className="px-4 py-2 text-gray-500 text-sm">No units found.</div>
-              </div>
-            )}
           </div>
 
-          <h2 className="text-lg font-bold mb-4 text-gray-800 pt-15">Tags</h2>
-          <input
-            type="text"
-            placeholder="Create a tag..."
-            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline my-5"
-            value={newTag}
-            onChange={(e) => setNewTag(e.target.value)}
-          />
-          <button
-            className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
-            onClick={() => {
-              createTag({ tagName: newTag, courseId: currentCourse.courseId });
-              setNewTag("");
-            }}
-          >
+          <h2 className="text-lg font-bold mb-4 text-gray-800 pt-10">Tags</h2>
+          <input type="text" placeholder="Create a tag..." className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline my-2" value={newTag} onChange={(e) => setNewTag(e.target.value)} />
+          <button className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4" onClick={() => { createTag({ tagName: newTag, courseId: currentCourse.courseId }); setNewTag(""); }}>
             Create New Tag
           </button>
-
-          <h2 className="text-md font-bold mb-4 text-gray-800 pt-10">Existing Tags</h2>
-          <div className="flex flex-col max-h-[10vh] overflow-y-auto">
-            {existingTags.map((tag: Tag) => {
-              return (
-                <button
-                  key={tag.tagId}
-                  className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-2"
-                  onClick={() => {
-                    setSelectedUnits([]);
-                    const newArr = existingTagConnections
-                      .filter((conn) => conn.tagId === tag.tagId)
-                      .map((conn) => conn.unitId);
-                    setSelectedUnits(newArr as string[]);
-                  }}
-                >
-                  {tag.tagName}
-                </button>
-              );
-            })}
-          </div>
         </CanvasSidebar>
       </div>
 
-      {/* Main Canvas Area - Updated to be scrollable and house the inner layout */}
-      <div
-        ref={canvasRef}
-        className="flex-1 bg-white overflow-auto relative"
-        style={{ userSelect: "none" }}
-        onMouseDown={handleMouseDownCanvas}
-        onContextMenu={(e) => handleRightClick(e)}
-      >
-        <div 
-          className="relative bg-white" 
-          style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}
-        >
-          {/* Inject Dynamic Mapping Grid Layers Behind Dragging Interface */}
+      <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={handleMouseDownCanvas} onContextMenu={(e) => handleRightClick(e)}>
+        <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
           {renderGridBackground()}
-
-          {/* Render Active Unit Nodes on Top of Grid */}
           {unitBoxes.map((unit) => (
-            <div
-              key={unit.id}
-              className="absolute w-64 cursor-move select-none group"
-              style={{
-                left: `${unit.x}px`,
-                top: `${unit.y}px`,
-                zIndex: draggedUnit === unit.id ? 30 : 10,
-              }}
-              onMouseDown={(e) => handleMouseDown(e, unit.id)}
-              onDoubleClick={() => handleDoubleClick(unit.id)}
-              onClick={() => handleUnitClickForConnection(unit.unitId!)}
-            >
-              <div
-                className={`transition-shadow duration-200 relative ${
-                  draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"
-                }`}
-              >
-                <div
-                  className={`border ${
-                    selectedUnits.includes(unit.unitId!)
-                      ? `border-4 border-blue-400 ring-4 ring-blue-300`
-                      : `border-gray-300`
-                  } p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300`}
-                  style={{ backgroundColor: unit.color || "#3B82F6", color: "white" }}
-                >
-                  <h2 className="text-lg font-semibold text-center text-white">
-                    {unit.unitId || unit.name}
-                  </h2>
+            <div key={unit.id} className="absolute w-64 cursor-move select-none group" style={{ left: `${unit.x}px`, top: `${unit.y}px`, zIndex: draggedUnit === unit.id ? 30 : 10 }} onMouseDown={(e) => handleMouseDown(e, unit.id)} onDoubleClick={() => handleDoubleClick(unit.id)} onClick={() => handleUnitClickForConnection(unit.unitId!)}>
+              <div className={`transition-shadow duration-200 relative ${draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"}`}>
+                <div className={`border ${selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300`} style={{ backgroundColor: unit.color || "#3B82F6", color: "white" }}>
+                  <h2 className="text-lg font-semibold text-center text-white">{unit.unitId || unit.name}</h2>
                 </div>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteUnit(unit.id);
-                  }}
-                  className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-                  title="Delete unit"
-                >
-                  ×
-                </button>
+                <button onClick={(e) => { e.stopPropagation(); deleteUnit(unit.id); }} className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">×</button>
               </div>
             </div>
           ))}
-
-          {/* Render lines behind units (zIndex 5 is between Background Grid at 0 and Units at 10) */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
             {renderConnectionLines()}
           </svg>
         </div>
 
-        {/* Modal Interstitials below... */}
         {showForm && editingId && (
-          <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full max-h-96 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[100]">
+            <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Edit Unit</h2>
-                <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700 text-xl">×</button>
+                <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
               </div>
               <UnitForm
                 onSave={handleFormSave}
@@ -1022,58 +714,40 @@ export const CanvasPage: React.FC = () => {
         )}
 
         {showCreateForm && (
-          <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full max-h-96 overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[100]">
+            <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Create Unit</h2>
-                <button onClick={() => setShowCreateForm(false)} className="text-gray-500 hover:text-gray-700 text-xl">×</button>
+                <button onClick={() => setShowCreateForm(false)} className="text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
               </div>
-              <UnitForm
-                onSave={handleCreateUnit}
-                initialData={{
-                  unitId: null, unitName: null, unitDesc: null, credits: null, semestersOffered: null, color: null,
-                }}
-              />
+              <UnitForm onSave={handleCreateUnit} initialData={{ unitId: null, unitName: null, unitDesc: null, credits: null, semestersOffered: null, color: null }} />
             </div>
           </div>
         )}
       </div>
 
-      {contextMenu.visible && (
-        <div
-          className="fixed bg-white border border-gray-300 shadow-lg rounded-md flex flex-col text-left z-50"
-          style={{ top: contextMenu.y, left: contextMenu.x, minWidth: "150px", padding: "0.5rem" }}
-          onClick={() => setContextMenu({ ...contextMenu, visible: false })}
+      {/* Floating Drag Preview for New Units */}
+      {draggedNewUnit && (
+        <div 
+          className="fixed pointer-events-none z-[200] opacity-80"
+          style={{ left: draggedNewUnit.x - (UNIT_BOX_WIDTH/2), top: draggedNewUnit.y - 40, width: UNIT_BOX_WIDTH }}
         >
-          <button
-            className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left"
-            onClick={() => {
-              setViewingTagMenu(true);
-              setTagData(currentCLOs.map((clo: CourseLearningOutcome) => ({ name: clo.cloDesc, id: clo.cloId })));
-            }}
-          >
-            Add Learning Outcome
-          </button>
-          <button
-            className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left"
-            onClick={() => {
-              setViewingTagMenu(true);
-              setTagData(existingTags.map((tag: Tag) => ({ name: tag.tagName, id: tag.tagId })));
-            }}
-          >
-            Add Tag
-          </button>
+          <div className="bg-blue-600 p-4 rounded shadow-2xl border-2 border-white text-white">
+            <h2 className="text-lg font-bold text-center">{draggedNewUnit.unit.unitId}</h2>
+            <p className="text-xs text-center opacity-80">{draggedNewUnit.unit.unitName}</p>
+          </div>
+        </div>
+      )}
+
+      {contextMenu.visible && (
+        <div className="fixed bg-white border border-gray-300 shadow-lg rounded-md flex flex-col text-left z-50" style={{ top: contextMenu.y, left: contextMenu.x, minWidth: "150px", padding: "0.5rem" }} onClick={() => setContextMenu({ ...contextMenu, visible: false })}>
+          <button className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left" onClick={() => { setViewingTagMenu(true); setTagData(currentCLOs.map((clo: CourseLearningOutcome) => ({ name: clo.cloDesc, id: clo.cloId }))); }}>Add Learning Outcome</button>
+          <button className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left" onClick={() => { setViewingTagMenu(true); setTagData(existingTags.map((tag: Tag) => ({ name: tag.tagName, id: tag.tagId }))); }}>Add Tag</button>
         </div>
       )}
 
       {viewingTagMenu && (
-        <AddTagMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          data={tagData}
-          onClose={() => setViewingTagMenu(false)}
-          onSave={handleAddTagToUnits}
-        />
+        <AddTagMenu x={contextMenu.x} y={contextMenu.y} data={tagData} onClose={() => setViewingTagMenu(false)} onSave={handleAddTagToUnits} />
       )}
     </div>
   );
