@@ -139,7 +139,9 @@ export const CanvasPage: React.FC = () => {
           const response = await axiosInstance.get(
             `/unit-relationship/view?courseId=${currentCourse.courseId}`
           );
-          setRelationships(response.data);
+          // Only load relationships - don't auto-display them
+          // Users must manually create relationships in Connection Mode
+          setRelationships([]);
         } catch (error) {
           console.error("Error loading relationships:", error);
         }
@@ -465,6 +467,11 @@ export const CanvasPage: React.FC = () => {
   };
 
   const handleCreateRelationship = async (targetUnitId: string) => {
+    // Guard: only allow in connection mode
+    if (!connectionMode) {
+      return;
+    }
+
     if (!connectionSource || connectionSource === targetUnitId) {
       setConnectionSource(null);
       return;
@@ -495,6 +502,17 @@ export const CanvasPage: React.FC = () => {
     if (!connectionSource) setConnectionSource(unitId);
     else handleCreateRelationship(unitId);
   };
+
+  function handleRightClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+    });
+  }
 
   const getRelationshipColor = (type: UnitRelationship["relationshipType"]) => {
     switch (type) {
@@ -677,9 +695,9 @@ export const CanvasPage: React.FC = () => {
         <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
           {renderGridBackground()}
           {unitBoxes.map((unit) => (
-            <div key={unit.id} className="absolute w-64 cursor-move select-none group" style={{ left: `${unit.x}px`, top: `${unit.y}px`, zIndex: draggedUnit === unit.id ? 30 : 10 }} onMouseDown={(e) => handleMouseDown(e, unit.id)} onDoubleClick={() => handleDoubleClick(unit.id)} onClick={() => handleUnitClickForConnection(unit.unitId!)}>
+            <div key={unit.id} className="absolute w-64 cursor-move select-none group" style={{ left: `${unit.x}px`, top: `${unit.y}px`, zIndex: draggedUnit === unit.id ? 30 : 10 }} onMouseDown={(e) => handleMouseDown(e, unit.id)} onDoubleClick={() => handleDoubleClick(unit.id)} onClick={connectionMode ? () => handleUnitClickForConnection(unit.unitId!) : undefined}>
               <div className={`transition-shadow duration-200 relative ${draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"}`}>
-                <div className={`border ${selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300`} style={{ backgroundColor: unit.color || "#3B82F6", color: "white" }}>
+                <div className={`border ${selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""} p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300`} style={{ backgroundColor: unit.color || "#3B82F6", color: "white" }}>
                   <h2 className="text-lg font-semibold text-center text-white">{unit.unitId || unit.name}</h2>
                 </div>
                 <button onClick={(e) => { e.stopPropagation(); deleteUnit(unit.id); }} className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">×</button>
