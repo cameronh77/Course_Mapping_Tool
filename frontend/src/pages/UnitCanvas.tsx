@@ -43,9 +43,9 @@ export interface UnitRelationship {
 }
 
 // Grid Layout Constants
-const COL_WIDTH = 600;
-const ROW_HEIGHT = 150;
-const START_X = 80;
+const COL_WIDTH = 600; // Increased to 600 to provide a massive routing corridor between years
+const ROW_HEIGHT = 150; // Increased to 150 to give more vertical breathing room
+const START_X = 80;  // Room for Semester labels on the left vertically
 const START_Y = 80;  
 const DEFAULT_YEARS = 3;
 const DEFAULT_SEMESTERS = 2;
@@ -581,70 +581,72 @@ export const CanvasPage: React.FC = () => {
   };
 
   const renderConnectionLines = () => {
-    const UNIT_HEIGHT = 80; // approximate height to match actual rendered box height
+    const UNIT_HEIGHT = 80;
 
-    // Helper to calculate bezier curve points and arrow angle
+    // Helper to calculate bezier curve points perfectly routed through the vertical voids
     const getCurvePath = (source: any, target: any, relId: number) => {
       const sx = source.x + UNIT_BOX_WIDTH / 2;
       const sy = source.y + UNIT_HEIGHT / 2;
       const tx = target.x + UNIT_BOX_WIDTH / 2;
       const ty = target.y + UNIT_HEIGHT / 2;
 
-      const dx = tx - sx;
-      const dy = ty - sy;
-      const absDx = Math.abs(dx);
-      const absDy = Math.abs(dy);
-
-      let startX, startY, endX, endY, cp1X, cp1Y, cp2X, cp2Y;
-      const curveWeight = 0.5; // Slightly deeper curve for cleaner bends
-      // This fanOffset mathematically spreads parallel lines apart based on their relationship ID so they never perfectly overlap
+      // Determine the column (Year) index of the units
+      const colS = Math.max(0, Math.round((source.x - START_X) / COL_WIDTH));
+      const colT = Math.max(0, Math.round((target.x - START_X) / COL_WIDTH));
+      const isSameCol = colS === colT;
+      
+      // Fan offset prevents parallel connections from completely overlapping
       const fanOffset = (relId % 7) * 15 - 45; 
 
-      if (absDx >= absDy) {
-        // Horizontal routing
-        if (dx >= 0) {
-          startX = sx + UNIT_BOX_WIDTH / 2; startY = sy;
-          endX = tx - UNIT_BOX_WIDTH / 2; endY = ty;
-        } else {
-          startX = sx - UNIT_BOX_WIDTH / 2; startY = sy;
-          endX = tx + UNIT_BOX_WIDTH / 2; endY = ty;
-        }
-        const dist = Math.abs(endX - startX);
-        cp1X = startX + (dx >= 0 ? dist : -dist) * curveWeight;
-        cp1Y = startY + fanOffset; // Fan out starting control point
-        cp2X = endX - (dx >= 0 ? dist : -dist) * curveWeight;
-        cp2Y = endY + fanOffset; // Fan out ending control point
+      let d = "";
+      let endX, endY, angle;
 
-        // Arc offset for long leaps in the same row (prevent hiding directly under middle units)
-        if (dist > COL_WIDTH * 1.2 && Math.abs(endY - startY) < ROW_HEIGHT) {
-          const arcOffset = 90 * (relId % 2 === 0 ? 1 : -1);
-          cp1Y += arcOffset;
-          cp2Y += arcOffset;
-        }
+      if (isSameCol) {
+        // Same Year -> Route out to the right corridor, down/up, and back into the right side
+        const startX = sx + UNIT_BOX_WIDTH / 2;
+        endX = tx + UNIT_BOX_WIDTH / 2;
+        endY = ty;
+        
+        // Exact mathematical center of the void to the right of this column
+        const corridorX = START_X + (colS + 1) * COL_WIDTH + fanOffset;
+
+        d = `M ${startX} ${sy} C ${corridorX} ${sy}, ${corridorX} ${ty}, ${endX} ${ty}`;
+        angle = Math.PI; // Arrow points left, back into the right-edge
+      } else if (Math.abs(colS - colT) === 1) {
+        // Adjacent Years -> Route perfectly down the middle of the void separating them
+        const isLtoR = colT > colS;
+        const startX = sx + (isLtoR ? 1 : -1) * (UNIT_BOX_WIDTH / 2);
+        endX = tx + (isLtoR ? -1 : 1) * (UNIT_BOX_WIDTH / 2);
+        endY = ty;
+
+        // Exact mathematical center of the void directly between the two adjacent columns
+        const corridorX = START_X + Math.max(colS, colT) * COL_WIDTH + fanOffset;
+
+        d = `M ${startX} ${sy} C ${corridorX} ${sy}, ${corridorX} ${ty}, ${endX} ${ty}`;
+        angle = isLtoR ? 0 : Math.PI; // Arrow points in matching direction
       } else {
-        // Vertical routing
-        if (dy >= 0) {
-          startX = sx; startY = sy + UNIT_HEIGHT / 2;
-          endX = tx; endY = ty - UNIT_HEIGHT / 2;
-        } else {
-          startX = sx; startY = sy - UNIT_HEIGHT / 2;
-          endX = tx; endY = ty + UNIT_HEIGHT / 2;
-        }
-        const dist = Math.abs(endY - startY);
-        cp1X = startX + fanOffset;
-        cp1Y = startY + (dy >= 0 ? dist : -dist) * curveWeight;
-        cp2X = endX + fanOffset;
-        cp2Y = endY - (dy >= 0 ? dist : -dist) * curveWeight;
+        // Skipping Years -> Route out, drop entirely below the unit grid, across, and back up
+        const isLtoR = colT > colS;
+        const startX = sx + (isLtoR ? 1 : -1) * (UNIT_BOX_WIDTH / 2);
+        endX = tx + (isLtoR ? -1 : 1) * (UNIT_BOX_WIDTH / 2);
+        endY = ty;
 
-        // Arc offset for long leaps in the same column
-        if (dist > ROW_HEIGHT * 1.2 && Math.abs(endX - startX) < COL_WIDTH) {
-          const arcOffset = 100 * (relId % 2 === 0 ? 1 : -1);
-          cp1X += arcOffset;
-          cp2X += arcOffset;
-        }
+        // First void right after source, second void right before target
+        const corridor1X = START_X + (isLtoR ? colS + 1 : colS) * COL_WIDTH + fanOffset;
+        const corridor2X = START_X + (isLtoR ? colT : colT + 1) * COL_WIDTH + fanOffset;
+
+        // Find the safe bottom Y value below all units
+        const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+        const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+        const bottomY = START_Y + totalRows * ROW_HEIGHT + 60 + Math.abs(fanOffset) * 2;
+        const midX = (corridor1X + corridor2X) / 2;
+
+        // Sweeping U-shape curve routing strictly through the empty corridors and below the grid
+        d = `M ${startX} ${sy} C ${corridor1X} ${sy}, ${corridor1X} ${bottomY}, ${midX} ${bottomY} C ${corridor2X} ${bottomY}, ${corridor2X} ${ty}, ${endX} ${ty}`;
+        angle = isLtoR ? 0 : Math.PI;
       }
 
-      return { startX, startY, cp1X, cp1Y, cp2X, cp2Y, endX, endY };
+      return { d, endX, endY, angle };
     };
 
     return relationships.map((rel) => {
@@ -653,15 +655,11 @@ export const CanvasPage: React.FC = () => {
 
       if (!sourceUnit || !targetUnit) return null;
 
-      const { startX, startY, cp1X, cp1Y, cp2X, cp2Y, endX, endY } = getCurvePath(sourceUnit, targetUnit, rel.id);
+      const { d, endX, endY, angle } = getCurvePath(sourceUnit, targetUnit, rel.id);
       const color = getRelationshipColor(rel.relationshipType);
 
-      // Calculate arrow head angle from the last control point to the end point
-      const angle = Math.atan2(endY - cp2Y, endX - cp2X);
       const arrowLength = 12;
       const arrowAngle = Math.PI / 6;
-
-      const pathD = `M ${startX} ${startY} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${endX} ${endY}`;
 
       return (
         <g
@@ -669,8 +667,8 @@ export const CanvasPage: React.FC = () => {
           className="cursor-pointer pointer-events-auto transition-opacity duration-200 hover:opacity-100 opacity-50"
           onClick={() => handleDeleteRelationship(rel.id)}
         >
-          {/* The Bezier Curve */}
-          <path d={pathD} stroke={color} strokeWidth="3" fill="none" className="drop-shadow-sm" />
+          {/* The Bezier Curve Path */}
+          <path d={d} stroke={color} strokeWidth="3" fill="none" className="drop-shadow-sm" />
           
           {/* Arrow Head */}
           <polygon
@@ -679,7 +677,7 @@ export const CanvasPage: React.FC = () => {
           />
           
           {/* Invisible thicker path for easier hover/clicking */}
-          <path d={pathD} stroke="transparent" strokeWidth="16" fill="none" />
+          <path d={d} stroke="transparent" strokeWidth="16" fill="none" />
         </g>
       );
     });
