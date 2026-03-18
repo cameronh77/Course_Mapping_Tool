@@ -42,6 +42,16 @@ export interface UnitRelationship {
   entryType: number;
 }
 
+// Grid Layout Constants
+const COL_WIDTH = 600;
+const ROW_HEIGHT = 150;
+const START_X = 80;
+const START_Y = 80;  
+const DEFAULT_YEARS = 3;
+const DEFAULT_SEMESTERS = 2;
+const MAX_UNITS_PER_SEM = 4; // 4 units per semester -> 8 rows total for 2 semesters
+const UNIT_BOX_WIDTH = 256; // 64 * 4 for Tailwind w-64
+
 export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<
     Array<{
@@ -109,11 +119,13 @@ export const CanvasPage: React.FC = () => {
   useEffect(() => {
     const loadUnits = async () => {
       await viewUnits();
-      await viewCourseTags(currentCourse.courseId);
-      await viewUnitTagsByCourse(currentCourse.courseId);
+      if (currentCourse?.courseId) {
+        await viewCourseTags(currentCourse.courseId);
+        await viewUnitTagsByCourse(currentCourse.courseId);
+      }
     };
     loadUnits();
-  }, []);
+  }, [currentCourse?.courseId]);
 
   // Fetch relationships when course changes
   useEffect(() => {
@@ -140,7 +152,7 @@ export const CanvasPage: React.FC = () => {
             `/course-unit/view?courseId=${currentCourse.courseId}`
           );
           const courseUnits = response.data;
-          const loadedUnitBoxes = courseUnits.map((cu) => ({
+          const loadedUnitBoxes = courseUnits.map((cu: any) => ({
             id: Date.now() + Math.random(), // Simple unique ID
             name: cu.unit.unitName,
             unitId: cu.unitId,
@@ -161,8 +173,16 @@ export const CanvasPage: React.FC = () => {
     loadCanvasState();
   }, [currentCourse]);
 
+  // Calculate actual coordinates accounting for potential scrolling
+  const getMouseCoords = (e: MouseEvent | React.MouseEvent, container: HTMLDivElement) => {
+    const rect = container.getBoundingClientRect();
+    return {
+      x: e.clientX - rect.left + container.scrollLeft,
+      y: e.clientY - rect.top + container.scrollTop,
+    };
+  };
+
   const handleAddTagToUnits = (tag: number) => {
-    console.log("Tag being added", tag);
     const apiData = selectedUnits.map((unit) => {
       return {
         courseId: currentCourse.courseId,
@@ -170,8 +190,8 @@ export const CanvasPage: React.FC = () => {
         tagId: tag,
       };
     });
-    const addData = async (apiData) => {
-      await addUnitTags(apiData);
+    const addData = async (data: any) => {
+      await addUnitTags(data);
     };
 
     addData(apiData);
@@ -180,7 +200,6 @@ export const CanvasPage: React.FC = () => {
 
   const handleSaveCanvas = async () => {
     if (currentCourse?.courseId) {
-      console.log("Save canvas button is triggered");
       try {
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
@@ -205,6 +224,48 @@ export const CanvasPage: React.FC = () => {
       return;
     }
 
+    // Determine grid size based on course settings
+    const years = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
+    const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+    const totalCols = years; // 1 column per year
+    const totalRows = semestersPerYear * MAX_UNITS_PER_SEM; // e.g. 2 * 4 = 8 rows total
+
+    let nextCol = 0;
+    let nextRow = 0;
+    let foundSlot = false;
+
+    // Scan grid top-to-bottom (slots), left-to-right (years)
+    for (let col = 0; col < totalCols; col++) {
+      for (let row = 0; row < totalRows; row++) {
+        const expectedX = START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+        const expectedY = START_Y + row * ROW_HEIGHT + 20;
+        
+        // Check if any unit is currently occupying this grid slot
+        const isOccupied = unitBoxes.some(u => 
+          Math.abs(u.x - expectedX) < 50 && Math.abs(u.y - expectedY) < 50
+        );
+
+        if (!isOccupied) {
+          nextCol = col;
+          nextRow = row;
+          foundSlot = true;
+          break;
+        }
+      }
+      if (foundSlot) break;
+    }
+
+    const defaultX = 100 + unitBoxes.length * 50;
+    const defaultY = 100 + unitBoxes.length * 30;
+
+    let finalX = defaultX;
+    let finalY = defaultY;
+
+    if (foundSlot) {
+      finalX = START_X + nextCol * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+      finalY = START_Y + nextRow * ROW_HEIGHT + 20;
+    }
+
     const newUnit = {
       id: Date.now(),
       name: selectedUnit.unitName,
@@ -212,10 +273,11 @@ export const CanvasPage: React.FC = () => {
       description: selectedUnit.unitDesc,
       credits: selectedUnit.credits,
       semestersOffered: selectedUnit.semestersOffered,
-      x: 100 + unitBoxes.length * 50,
-      y: 100 + unitBoxes.length * 30,
+      x: finalX,
+      y: finalY,
       color: selectedUnit.color || "#3B82F6",
     };
+    
     setUnitBoxes([...unitBoxes, newUnit]);
     setShowSearchResults(false);
   };
@@ -230,7 +292,7 @@ export const CanvasPage: React.FC = () => {
       const editedUnit = unitBoxes.find((unit) => unit.id === editingId);
 
       if (editedUnit) {
-        updateUnit(editedUnit.unitId, {
+        updateUnit(editedUnit.unitId!, {
           unitName: formData.unitName || editedUnit.name,
           unitDesc: formData.unitDesc || editedUnit.description,
           credits: formData.credits || editedUnit.credits,
@@ -238,7 +300,6 @@ export const CanvasPage: React.FC = () => {
             formData.semestersOffered || editedUnit.semestersOffered,
         })
           .then(() => {
-            // Update the local state with the updated unit boxes
             setUnitBoxes(
               unitBoxes.map((unit) =>
                 unit.id === editingId
@@ -271,9 +332,8 @@ export const CanvasPage: React.FC = () => {
   }
 
   function handleMouseDownCanvas(e: React.MouseEvent) {
-    if (e.button !== 0) {
-      return;
-    }
+    if (e.button !== 0) return;
+
     if (selectedUnits.length !== 0) {
       setSelectedUnits([]);
       return;
@@ -285,27 +345,17 @@ export const CanvasPage: React.FC = () => {
 
     if (!canvasRef.current) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
+    const start = { initialX: mouseX, initialY: mouseY };
 
-    const start = {
-      initialX: mouseX,
-      initialY: mouseY,
-    };
-
-    const handleMove = (moveEvent: MouseEvent) => {};
-
-    const handleCanvasUp = (MouseEvent: MouseEvent) => {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const mouseX = MouseEvent.clientX - rect.left;
-      const mouseY = MouseEvent.clientY - rect.top;
+    const handleCanvasUp = (mouseEvent: MouseEvent) => {
+      const { x: endX, y: endY } = getMouseCoords(mouseEvent, canvasRef.current!);
 
       const selectedRect = {
-        x1: start.initialX,
-        x2: mouseX,
-        y1: start.initialY,
-        y2: mouseY,
+        x1: Math.min(start.initialX, endX),
+        x2: Math.max(start.initialX, endX),
+        y1: Math.min(start.initialY, endY),
+        y2: Math.max(start.initialY, endY),
       };
 
       const selected = unitBoxes
@@ -317,9 +367,9 @@ export const CanvasPage: React.FC = () => {
             unit.y < selectedRect.y2
           );
         })
-        .map((unit) => unit.unitId);
+        .map((unit) => unit.unitId as string);
+        
       setSelectedUnits(selected);
-      console.log(selectedUnits);
       document.removeEventListener("mouseup", handleCanvasUp);
     };
 
@@ -334,14 +384,9 @@ export const CanvasPage: React.FC = () => {
     const unit = unitBoxes.find((u) => u.id === id);
     if (!unit || !canvasRef.current) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const offset = {
-      x: mouseX - unit.x,
-      y: mouseY - unit.y,
-    };
+    const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
+    const offset = { x: mouseX - unit.x, y: mouseY - unit.y };
+    
     setDragOffset(offset);
     setDraggedUnit(id);
     setIsDragging(false);
@@ -350,23 +395,15 @@ export const CanvasPage: React.FC = () => {
       if (!canvasRef.current) return;
 
       setIsDragging(true);
-      const moveRect = canvasRef.current.getBoundingClientRect();
-      const newMouseX = moveEvent.clientX - moveRect.left;
-      const newMouseY = moveEvent.clientY - moveRect.top;
+      const { x: newMouseX, y: newMouseY } = getMouseCoords(moveEvent, canvasRef.current);
 
       setUnitBoxes((prevUnits) =>
         prevUnits.map((unit) =>
           unit.id === id
             ? {
                 ...unit,
-                x: Math.max(
-                  0,
-                  Math.min(newMouseX - offset.x, moveRect.width - 256)
-                ),
-                y: Math.max(
-                  0,
-                  Math.min(newMouseY - offset.y, moveRect.height - 100)
-                ),
+                x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH)),
+                y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 100)),
               }
             : unit
         )
@@ -374,6 +411,45 @@ export const CanvasPage: React.FC = () => {
     };
 
     const handleUp = () => {
+      // Upon dropping, implement "Snap to Grid" functionality
+      setUnitBoxes((prevUnits) =>
+        prevUnits.map((unit) => {
+          if (unit.id === id) {
+            let snappedX = unit.x;
+            let snappedY = unit.y;
+
+            // Only snap if dropped within the general grid area
+            if (unit.x >= START_X - 100 && unit.y >= START_Y - 50) {
+              const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+              const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+
+              // Snap to closest column (Year)
+              const col = Math.max(0, Math.round((unit.x - START_X) / COL_WIDTH));
+              
+              // Snap to closest row (Unit Slot) using distance logic
+              let closestRow = 0;
+              let minDistance = Infinity;
+              
+              for (let r = 0; r < totalRows; r++) {
+                const expectedY = START_Y + r * ROW_HEIGHT + 20;
+                
+                const dist = Math.abs(unit.y - expectedY);
+                if (dist < minDistance) {
+                  minDistance = dist;
+                  closestRow = r;
+                }
+              }
+
+              snappedX = START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+              snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
+            }
+
+            return { ...unit, x: snappedX, y: snappedY };
+          }
+          return unit;
+        })
+      );
+
       setDraggedUnit(null);
       setDragOffset({ x: 0, y: 0 });
       document.removeEventListener("mousemove", handleMove);
@@ -416,7 +492,6 @@ export const CanvasPage: React.FC = () => {
     try {
       if (data.unitId) {
         const checkResults = await checkUnitExists(data.unitId);
-
         if (checkResults.isDuplicate) {
           alert(`A unit with ID: "${data.unitId}" already exists.`);
           return;
@@ -430,7 +505,6 @@ export const CanvasPage: React.FC = () => {
 
     try {
       const newUnit = await createUnit(data);
-
       setShowCreateForm(false);
 
       if (newUnit && newUnit.unitId) {
@@ -444,7 +518,6 @@ export const CanvasPage: React.FC = () => {
         };
         createUnitBox(unitToAdd);
       } else {
-        console.error("New data is incomplete");
         alert("Unit created successfully, but missing data to display the box");
       }
     } catch(error) {
@@ -453,7 +526,6 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  // Handle creating a new relationship
   const handleCreateRelationship = async (targetUnitId: string) => {
     if (!connectionSource || connectionSource === targetUnitId) {
       setConnectionSource(null);
@@ -479,7 +551,6 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  // Handle deleting a relationship
   const handleDeleteRelationship = async (relationshipId: number) => {
     try {
       await axiosInstance.delete(`/unit-relationship/delete/${relationshipId}`);
@@ -490,10 +561,8 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  // Handle unit click in connection mode
   const handleUnitClickForConnection = (unitId: string) => {
     if (!connectionMode) return;
-
     if (!connectionSource) {
       setConnectionSource(unitId);
     } else {
@@ -501,53 +570,81 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  // Get relationship line color based on type
   const getRelationshipColor = (type: UnitRelationship["relationshipType"]) => {
     switch (type) {
-      case "PREREQUISITE":
-        return "#EF4444"; // red
-      case "COREQUISITE":
-        return "#F59E0B"; // amber
-      case "PROGRESSION":
-        return "#10B981"; // green
-      case "CONNECTED":
-        return "#6366F1"; // indigo
-      default:
-        return "#6B7280"; // gray
+      case "PREREQUISITE": return "#EF4444";
+      case "COREQUISITE": return "#F59E0B";
+      case "PROGRESSION": return "#10B981";
+      case "CONNECTED": return "#6366F1";
+      default: return "#6B7280";
     }
   };
 
-  // Render connection lines between units
   const renderConnectionLines = () => {
-    const UNIT_WIDTH = 256; // w-64 = 256px
-    const UNIT_HEIGHT = 56; // approximate height with padding
+    const UNIT_HEIGHT = 80; // approximate height to match actual rendered box height
 
-    // Helper function to find intersection point of line from center to edge of rectangle
-    const getBoxEdgePoint = (
-      centerX: number,
-      centerY: number,
-      targetX: number,
-      targetY: number,
-      width: number,
-      height: number
-    ) => {
-      const dx = targetX - centerX;
-      const dy = targetY - centerY;
+    // Helper to calculate bezier curve points and arrow angle
+    const getCurvePath = (source: any, target: any, relId: number) => {
+      const sx = source.x + UNIT_BOX_WIDTH / 2;
+      const sy = source.y + UNIT_HEIGHT / 2;
+      const tx = target.x + UNIT_BOX_WIDTH / 2;
+      const ty = target.y + UNIT_HEIGHT / 2;
 
-      if (dx === 0 && dy === 0) return { x: centerX, y: centerY };
+      const dx = tx - sx;
+      const dy = ty - sy;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
 
-      const halfWidth = width / 2;
-      const halfHeight = height / 2;
+      let startX, startY, endX, endY, cp1X, cp1Y, cp2X, cp2Y;
+      const curveWeight = 0.5; // Slightly deeper curve for cleaner bends
+      // This fanOffset mathematically spreads parallel lines apart based on their relationship ID so they never perfectly overlap
+      const fanOffset = (relId % 7) * 15 - 45; 
 
-      // Calculate the scale factor to reach the edge
-      const scaleX = dx !== 0 ? halfWidth / Math.abs(dx) : Infinity;
-      const scaleY = dy !== 0 ? halfHeight / Math.abs(dy) : Infinity;
-      const scale = Math.min(scaleX, scaleY);
+      if (absDx >= absDy) {
+        // Horizontal routing
+        if (dx >= 0) {
+          startX = sx + UNIT_BOX_WIDTH / 2; startY = sy;
+          endX = tx - UNIT_BOX_WIDTH / 2; endY = ty;
+        } else {
+          startX = sx - UNIT_BOX_WIDTH / 2; startY = sy;
+          endX = tx + UNIT_BOX_WIDTH / 2; endY = ty;
+        }
+        const dist = Math.abs(endX - startX);
+        cp1X = startX + (dx >= 0 ? dist : -dist) * curveWeight;
+        cp1Y = startY + fanOffset; // Fan out starting control point
+        cp2X = endX - (dx >= 0 ? dist : -dist) * curveWeight;
+        cp2Y = endY + fanOffset; // Fan out ending control point
 
-      return {
-        x: centerX + dx * scale,
-        y: centerY + dy * scale,
-      };
+        // Arc offset for long leaps in the same row (prevent hiding directly under middle units)
+        if (dist > COL_WIDTH * 1.2 && Math.abs(endY - startY) < ROW_HEIGHT) {
+          const arcOffset = 90 * (relId % 2 === 0 ? 1 : -1);
+          cp1Y += arcOffset;
+          cp2Y += arcOffset;
+        }
+      } else {
+        // Vertical routing
+        if (dy >= 0) {
+          startX = sx; startY = sy + UNIT_HEIGHT / 2;
+          endX = tx; endY = ty - UNIT_HEIGHT / 2;
+        } else {
+          startX = sx; startY = sy - UNIT_HEIGHT / 2;
+          endX = tx; endY = ty + UNIT_HEIGHT / 2;
+        }
+        const dist = Math.abs(endY - startY);
+        cp1X = startX + fanOffset;
+        cp1Y = startY + (dy >= 0 ? dist : -dist) * curveWeight;
+        cp2X = endX + fanOffset;
+        cp2Y = endY - (dy >= 0 ? dist : -dist) * curveWeight;
+
+        // Arc offset for long leaps in the same column
+        if (dist > ROW_HEIGHT * 1.2 && Math.abs(endX - startX) < COL_WIDTH) {
+          const arcOffset = 100 * (relId % 2 === 0 ? 1 : -1);
+          cp1X += arcOffset;
+          cp2X += arcOffset;
+        }
+      }
+
+      return { startX, startY, cp1X, cp1Y, cp2X, cp2Y, endX, endY };
     };
 
     return relationships.map((rel) => {
@@ -556,84 +653,41 @@ export const CanvasPage: React.FC = () => {
 
       if (!sourceUnit || !targetUnit) return null;
 
-      // Calculate center points of units
-      const sourceCenterX = sourceUnit.x + UNIT_WIDTH / 2;
-      const sourceCenterY = sourceUnit.y + UNIT_HEIGHT / 2;
-      const targetCenterX = targetUnit.x + UNIT_WIDTH / 2;
-      const targetCenterY = targetUnit.y + UNIT_HEIGHT / 2;
-
-      // Get the edge points where the line should start and end
-      const startPoint = getBoxEdgePoint(
-        sourceCenterX,
-        sourceCenterY,
-        targetCenterX,
-        targetCenterY,
-        UNIT_WIDTH,
-        UNIT_HEIGHT
-      );
-
-      const endPoint = getBoxEdgePoint(
-        targetCenterX,
-        targetCenterY,
-        sourceCenterX,
-        sourceCenterY,
-        UNIT_WIDTH,
-        UNIT_HEIGHT
-      );
-
+      const { startX, startY, cp1X, cp1Y, cp2X, cp2Y, endX, endY } = getCurvePath(sourceUnit, targetUnit, rel.id);
       const color = getRelationshipColor(rel.relationshipType);
 
-      // Calculate arrow head
-      const angle = Math.atan2(
-        targetCenterY - sourceCenterY,
-        targetCenterX - sourceCenterX
-      );
-      const arrowLength = 10;
+      // Calculate arrow head angle from the last control point to the end point
+      const angle = Math.atan2(endY - cp2Y, endX - cp2X);
+      const arrowLength = 12;
       const arrowAngle = Math.PI / 6;
 
-      // Pull back the end point slightly for the arrow head
-      const arrowTipX = endPoint.x;
-      const arrowTipY = endPoint.y;
-      const lineEndX = endPoint.x - arrowLength * Math.cos(angle);
-      const lineEndY = endPoint.y - arrowLength * Math.sin(angle);
+      const pathD = `M ${startX} ${startY} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${endX} ${endY}`;
 
       return (
         <g
           key={rel.id}
-          className="cursor-pointer pointer-events-auto"
+          className="cursor-pointer pointer-events-auto transition-opacity duration-200 hover:opacity-100 opacity-50"
           onClick={() => handleDeleteRelationship(rel.id)}
         >
-          <line
-            x1={startPoint.x}
-            y1={startPoint.y}
-            x2={lineEndX}
-            y2={lineEndY}
-            stroke={color}
-            strokeWidth="2"
-          />
-          {/* Arrow head */}
+          {/* The Bezier Curve */}
+          <path d={pathD} stroke={color} strokeWidth="3" fill="none" className="drop-shadow-sm" />
+          
+          {/* Arrow Head */}
           <polygon
-            points={`${arrowTipX},${arrowTipY} ${arrowTipX - arrowLength * Math.cos(angle - arrowAngle)},${arrowTipY - arrowLength * Math.sin(angle - arrowAngle)} ${arrowTipX - arrowLength * Math.cos(angle + arrowAngle)},${arrowTipY - arrowLength * Math.sin(angle + arrowAngle)}`}
+            points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`}
             fill={color}
           />
-          {/* Hover area for easier clicking */}
-          <line
-            x1={startPoint.x}
-            y1={startPoint.y}
-            x2={endPoint.x}
-            y2={endPoint.y}
-            stroke="transparent"
-            strokeWidth="12"
-          />
+          
+          {/* Invisible thicker path for easier hover/clicking */}
+          <path d={pathD} stroke="transparent" strokeWidth="16" fill="none" />
         </g>
       );
     });
   };
 
   function handleRightClick(e: React.MouseEvent) {
-    e.preventDefault(); // prevent default browser context menu
+    e.preventDefault();
     e.stopPropagation();
-
     setContextMenu({
       visible: true,
       x: e.clientX,
@@ -641,13 +695,101 @@ export const CanvasPage: React.FC = () => {
     });
   }
 
+  // Visual layout for dynamic grid zones behind drag/drop layer
+  const renderGridBackground = () => {
+    const years = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
+    const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+    const totalCols = years;
+    const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+
+    return (
+      <div className="absolute inset-0 pointer-events-none" style={{ minWidth: START_X + totalCols * COL_WIDTH, minHeight: START_Y + totalRows * ROW_HEIGHT + 100 }}>
+        {/* Year Headers (Horizontal across the top) */}
+        {Array.from({ length: totalCols }).map((_, col) => (
+          <div
+            key={`year-${col}`}
+            className="absolute border-b-2 border-gray-300 flex items-center justify-center font-bold text-gray-700 text-xl"
+            style={{
+              top: 20,
+              left: START_X + col * COL_WIDTH,
+              width: COL_WIDTH,
+              height: 40,
+            }}
+          >
+            Year {col + 1}
+          </div>
+        ))}
+
+        {/* Semester Headers (Vertical on the left) and their Dropzone Slots */}
+        {Array.from({ length: semestersPerYear }).map((_, s) => {
+          const semStartY = START_Y + s * (MAX_UNITS_PER_SEM * ROW_HEIGHT);
+          const semHeight = MAX_UNITS_PER_SEM * ROW_HEIGHT;
+
+          return (
+            <div key={`sem-group-${s}`}>
+              {/* Semester Vertical Heading */}
+              <div
+                className="absolute border-r-2 border-gray-300 bg-gray-50 flex items-center justify-center font-bold text-gray-600 uppercase tracking-widest text-lg"
+                style={{
+                  top: semStartY,
+                  left: 0,
+                  width: START_X,
+                  height: semHeight,
+                  writingMode: 'vertical-rl', // Renders text vertically
+                  transform: 'rotate(180deg)', // Read from bottom to top
+                }}
+              >
+                Semester {s + 1}
+              </div>
+
+              {/* Horizontal dividers to separate semesters visually */}
+              {s > 0 && (
+                 <div className="absolute border-t-2 border-gray-300" 
+                      style={{ top: semStartY, left: 0, width: START_X + totalCols * COL_WIDTH }} />
+              )}
+
+              {/* Grid Slots for this Semester */}
+              {Array.from({ length: MAX_UNITS_PER_SEM }).map((_, unitInSem) => {
+                const absRow = s * MAX_UNITS_PER_SEM + unitInSem;
+
+                return (
+                  <div key={`sem-${s}-unit-${unitInSem}`}>
+                    {Array.from({ length: totalCols }).map((_, col) => (
+                      <div
+                        key={`slot-${col}-${absRow}`}
+                        className="absolute border-2 border-dashed border-gray-300 rounded-lg bg-gray-50/50 flex items-center justify-center"
+                        style={{
+                          top: START_Y + absRow * ROW_HEIGHT + 20,
+                          left: START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2,
+                          width: UNIT_BOX_WIDTH,
+                          height: 80, 
+                        }}
+                      >
+                        <span className="text-gray-400 font-medium text-xs opacity-50">Drop Unit Here</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Dimensions of the scrollable inner area based on the required grid cells
+  const years = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
+  const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+  const totalCols = years;
+  const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+  const innerWidth = Math.max(1200, START_X + totalCols * COL_WIDTH + 100);
+  const innerHeight = Math.max(800, START_Y + totalRows * ROW_HEIGHT + 100);
+
   return (
     <div className="flex h-screen">
-      {/* Sidebar container - Removed w-1/6 and relative, let CanvasSidebar define width */}
       <div className="flex flex-col h-full z-20">
-        {/* Sidebar component */}
         <CanvasSidebar>
-          {/* Unit Add button - Now inside the sidebar */}
           <button
             className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4"
             onClick={handleSaveCanvas}
@@ -661,14 +803,11 @@ export const CanvasPage: React.FC = () => {
             Create New Unit
           </button>
 
-          {/* Connection Mode Section */}
           <div className="border-t border-gray-200 pt-4 mt-4">
             <h2 className="text-lg font-bold mb-2 text-gray-800">Connection Mode</h2>
             <button
               className={`${
-                connectionMode
-                  ? "bg-red-500 hover:bg-red-600"
-                  : "bg-purple-500 hover:bg-purple-600"
+                connectionMode ? "bg-red-500 hover:bg-red-600" : "bg-purple-500 hover:bg-purple-600"
               } text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-2`}
               onClick={() => {
                 setConnectionMode(!connectionMode);
@@ -687,9 +826,7 @@ export const CanvasPage: React.FC = () => {
                   className="shadow border rounded w-full py-2 px-3 text-gray-700 mb-2"
                   value={selectedRelationType}
                   onChange={(e) =>
-                    setSelectedRelationType(
-                      e.target.value as UnitRelationship["relationshipType"]
-                    )
+                    setSelectedRelationType(e.target.value as UnitRelationship["relationshipType"])
                   }
                 >
                   <option value="PREREQUISITE">Prerequisite</option>
@@ -713,77 +850,52 @@ export const CanvasPage: React.FC = () => {
               </>
             )}
 
-            {/* Legend */}
             <div className="mt-4">
               <h3 className="text-sm font-bold text-gray-700 mb-2">Legend:</h3>
               <div className="space-y-1 text-xs">
-                <div className="flex items-center">
-                  <div className="w-4 h-1 bg-red-500 mr-2"></div>
-                  <span className="text-gray-600">Prerequisite</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-4 h-1 bg-amber-500 mr-2"></div>
-                  <span className="text-gray-600">Corequisite</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-4 h-1 bg-green-500 mr-2"></div>
-                  <span className="text-gray-600">Progression</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-4 h-1 bg-indigo-500 mr-2"></div>
-                  <span className="text-gray-600">Connected</span>
-                </div>
+                <div className="flex items-center"><div className="w-4 h-1 bg-red-500 mr-2"></div><span className="text-gray-600">Prerequisite</span></div>
+                <div className="flex items-center"><div className="w-4 h-1 bg-amber-500 mr-2"></div><span className="text-gray-600">Corequisite</span></div>
+                <div className="flex items-center"><div className="w-4 h-1 bg-green-500 mr-2"></div><span className="text-gray-600">Progression</span></div>
+                <div className="flex items-center"><div className="w-4 h-1 bg-indigo-500 mr-2"></div><span className="text-gray-600">Connected</span></div>
               </div>
               <p className="text-xs text-gray-500 mt-2">Click a line to delete it</p>
             </div>
           </div>
 
-          {/* Search Input Container - Now inside the sidebar */}
           <div className="relative mb-4 mt-4">
             <input
               type="text"
               placeholder="Search for a unit..."
-              // Using Tailwind classes for a standard input look
               className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
               value={searchTerm}
               onChange={handleSearchChange}
               onFocus={() => setShowSearchResults(true)}
               onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
             />
-
-            {/* Search Results Dropdown */}
-            {showSearchResults &&
-              searchTerm.length > 0 &&
-              searchResults.length > 0 && (
-                <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
-                  {searchResults.map((unit) => (
-                    <div
-                      key={unit.unitId}
-                      className="px-4 py-2 text-black hover:bg-gray-100 cursor-pointer text-sm"
-                      onClick={() => createUnitBox(unit)}
-                    >
-                      <span className="font-semibold">{unit.unitId}</span> -{" "}
-                      {unit.unitName}
-                    </div>
-                  ))}
-                </div>
-              )}
-            {/* Added a prompt if search is active but no results are found */}
-            {showSearchResults &&
-              searchTerm.length > 0 &&
-              searchResults.length === 0 && (
-                <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50">
-                  <div className="px-4 py-2 text-gray-500 text-sm">
-                    No units found.
+            {showSearchResults && searchTerm.length > 0 && searchResults.length > 0 && (
+              <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                {searchResults.map((unit) => (
+                  <div
+                    key={unit.unitId}
+                    className="px-4 py-2 text-black hover:bg-gray-100 cursor-pointer text-sm"
+                    onClick={() => createUnitBox(unit)}
+                  >
+                    <span className="font-semibold">{unit.unitId}</span> - {unit.unitName}
                   </div>
-                </div>
-              )}
+                ))}
+              </div>
+            )}
+            {showSearchResults && searchTerm.length > 0 && searchResults.length === 0 && (
+              <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50">
+                <div className="px-4 py-2 text-gray-500 text-sm">No units found.</div>
+              </div>
+            )}
           </div>
+
           <h2 className="text-lg font-bold mb-4 text-gray-800 pt-15">Tags</h2>
           <input
             type="text"
             placeholder="Create a tag..."
-            // Using Tailwind classes for a standard input look
             className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline my-5"
             value={newTag}
             onChange={(e) => setNewTag(e.target.value)}
@@ -798,23 +910,19 @@ export const CanvasPage: React.FC = () => {
             Create New Tag
           </button>
 
-          <h2 className="text-md font-bold mb-4 text-gray-800 pt-10">
-            Existing Tags
-          </h2>
+          <h2 className="text-md font-bold mb-4 text-gray-800 pt-10">Existing Tags</h2>
           <div className="flex flex-col max-h-[10vh] overflow-y-auto">
             {existingTags.map((tag: Tag) => {
               return (
                 <button
-                  className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
+                  key={tag.tagId}
+                  className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-2"
                   onClick={() => {
                     setSelectedUnits([]);
-                    const newArr: [] = existingTagConnections
-                      .filter((conn) => {
-                        return conn.tagId === tag.tagId;
-                      })
+                    const newArr = existingTagConnections
+                      .filter((conn) => conn.tagId === tag.tagId)
                       .map((conn) => conn.unitId);
-
-                    setSelectedUnits(newArr);
+                    setSelectedUnits(newArr as string[]);
                   }}
                 >
                   {tag.tagName}
@@ -825,153 +933,125 @@ export const CanvasPage: React.FC = () => {
         </CanvasSidebar>
       </div>
 
-      {/* Main Canvas Area */}
+      {/* Main Canvas Area - Updated to be scrollable and house the inner layout */}
       <div
         ref={canvasRef}
-        className="w-full bg-white p-6 overflow-hidden relative"
+        className="flex-1 bg-white overflow-auto relative"
         style={{ userSelect: "none" }}
         onMouseDown={handleMouseDownCanvas}
         onContextMenu={(e) => handleRightClick(e)}
       >
-        {unitBoxes.map((unit) => (
-          <div
-            key={unit.id}
-            className="absolute w-64 cursor-move select-none group"
-            style={{
-              left: `${unit.x}px`,
-              top: `${unit.y}px`,
-              zIndex: draggedUnit === unit.id ? 10 : 1,
-            }}
-            onMouseDown={(e) => handleMouseDown(e, unit.id)}
-            onDoubleClick={() => handleDoubleClick(unit.id)}
-            onClick={() => handleUnitClickForConnection(unit.unitId!)}
-          >
+        <div 
+          className="relative bg-white" 
+          style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}
+        >
+          {/* Inject Dynamic Mapping Grid Layers Behind Dragging Interface */}
+          {renderGridBackground()}
+
+          {/* Render Active Unit Nodes on Top of Grid */}
+          {unitBoxes.map((unit) => (
             <div
-              className={`transition-shadow duration-200 relative ${
-                draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"
-              }`}
+              key={unit.id}
+              className="absolute w-64 cursor-move select-none group"
+              style={{
+                left: `${unit.x}px`,
+                top: `${unit.y}px`,
+                zIndex: draggedUnit === unit.id ? 30 : 10,
+              }}
+              onMouseDown={(e) => handleMouseDown(e, unit.id)}
+              onDoubleClick={() => handleDoubleClick(unit.id)}
+              onClick={() => handleUnitClickForConnection(unit.unitId!)}
             >
               <div
-                className={`border ${
-                  selectedUnits.includes(unit.unitId)
-                    ? `border-4 border-blue-400 ring-4 ring-blue-300`
-                    : `border-gray-300`
-                } p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300`}
-                style={{
-                  backgroundColor: unit.color || "#3B82F6",
-                  color: "white",
-                }}
+                className={`transition-shadow duration-200 relative ${
+                  draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"
+                }`}
               >
-                <h2 className="text-lg font-semibold text-center text-white">
-                  {unit.unitId || unit.name}
-                </h2>
+                <div
+                  className={`border ${
+                    selectedUnits.includes(unit.unitId!)
+                      ? `border-4 border-blue-400 ring-4 ring-blue-300`
+                      : `border-gray-300`
+                  } p-4 rounded shadow-sm hover:shadow-md transition-shadow duration-300`}
+                  style={{ backgroundColor: unit.color || "#3B82F6", color: "white" }}
+                >
+                  <h2 className="text-lg font-semibold text-center text-white">
+                    {unit.unitId || unit.name}
+                  </h2>
+                </div>
+
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteUnit(unit.id);
+                  }}
+                  className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+                  title="Delete unit"
+                >
+                  ×
+                </button>
               </div>
-
-              {/* Delete button - appears on hover */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteUnit(unit.id);
-                }}
-                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-                title="Delete unit"
-              >
-                ×
-              </button>
             </div>
-          </div>
-        ))}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 20 }}>
-          {renderConnectionLines()}
-        </svg>
+          ))}
 
-        {/* Popup Modal for UnitForm */}
+          {/* Render lines behind units (zIndex 5 is between Background Grid at 0 and Units at 10) */}
+          <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
+            {renderConnectionLines()}
+          </svg>
+        </div>
+
+        {/* Modal Interstitials below... */}
         {showForm && editingId && (
           <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full max-h-96 overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Edit Unit</h2>
-                <button
-                  onClick={cancelEdit}
-                  className="text-gray-500 hover:text-gray-700 text-xl"
-                >
-                  ×
-                </button>
+                <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700 text-xl">×</button>
               </div>
               <UnitForm
                 onSave={handleFormSave}
                 initialData={{
-                  unitId:
-                    unitBoxes.find((u) => u.id === editingId)?.unitId || null,
-                  unitName:
-                    unitBoxes.find((u) => u.id === editingId)?.name || null,
-                  unitDesc:
-                    unitBoxes.find((u) => u.id === editingId)?.description ||
-                    null,
-                  credits:
-                    unitBoxes.find((u) => u.id === editingId)?.credits || null,
-                  semestersOffered:
-                    unitBoxes.find((u) => u.id === editingId)
-                      ?.semestersOffered || null,
-                  color:
-                    unitBoxes.find((u) => u.id === editingId)?.color || null,
+                  unitId: unitBoxes.find((u) => u.id === editingId)?.unitId || null,
+                  unitName: unitBoxes.find((u) => u.id === editingId)?.name || null,
+                  unitDesc: unitBoxes.find((u) => u.id === editingId)?.description || null,
+                  credits: unitBoxes.find((u) => u.id === editingId)?.credits || null,
+                  semestersOffered: unitBoxes.find((u) => u.id === editingId)?.semestersOffered || null,
+                  color: unitBoxes.find((u) => u.id === editingId)?.color || null,
                 }}
               />
             </div>
           </div>
         )}
 
-        {/* Create Unit Form */}
         {showCreateForm && (
           <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full max-h-96 overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Create Unit</h2>
-                <button
-                  onClick={() => setShowCreateForm(false)}
-                  className="text-gray-500 hover:text-gray-700 text-xl"
-                >
-                  ×
-                </button>
+                <button onClick={() => setShowCreateForm(false)} className="text-gray-500 hover:text-gray-700 text-xl">×</button>
               </div>
               <UnitForm
                 onSave={handleCreateUnit}
                 initialData={{
-                  unitId: null,
-                  unitName: null,
-                  unitDesc: null,
-                  credits: null,
-                  semestersOffered: null,
-                  color: null,
+                  unitId: null, unitName: null, unitDesc: null, credits: null, semestersOffered: null, color: null,
                 }}
               />
             </div>
           </div>
         )}
       </div>
+
       {contextMenu.visible && (
         <div
           className="fixed bg-white border border-gray-300 shadow-lg rounded-md flex flex-col text-left z-50"
-          style={{
-            top: contextMenu.y,
-            left: contextMenu.x,
-            minWidth: "150px",
-            padding: "0.5rem",
-          }}
+          style={{ top: contextMenu.y, left: contextMenu.x, minWidth: "150px", padding: "0.5rem" }}
           onClick={() => setContextMenu({ ...contextMenu, visible: false })}
         >
           <button
             className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left"
             onClick={() => {
               setViewingTagMenu(true);
-              setTagData(
-                currentCLOs.map((clo: CourseLearningOutcome) => {
-                  return {
-                    name: clo.cloDesc,
-                    id: clo.cloId,
-                  };
-                })
-              );
+              setTagData(currentCLOs.map((clo: CourseLearningOutcome) => ({ name: clo.cloDesc, id: clo.cloId })));
             }}
           >
             Add Learning Outcome
@@ -980,20 +1060,14 @@ export const CanvasPage: React.FC = () => {
             className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left"
             onClick={() => {
               setViewingTagMenu(true);
-              setTagData(
-                existingTags.map((tag: Tag) => {
-                  return {
-                    name: tag.tagName,
-                    id: tag.tagId,
-                  };
-                })
-              );
+              setTagData(existingTags.map((tag: Tag) => ({ name: tag.tagName, id: tag.tagId })));
             }}
           >
             Add Tag
           </button>
         </div>
       )}
+
       {viewingTagMenu && (
         <AddTagMenu
           x={contextMenu.x}
@@ -1001,7 +1075,7 @@ export const CanvasPage: React.FC = () => {
           data={tagData}
           onClose={() => setViewingTagMenu(false)}
           onSave={handleAddTagToUnits}
-        ></AddTagMenu>
+        />
       )}
     </div>
   );
