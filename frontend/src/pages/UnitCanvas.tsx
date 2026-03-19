@@ -51,6 +51,9 @@ export const CanvasPage: React.FC = () => {
     y: number;
   } | null>(null);
 
+  // State for hover highlighting connections
+  const [hoveredUnit, setHoveredUnit] = useState<string | null>(null);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
@@ -595,8 +598,8 @@ export const CanvasPage: React.FC = () => {
               onMouseDown={handleMouseDown}
               onDoubleClick={handleDoubleClick}
               onClick={handleUnitClickForConnection}
-              onMouseEnter={() => {}} // Disabled hover
-              onMouseLeave={() => {}} // Disabled hover
+              onMouseEnter={() => setHoveredUnit(unit.unitId || unit.id.toString())}
+              onMouseLeave={() => setHoveredUnit(null)}
               onContextMenu={handleUnitRightClick}
               onDrop={handleUnitBoxDrop}
               toggleExpand={toggleExpand}
@@ -610,6 +613,7 @@ export const CanvasPage: React.FC = () => {
               relationships={relationships}
               unitBoxes={unitBoxes}
               numberTeachingPeriods={semPerYear}
+              hoveredUnit={hoveredUnit}
               onDeleteRelationship={handleDeleteRelationship}
             />
           </svg>

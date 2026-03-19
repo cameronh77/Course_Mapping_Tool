@@ -14,6 +14,7 @@ interface ConnectionLinesProps {
   relationships: UnitRelationship[];
   unitBoxes: UnitBoxType[];
   numberTeachingPeriods?: number;
+  hoveredUnit?: string | null;
   onDeleteRelationship: (relationshipId: number) => void;
 }
 
@@ -77,6 +78,7 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({
   relationships,
   unitBoxes,
   numberTeachingPeriods,
+  hoveredUnit,
   onDeleteRelationship
 }) => {
   return (
@@ -91,14 +93,31 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({
         const arrowLength = 12;
         const arrowAngle = Math.PI / 6;
         
+        // Determine if this connection is related to the hovered unit
+        const isRelated = hoveredUnit && (rel.unitId === hoveredUnit || rel.relatedId === hoveredUnit);
+        
         return (
           <g 
             key={rel.id} 
-            className="cursor-pointer pointer-events-auto transition-opacity duration-200 hover:opacity-100 opacity-50" 
+            className="cursor-pointer pointer-events-auto transition-all duration-200" 
+            style={{
+              opacity: hoveredUnit ? (isRelated ? 1 : 0.15) : 0.5,
+              filter: isRelated && hoveredUnit ? 'drop-shadow(0 0 4px rgba(0,0,0,0.3))' : 'drop-shadow(0 0 1px rgba(0,0,0,0.1))',
+            }}
             onClick={() => onDeleteRelationship(rel.id)}
           >
-            <path d={d} stroke={color} strokeWidth="3" fill="none" className="drop-shadow-sm" />
-            <polygon points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`} fill={color} />
+            <path 
+              d={d} 
+              stroke={color} 
+              strokeWidth={isRelated && hoveredUnit ? "4.5" : "3"} 
+              fill="none" 
+              className="transition-all duration-200"
+            />
+            <polygon 
+              points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`} 
+              fill={color}
+              className="transition-all duration-200"
+            />
             {/* Transparent hit area for easier clicking */}
             <path d={d} stroke="transparent" strokeWidth="16" fill="none" />
           </g>
