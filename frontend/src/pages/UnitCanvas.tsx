@@ -67,6 +67,9 @@ export const CanvasPage: React.FC = () => {
     }>
   >([]);
 
+  // UX State - Sidebar Navigation Tab
+  const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
+
   // State for editing
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState<boolean>(false);
@@ -97,6 +100,7 @@ export const CanvasPage: React.FC = () => {
 
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
 
+  // Context Menu to identify specific units
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -106,7 +110,7 @@ export const CanvasPage: React.FC = () => {
 
   const [viewingTagMenu, setViewingTagMenu] = useState<boolean>(false);
   const [tagData, setTagData] = useState<CourseLearningOutcome[] | null>(null);
-  const [newTag, setNewTag] = useState<string>("");
+  
   const {
     existingTags,
     existingTagConnections,
@@ -139,8 +143,6 @@ export const CanvasPage: React.FC = () => {
           const response = await axiosInstance.get(
             `/unit-relationship/view?courseId=${currentCourse.courseId}`
           );
-          // Only load relationships if this is the first time loading for this course
-          // Don't reload on every render/unit drop
           setRelationships(response.data);
         } catch (error) {
           console.error("Error loading relationships:", error);
@@ -148,7 +150,7 @@ export const CanvasPage: React.FC = () => {
       }
     };
     loadRelationships();
-  }, [currentCourse?.courseId]); // Only depend on courseId, not entire currentCourse object
+  }, [currentCourse?.courseId]); 
 
   useEffect(() => {
     const loadCanvasState = async () => {
@@ -214,7 +216,6 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  // Logic to add a unit at a specific coordinate (with snapping)
   const addUnitToCanvasAtPos = (selectedUnit: Unit, x: number, y: number, color?: string) => {
     const unitExists = unitBoxes.some((u) => u.unitId === selectedUnit.unitId);
     if (unitExists) {
@@ -225,7 +226,6 @@ export const CanvasPage: React.FC = () => {
     const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
     const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
 
-    // Snap logic
     const col = Math.max(0, Math.round((x - START_X) / COL_WIDTH));
     let closestRow = 0;
     let minDistance = Infinity;
@@ -256,10 +256,8 @@ export const CanvasPage: React.FC = () => {
     setUnitBoxes((prev) => [...prev, newUnit]);
   };
 
-  // Initiate drag for a new unit from the sidebar
   const handleNewUnitMouseDown = (e: React.MouseEvent, unit: Unit) => {
     e.preventDefault();
-    // Use screen coordinates to track the initial "floating" drag
     setDraggedNewUnit({
       unit,
       x: e.clientX,
@@ -276,7 +274,6 @@ export const CanvasPage: React.FC = () => {
 
       if (canvasRef.current) {
         const rect = canvasRef.current.getBoundingClientRect();
-        // Check if dropped within canvas bounds
         if (
           upEvent.clientX >= rect.left &&
           upEvent.clientX <= rect.right &&
@@ -340,7 +337,7 @@ export const CanvasPage: React.FC = () => {
       setSelectedUnits([]);
       return;
     }
-    setContextMenu({ ...contextMenu, visible: false });
+    setContextMenu({ visible: false, x: 0, y: 0, unitId: undefined });
     if (!canvasRef.current) return;
 
     const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
@@ -364,7 +361,7 @@ export const CanvasPage: React.FC = () => {
   }
 
   function handleMouseDown(e: React.MouseEvent, id: number) {
-    setContextMenu({ ...contextMenu, visible: false });
+    setContextMenu({ visible: false, x: 0, y: 0, unitId: undefined });
     e.preventDefault();
     e.stopPropagation();
 
@@ -458,8 +455,6 @@ export const CanvasPage: React.FC = () => {
       const newUnit = await createUnit(data);
       setShowCreateForm(false);
       if (newUnit && newUnit.unitId) {
-          // Instead of auto-dropping, we could just alert it's created or clear search
-          // But usually, users might want to immediately find it in search to drag it.
           setSearchTerm(newUnit.unitId);
           handleSearchChange({ target: { value: newUnit.unitId } } as any);
       }
@@ -467,11 +462,7 @@ export const CanvasPage: React.FC = () => {
   };
 
   const handleCreateRelationship = async (targetUnitId: string) => {
-    // Guard: only allow in connection mode
-    if (!connectionMode) {
-      return;
-    }
-
+    if (!connectionMode) return;
     if (!connectionSource || connectionSource === targetUnitId) {
       setConnectionSource(null);
       return;
@@ -506,12 +497,7 @@ export const CanvasPage: React.FC = () => {
   function handleRightClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-
-    setContextMenu({
-      visible: true,
-      x: e.clientX,
-      y: e.clientY,
-    });
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, unitId: undefined });
   }
 
   const getRelationshipColor = (type: UnitRelationship["relationshipType"]) => {
@@ -574,14 +560,21 @@ export const CanvasPage: React.FC = () => {
       const sourceUnit = unitBoxes.find((u) => u.unitId === rel.unitId);
       const targetUnit = unitBoxes.find((u) => u.unitId === rel.relatedId);
       if (!sourceUnit || !targetUnit) return null;
+      
       const { d, endX, endY, angle } = getCurvePath(sourceUnit, targetUnit, rel.id);
       const color = getRelationshipColor(rel.relationshipType);
       const arrowLength = 12;
       const arrowAngle = Math.PI / 6;
+      
       return (
-        <g key={rel.id} className="cursor-pointer pointer-events-auto transition-opacity duration-200 hover:opacity-100 opacity-50" onClick={() => handleDeleteRelationship(rel.id)}>
+        <g 
+          key={rel.id} 
+          className="cursor-pointer pointer-events-auto transition-opacity duration-200 hover:opacity-100 opacity-50" 
+          onClick={() => handleDeleteRelationship(rel.id)}
+        >
           <path d={d} stroke={color} strokeWidth="3" fill="none" className="drop-shadow-sm" />
           <polygon points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`} fill={color} />
+          {/* Transparent hit area for easier clicking */}
           <path d={d} stroke="transparent" strokeWidth="16" fill="none" />
         </g>
       );
@@ -634,68 +627,40 @@ export const CanvasPage: React.FC = () => {
   const innerHeight = Math.max(800, START_Y + (semPerYear * MAX_UNITS_PER_SEM) * ROW_HEIGHT + 100);
 
   return (
-    <div className="flex h-screen relative overflow-hidden">
-      <div className="flex flex-col h-full z-20">
-        <CanvasSidebar>
-          <button className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4" onClick={handleSaveCanvas}>
-            Save Canvas
-          </button>
-          <button className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4" onClick={() => setShowCreateForm(true)}>
-            Create New Unit
-          </button>
-
-          <div className="border-t border-gray-200 pt-4 mt-4">
-            <h2 className="text-lg font-bold mb-2 text-gray-800">Connection Mode</h2>
-            <button className={`${connectionMode ? "bg-red-500 hover:bg-red-600" : "bg-purple-500 hover:bg-purple-600"} text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-2`} onClick={() => { setConnectionMode(!connectionMode); setConnectionSource(null); }}>
-              {connectionMode ? "Exit Connection Mode" : "Enter Connection Mode"}
-            </button>
-            {connectionMode && (
-              <>
-                <label className="block text-gray-700 text-sm font-bold mb-2">Relationship Type:</label>
-                <select className="shadow border rounded w-full py-2 px-3 text-gray-700 mb-2" value={selectedRelationType} onChange={(e) => setSelectedRelationType(e.target.value as UnitRelationship["relationshipType"])}>
-                  <option value="PREREQUISITE">Prerequisite</option>
-                  <option value="COREQUISITE">Corequisite</option>
-                  <option value="PROGRESSION">Progression</option>
-                  <option value="CONNECTED">Connected</option>
-                </select>
-              </>
-            )}
-          </div>
-
-          <div className="relative mb-4 mt-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2 uppercase tracking-wide">Search & Drag Units</label>
-            <input type="text" placeholder="Search to drag..." className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" value={searchTerm} onChange={handleSearchChange} onFocus={() => setShowSearchResults(true)} />
-            {showSearchResults && searchTerm.length > 0 && searchResults.length > 0 && (
-              <div className="absolute left-0 mt-1 w-full bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
-                {searchResults.map((unit) => (
-                  <div
-                    key={unit.unitId}
-                    className="px-4 py-3 text-black hover:bg-blue-50 cursor-grab active:cursor-grabbing border-b border-gray-100 last:border-0"
-                    onMouseDown={(e) => handleNewUnitMouseDown(e, unit)}
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-bold text-blue-700 text-xs">{unit.unitId}</span>
-                      <span className="text-sm font-medium">{unit.unitName}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <h2 className="text-lg font-bold mb-4 text-gray-800 pt-10">Tags</h2>
-          <input type="text" placeholder="Create a tag..." className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline my-2" value={newTag} onChange={(e) => setNewTag(e.target.value)} />
-          <button className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4" onClick={() => { createTag({ tagName: newTag, courseId: currentCourse.courseId }); setNewTag(""); }}>
-            Create New Tag
-          </button>
-        </CanvasSidebar>
+    <div className="flex h-screen relative overflow-hidden pt-16" onClick={() => setContextMenu({ ...contextMenu, visible: false })}>
+      <div className="flex flex-col h-full z-20 w-[300px] border-r shadow-xl">
+        <CanvasSidebar
+          sidebarTab={sidebarTab}
+          setSidebarTab={setSidebarTab}
+          handleSaveCanvas={handleSaveCanvas}
+          setShowCreateForm={setShowCreateForm}
+          searchTerm={searchTerm}
+          handleSearchChange={handleSearchChange}
+          showSearchResults={showSearchResults}
+          setShowSearchResults={setShowSearchResults}
+          searchResults={searchResults}
+          handleNewUnitMouseDown={handleNewUnitMouseDown}
+          connectionMode={connectionMode}
+          setConnectionMode={setConnectionMode}
+          setConnectionSource={setConnectionSource}
+          selectedRelationType={selectedRelationType}
+          setSelectedRelationType={setSelectedRelationType}
+        />
       </div>
 
       <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={handleMouseDownCanvas} onContextMenu={(e) => handleRightClick(e)}>
         <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
           {renderGridBackground()}
+          
           {unitBoxes.map((unit) => (
-            <div key={unit.id} className="absolute cursor-move select-none group" style={{ left: `${unit.x}px`, top: `${unit.y}px`, zIndex: draggedUnit === unit.id ? 30 : 10, width: `${UNIT_BOX_WIDTH}px`, height: '80px' }} onMouseDown={(e) => handleMouseDown(e, unit.id)} onDoubleClick={() => handleDoubleClick(unit.id)} onClick={connectionMode ? () => handleUnitClickForConnection(unit.unitId!) : undefined}>
+            <div 
+              key={unit.id} 
+              className="absolute cursor-move select-none group" 
+              style={{ left: `${unit.x}px`, top: `${unit.y}px`, zIndex: draggedUnit === unit.id ? 30 : 10, width: `${UNIT_BOX_WIDTH}px`, height: '80px' }} 
+              onMouseDown={(e) => handleMouseDown(e, unit.id)} 
+              onDoubleClick={() => handleDoubleClick(unit.id)} 
+              onClick={connectionMode ? () => handleUnitClickForConnection(unit.unitId!) : undefined}
+            >
               <div className={`transition-shadow duration-200 relative w-full h-full ${draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"}`}>
                 <div className={`border ${selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""} rounded shadow-sm hover:shadow-md transition-shadow duration-300 w-full h-full flex items-center justify-center`} style={{ backgroundColor: unit.color || "#3B82F6", color: "white" }}>
                   <h2 className="text-lg font-semibold text-center text-white px-2">{unit.unitId || unit.name}</h2>
@@ -704,17 +669,19 @@ export const CanvasPage: React.FC = () => {
               </div>
             </div>
           ))}
+          
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
             {renderConnectionLines()}
           </svg>
         </div>
 
+        {/* Modal: Edit Unit */}
         {showForm && editingId && (
-          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[100]">
-            <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Edit Unit</h2>
-                <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
+                <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors">&times;</button>
               </div>
               <UnitForm
                 onSave={handleFormSave}
@@ -731,12 +698,13 @@ export const CanvasPage: React.FC = () => {
           </div>
         )}
 
+        {/* Modal: Create Unit */}
         {showCreateForm && (
-          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-[100]">
-            <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Create Unit</h2>
-                <button onClick={() => setShowCreateForm(false)} className="text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
+                <button onClick={() => setShowCreateForm(false)} className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors">&times;</button>
               </div>
               <UnitForm onSave={handleCreateUnit} initialData={{ unitId: null, unitName: null, unitDesc: null, credits: null, semestersOffered: null, color: null }} />
             </div>
@@ -758,12 +726,20 @@ export const CanvasPage: React.FC = () => {
       )}
 
       {contextMenu.visible && (
-        <div className="fixed bg-white border border-gray-300 shadow-lg rounded-md flex flex-col text-left z-50" style={{ top: contextMenu.y, left: contextMenu.x, minWidth: "150px", padding: "0.5rem" }} onClick={() => setContextMenu({ ...contextMenu, visible: false })}>
-          <button className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left" onClick={() => { setViewingTagMenu(true); setTagData(currentCLOs.map((clo: CourseLearningOutcome) => ({ name: clo.cloDesc, id: clo.cloId }))); }}>Add Learning Outcome</button>
-          <button className="text-gray-800 hover:bg-gray-100 px-3 py-1 cursor-pointer text-left" onClick={() => { setViewingTagMenu(true); setTagData(existingTags.map((tag: Tag) => ({ name: tag.tagName, id: tag.tagId }))); }}>Add Tag</button>
+        <div 
+          className="fixed bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col text-left z-[300] overflow-hidden py-1" 
+          style={{ top: contextMenu.y, left: contextMenu.x, minWidth: "180px" }} 
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 mb-1">
+            <span className="text-[10px] font-bold text-gray-500 uppercase">Bulk Tools ({selectedUnits.length} selected)</span>
+          </div>
+          <button className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors" onClick={() => { setViewingTagMenu(true); setTagData(currentCLOs.map((clo: CourseLearningOutcome) => ({ name: clo.cloDesc, id: clo.cloId }))); setContextMenu({...contextMenu, visible: false}); }}>Add Learning Outcome</button>
+          <button className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors" onClick={() => { setViewingTagMenu(true); setTagData(existingTags.map((tag: Tag) => ({ name: tag.tagName, id: tag.tagId }))); setContextMenu({...contextMenu, visible: false}); }}>Add Tag</button>
         </div>
       )}
 
+      {/* Legacy Bulk Add Modal */}
       {viewingTagMenu && (
         <AddTagMenu x={contextMenu.x} y={contextMenu.y} data={tagData} onClose={() => setViewingTagMenu(false)} onSave={handleAddTagToUnits} />
       )}
