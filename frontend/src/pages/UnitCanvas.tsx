@@ -166,6 +166,57 @@ export const CanvasPage: React.FC = () => {
             color: cu.color || "#3B82F6",
           }));
           setUnitBoxes(loadedUnitBoxes);
+
+          // Load existing CLO and Tag mappings for each unit
+          const mappingsData: UnitMappings = {};
+          
+          // Get all CLOs for this course - fetch fresh data
+          await useCLOStore.getState().viewCLOsByCourse(currentCourse);
+          const allCLOs = useCLOStore.getState().currentCLOs;
+          
+          // Load all ULOs once instead of per unit
+          let allULOs: any[] = [];
+          try {
+            const uloResponse = await axiosInstance.get(`/ULO/view`);
+            allULOs = uloResponse.data || [];
+          } catch (error) {
+            console.error("Error loading unit learning outcomes:", error);
+          }
+
+          // Load all tags for this course once
+          let allTagsForCourse: any[] = [];
+          try {
+            const tagResponse = await axiosInstance.get(`/tag/view-unit-course/${currentCourse.courseId}`);
+            allTagsForCourse = tagResponse.data || [];
+          } catch (error) {
+            console.error("Error loading tags for course:", error);
+          }
+          
+          // Process each unit and build mappings
+          for (const cu of courseUnits) {
+            const unitId = cu.unitId;
+            mappingsData[unitId] = { clos: [], tags: [] };
+
+            // Find CLO mappings for this unit
+            const unitCLOMappings = allULOs.filter(
+              (ulo: any) => ulo.unitId === unitId && ulo.cloId
+            );
+            
+            const mappedCLOs = unitCLOMappings
+              .map((ulo: any) => allCLOs?.find((clo: any) => clo.cloId === ulo.cloId))
+              .filter(Boolean);
+            
+            mappingsData[unitId].clos = mappedCLOs;
+
+            // Find Tag mappings for this unit
+            const unitTags = allTagsForCourse.filter(
+              (ut: any) => ut.unitId === unitId
+            );
+            
+            mappingsData[unitId].tags = unitTags;
+          }
+          
+          setUnitMappings(mappingsData);
         } catch (error) {
           console.error("Error loading canvas state:", error);
         }
@@ -173,6 +224,15 @@ export const CanvasPage: React.FC = () => {
     };
     loadCanvasState();
   }, [currentCourse]);
+
+  useEffect(() => {
+    const loadCLOs = async () => {
+      if (currentCourse?.courseId) {
+        await useCLOStore.getState().viewCLOsByCourse(currentCourse);
+      }
+    };
+    loadCLOs();
+  }, [currentCourse?.courseId]);
 
   const getMouseCoords = (e: MouseEvent | React.MouseEvent, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect();
@@ -200,7 +260,10 @@ export const CanvasPage: React.FC = () => {
       try {
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
-          { units: unitBoxes }
+          { 
+            units: unitBoxes,
+            unitMappings: unitMappings
+          }
         );
         alert("Canvas saved successfully!");
       } catch (error) {
