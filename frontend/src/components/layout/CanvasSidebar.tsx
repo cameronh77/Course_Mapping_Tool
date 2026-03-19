@@ -20,6 +20,7 @@ interface CanvasSidebarProps {
   setConnectionSource: (source: string | null) => void;
   selectedRelationType: string;
   setSelectedRelationType: (type: any) => void;
+  getCLOColor: (cloId: number) => string;
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
@@ -37,7 +38,8 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   setConnectionMode,
   setConnectionSource,
   selectedRelationType,
-  setSelectedRelationType
+  setSelectedRelationType,
+  getCLOColor
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore();
@@ -139,20 +141,31 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
             <h2 className="text-sm font-bold mb-2 text-purple-800 border-b border-purple-100 pb-1">Course Outcomes</h2>
             <p className="text-xs text-gray-500 mb-3">Drag to a unit to map outcomes.</p>
             <div className="flex flex-col gap-2 max-h-[30vh] overflow-y-auto pr-1">
-                {currentCLOs && currentCLOs.map((clo: any) => (
-                  <div
-                    key={clo.cloId}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("application/json", JSON.stringify({ type: 'clo', data: clo }));
-                    }}
-                    className="bg-purple-50 hover:bg-purple-100 text-purple-900 text-xs p-2 rounded cursor-grab active:cursor-grabbing shadow-sm border border-purple-200 flex items-start gap-2 transition-colors"
-                    title="Drag onto a Unit Box"
-                  >
-                    <span className="font-bold mt-0.5 text-purple-500">☷</span>
-                    <span>{clo.cloDesc}</span>
-                  </div>
-                ))}
+                {currentCLOs && currentCLOs.map((clo: any) => {
+                  const typedCLO = clo as { cloId: number; cloDesc: string };
+                  const cloColor = typedCLO.cloId ? getCLOColor(typedCLO.cloId) : '#9CA3AF';
+                  const borderColor = cloColor + '33';
+                  const bgColor = cloColor + '15';
+                  return (
+                    <div
+                      key={typedCLO.cloId}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("application/json", JSON.stringify({ type: 'clo', data: clo }));
+                      }}
+                      className="text-xs p-2 rounded cursor-grab active:cursor-grabbing shadow-sm border flex items-start gap-2 transition-colors hover:shadow-md"
+                      style={{
+                        backgroundColor: bgColor,
+                        borderColor: borderColor,
+                        color: cloColor,
+                      }}
+                      title="Drag onto a Unit Box"
+                    >
+                      <span className="font-bold mt-0.5">☷</span>
+                      <span>{typedCLO.cloDesc}</span>
+                    </div>
+                  );
+                })}
                 {!currentCLOs?.length && <p className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded text-center border border-dashed">No CLOs configured for this course.</p>}
             </div>
           </div>

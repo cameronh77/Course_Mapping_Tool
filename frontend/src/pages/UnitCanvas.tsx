@@ -27,7 +27,28 @@ const START_Y = 80;
 const DEFAULT_YEARS = 3;
 const DEFAULT_SEMESTERS = 2;
 const MAX_UNITS_PER_SEM = 4; 
-const UNIT_BOX_WIDTH = 256; 
+const UNIT_BOX_WIDTH = 256;
+
+// Color palette for CLOs - vibrant and distinct colors
+const CLO_COLOR_PALETTE = [
+  "#EC4899", // Pink
+  "#F59E0B", // Amber
+  "#10B981", // Emerald
+  "#3B82F6", // Blue
+  "#8B5CF6", // Violet
+  "#EF4444", // Red
+  "#14B8A6", // Teal
+  "#F97316", // Orange
+  "#6366F1", // Indigo
+  "#84CC16", // Lime
+  "#06B6D4", // Cyan
+  "#D946EF", // Fuchsia
+];
+
+// Utility function to generate a unique color for each CLO
+const getCLOColor = (cloId: number): string => {
+  return CLO_COLOR_PALETTE[cloId % CLO_COLOR_PALETTE.length];
+};
 
 export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
@@ -573,6 +594,7 @@ export const CanvasPage: React.FC = () => {
           setConnectionSource={setConnectionSource}
           selectedRelationType={selectedRelationType}
           setSelectedRelationType={setSelectedRelationType}
+          getCLOColor={getCLOColor}
         />
       </div>
 
@@ -605,6 +627,7 @@ export const CanvasPage: React.FC = () => {
               toggleExpand={toggleExpand}
               setActiveTab={(id, tab) => setActiveTabs(prev => ({ ...prev, [id]: tab }))}
               deleteUnit={deleteUnit}
+              getCLOColor={getCLOColor}
             />
           ))}
           

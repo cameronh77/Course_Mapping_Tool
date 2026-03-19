@@ -13,6 +13,7 @@ interface UnitBoxProps {
   activeTab: 'info' | 'clos' | 'tags';
   unitMappings: { clos: CourseLearningOutcome[], tags: Tag[] };
   currentCLOs: CourseLearningOutcome[];
+  getCLOColor: (cloId: number) => string;
   
   // Event Handlers
   onMouseDown: (e: React.MouseEvent, id: number) => void;
@@ -21,7 +22,7 @@ interface UnitBoxProps {
   onMouseEnter: (unitId: string | null) => void;
   onMouseLeave: () => void;
   onContextMenu: (e: React.MouseEvent, unitKey: string) => void;
-  onDrop: (unitKey: string, dropData: any) => void;
+  onDrop: (unitKey: string, dropData: Record<string, unknown>) => void;
   toggleExpand: (e: React.MouseEvent, id: number) => void;
   setActiveTab: (id: number, tab: 'info' | 'clos' | 'tags') => void;
   deleteUnit: (id: number) => void;
@@ -37,6 +38,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   activeTab,
   unitMappings,
   currentCLOs,
+  getCLOColor,
   onMouseDown,
   onDoubleClick,
   onClick,
@@ -67,7 +69,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
           try {
             const parsed = JSON.parse(dropData);
             onDrop(unitKey, parsed);
-          } catch(err) { console.error("Drop parsing failed"); }
+          } catch { console.error("Drop parsing failed"); }
         }
       }}
     >
@@ -91,11 +93,16 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
                   <div className="flex gap-1 items-center bg-black/10 px-1.5 py-1 rounded w-max" title="Course Outcomes Coverage">
                     {currentCLOs.map((clo, idx) => {
                       const isMapped = unitMappings?.clos?.some(c => c.cloId === clo.cloId);
+                      const cloColor = clo.cloId ? getCLOColor(clo.cloId) : '#9CA3AF';
                       return (
                         <div 
                           key={idx} 
                           title={clo.cloDesc} 
-                          className={`w-2 h-2 rounded-full border transition-colors ${isMapped ? 'bg-purple-300 border-purple-200 shadow-[0_0_4px_rgba(216,180,254,0.8)]' : 'bg-transparent border-white/40'}`} 
+                          className={`w-2 h-2 rounded-full border transition-colors ${isMapped ? 'shadow-md' : 'bg-transparent border-white/40'}`}
+                          style={{
+                            backgroundColor: isMapped ? cloColor : 'transparent',
+                            borderColor: isMapped ? cloColor : 'rgba(255,255,255,0.4)',
+                          }}
                         />
                       );
                     })}
@@ -175,12 +182,25 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
 
               {activeTab === 'clos' && (
                 <div className="flex flex-col gap-1.5 h-full">
-                  {(unitMappings?.clos || []).map(clo => (
-                    <div key={clo.cloId} className="bg-purple-50 text-purple-900 border border-purple-100 text-xs px-2 py-1.5 rounded flex items-start gap-1.5 shadow-sm">
-                      <span className="font-bold mt-[1px] text-purple-400">☷</span>
-                      <span>{clo.cloDesc}</span>
-                    </div>
-                  ))}
+                  {(unitMappings?.clos || []).map(clo => {
+                    const cloColor = clo.cloId ? getCLOColor(clo.cloId) : '#9CA3AF';
+                    const borderColor = cloColor + '33';
+                    const bgColor = cloColor + '15';
+                    return (
+                      <div 
+                        key={clo.cloId} 
+                        className="text-xs px-2 py-1.5 rounded flex items-start gap-1.5 shadow-sm border"
+                        style={{
+                          backgroundColor: bgColor,
+                          borderColor: borderColor,
+                          color: cloColor,
+                        }}
+                      >
+                        <span className="font-bold mt-[1px]">☷</span>
+                        <span>{clo.cloDesc}</span>
+                      </div>
+                    );
+                  })}
                   {!(unitMappings?.clos?.length) && (
                     <div className="flex-1 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50/50">
                       <svg className="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
