@@ -1,46 +1,23 @@
 import React, { useState, useEffect, useRef } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
+import { UnitBox } from "../components/common/UnitBox";
+import { GridBackground } from "../components/common/GridBackground";
+import { ConnectionLines } from "../components/common/ConnectionLines";
+import { AddTagMenu } from "../components/common/AddTagMenu";
 import { axiosInstance } from "../lib/axios";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
-import Navbar from "../components/navbar";
-import { AddTagMenu } from "../components/common/AddTagMenu";
-
 import { useCLOStore } from "../stores/useCLOStore";
 import { useTagStore } from "../stores/useTagStore";
-
-// Define the Unit interface
-interface Unit {
-  unitId: string;
-  unitName: string;
-  unitDesc: string;
-  credits: number;
-  semestersOffered: number[];
-}
-
-export interface CourseLearningOutcome {
-  cloId?: number | null;
-  cloDesc: string;
-  courseId: string | undefined;
-}
-
-export interface Tag {
-  tagId: number;
-  tagName: string;
-  courseId: string;
-}
-
-// Define the UnitRelationship interface
-export interface UnitRelationship {
-  id: number;
-  unitId: string;
-  relatedId: string;
-  relationshipType: "PREREQUISITE" | "COREQUISITE" | "PROGRESSION" | "CONNECTED";
-  courseId: string | null;
-  sId: number | null;
-  entryType: number;
-}
+import type { 
+  Unit, 
+  CourseLearningOutcome, 
+  Tag, 
+  UnitRelationship,
+  UnitBox as UnitBoxType,
+  UnitMappings
+} from "../types";
 
 // Grid Layout Constants
 const COL_WIDTH = 600; 
@@ -53,19 +30,7 @@ const MAX_UNITS_PER_SEM = 4;
 const UNIT_BOX_WIDTH = 256; 
 
 export const CanvasPage: React.FC = () => {
-  const [unitBoxes, setUnitBoxes] = useState<
-    Array<{
-      id: number;
-      name: string;
-      unitId?: string;
-      description?: string;
-      credits?: number;
-      semestersOffered?: number[];
-      x: number;
-      y: number;
-      color?: string;
-    }>
-  >([]);
+  const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
 
   // UX State - Sidebar Navigation Tab
   const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
@@ -105,7 +70,7 @@ export const CanvasPage: React.FC = () => {
     visible: boolean;
     x: number;
     y: number;
-    unitId?: number;
+    unitId?: string; // Updated to handle string keys for unit selection
   }>({ visible: false, x: 0, y: 0 });
 
   const [viewingTagMenu, setViewingTagMenu] = useState<boolean>(false);
@@ -124,6 +89,11 @@ export const CanvasPage: React.FC = () => {
   const [connectionSource, setConnectionSource] = useState<string | null>(null);
   const [relationships, setRelationships] = useState<UnitRelationship[]>([]);
   const [selectedRelationType, setSelectedRelationType] = useState<UnitRelationship["relationshipType"]>("PREREQUISITE");
+
+  // State for expanded units and active tabs
+  const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
+  const [activeTabs, setActiveTabs] = useState<Record<number, 'info' | 'clos' | 'tags'>>({});
+  const [unitMappings, setUnitMappings] = useState<UnitMappings>({});
 
   useEffect(() => {
     const loadUnits = async () => {
@@ -494,137 +464,92 @@ export const CanvasPage: React.FC = () => {
     else handleCreateRelationship(unitId);
   };
 
+  // Restored: Canvas generic Right-Click (Bulk Tools)
   function handleRightClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ visible: true, x: e.clientX, y: e.clientY, unitId: undefined });
   }
 
-  const getRelationshipColor = (type: UnitRelationship["relationshipType"]) => {
-    switch (type) {
-      case "PREREQUISITE": return "#EF4444";
-      case "COREQUISITE": return "#F59E0B";
-      case "PROGRESSION": return "#10B981";
-      case "CONNECTED": return "#6366F1";
-      default: return "#6B7280";
-    }
-  };
+  // Restored: Unit Box specific Right-Click (Quick Tick Tool)
+  function handleUnitRightClick(e: React.MouseEvent, unitId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, unitId });
+  }
 
-  const renderConnectionLines = () => {
-    const UNIT_HEIGHT = 80;
-    const getCurvePath = (source: any, target: any, relId: number) => {
-      const sx = source.x + UNIT_BOX_WIDTH / 2;
-      const sy = source.y + UNIT_HEIGHT / 2;
-      const tx = target.x + UNIT_BOX_WIDTH / 2;
-      const ty = target.y + UNIT_HEIGHT / 2;
-      const colS = Math.max(0, Math.round((source.x - START_X) / COL_WIDTH));
-      const colT = Math.max(0, Math.round((target.x - START_X) / COL_WIDTH));
-      const isSameCol = colS === colT;
-      const fanOffset = (relId % 7) * 15 - 45; 
-      let d = "";
-      let endX, endY, angle;
-
-      if (isSameCol) {
-        const startX = sx + UNIT_BOX_WIDTH / 2;
-        endX = tx + UNIT_BOX_WIDTH / 2;
-        endY = ty;
-        const corridorX = START_X + (colS + 1) * COL_WIDTH + fanOffset;
-        d = `M ${startX} ${sy} C ${corridorX} ${sy}, ${corridorX} ${ty}, ${endX} ${ty}`;
-        angle = Math.PI;
-      } else if (Math.abs(colS - colT) === 1) {
-        const isLtoR = colT > colS;
-        const startX = sx + (isLtoR ? 1 : -1) * (UNIT_BOX_WIDTH / 2);
-        endX = tx + (isLtoR ? -1 : 1) * (UNIT_BOX_WIDTH / 2);
-        endY = ty;
-        const corridorX = START_X + Math.max(colS, colT) * COL_WIDTH + fanOffset;
-        d = `M ${startX} ${sy} C ${corridorX} ${sy}, ${corridorX} ${ty}, ${endX} ${ty}`;
-        angle = isLtoR ? 0 : Math.PI;
+  // Restored: Handle Quick-Tick Mappings
+  const handleToggleCLO = (unitKey: string, clo: CourseLearningOutcome, add: boolean) => {
+    setUnitMappings(prev => {
+      const unitData = prev[unitKey] || { clos: [], tags: [] };
+      if (add) {
+        return { ...prev, [unitKey]: { ...unitData, clos: [...unitData.clos, clo] } };
       } else {
-        const isLtoR = colT > colS;
-        const startX = sx + (isLtoR ? 1 : -1) * (UNIT_BOX_WIDTH / 2);
-        endX = tx + (isLtoR ? -1 : 1) * (UNIT_BOX_WIDTH / 2);
-        endY = ty;
-        const corridor1X = START_X + (isLtoR ? colS + 1 : colS) * COL_WIDTH + fanOffset;
-        const corridor2X = START_X + (isLtoR ? colT : colT + 1) * COL_WIDTH + fanOffset;
-        const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
-        const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
-        const bottomY = START_Y + totalRows * ROW_HEIGHT + 60 + Math.abs(fanOffset) * 2;
-        const midX = (corridor1X + corridor2X) / 2;
-        d = `M ${startX} ${sy} C ${corridor1X} ${sy}, ${corridor1X} ${bottomY}, ${midX} ${bottomY} C ${corridor2X} ${bottomY}, ${corridor2X} ${ty}, ${endX} ${ty}`;
-        angle = isLtoR ? 0 : Math.PI;
+        return { ...prev, [unitKey]: { ...unitData, clos: unitData.clos.filter(c => c.cloId !== clo.cloId) } };
       }
-      return { d, endX, endY, angle };
-    };
-
-    return relationships.map((rel) => {
-      const sourceUnit = unitBoxes.find((u) => u.unitId === rel.unitId);
-      const targetUnit = unitBoxes.find((u) => u.unitId === rel.relatedId);
-      if (!sourceUnit || !targetUnit) return null;
-      
-      const { d, endX, endY, angle } = getCurvePath(sourceUnit, targetUnit, rel.id);
-      const color = getRelationshipColor(rel.relationshipType);
-      const arrowLength = 12;
-      const arrowAngle = Math.PI / 6;
-      
-      return (
-        <g 
-          key={rel.id} 
-          className="cursor-pointer pointer-events-auto transition-opacity duration-200 hover:opacity-100 opacity-50" 
-          onClick={() => handleDeleteRelationship(rel.id)}
-        >
-          <path d={d} stroke={color} strokeWidth="3" fill="none" className="drop-shadow-sm" />
-          <polygon points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`} fill={color} />
-          {/* Transparent hit area for easier clicking */}
-          <path d={d} stroke="transparent" strokeWidth="16" fill="none" />
-        </g>
-      );
     });
   };
 
-  const renderGridBackground = () => {
-    const years = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
-    const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
-    const totalCols = years;
-    const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
-    return (
-      <div className="absolute inset-0 pointer-events-none" style={{ minWidth: START_X + totalCols * COL_WIDTH, minHeight: START_Y + totalRows * ROW_HEIGHT + 100 }}>
-        {Array.from({ length: totalCols }).map((_, col) => (
-          <div key={`year-${col}`} className="absolute border-b-2 border-gray-300 flex items-center justify-center font-bold text-gray-700 text-xl" style={{ top: 20, left: START_X + col * COL_WIDTH, width: COL_WIDTH, height: 40 }}>
-            Year {col + 1}
-          </div>
-        ))}
-        {Array.from({ length: semestersPerYear }).map((_, s) => {
-          const semStartY = START_Y + s * (MAX_UNITS_PER_SEM * ROW_HEIGHT);
-          const semHeight = MAX_UNITS_PER_SEM * ROW_HEIGHT;
-          return (
-            <div key={`sem-group-${s}`}>
-              <div className="absolute border-r-2 border-gray-300 bg-gray-50 flex items-center justify-center font-bold text-gray-600 uppercase tracking-widest text-lg" style={{ top: semStartY, left: 0, width: START_X, height: semHeight, writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
-                Semester {s + 1}
-              </div>
-              {s > 0 && <div className="absolute border-t-2 border-gray-300" style={{ top: semStartY, left: 0, width: START_X + totalCols * COL_WIDTH }} />}
-              {Array.from({ length: MAX_UNITS_PER_SEM }).map((_, unitInSem) => {
-                const absRow = s * MAX_UNITS_PER_SEM + unitInSem;
-                return (
-                  <div key={`sem-${s}-unit-${unitInSem}`}>
-                    {Array.from({ length: totalCols }).map((_, col) => (
-                      <div key={`slot-${col}-${absRow}`} className="absolute border-2 border-dashed border-gray-300 rounded-lg bg-gray-50/50 flex items-center justify-center" style={{ top: START_Y + absRow * ROW_HEIGHT + 20, left: START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2, width: UNIT_BOX_WIDTH, height: 80 }}>
-                        <span className="text-gray-400 font-medium text-xs opacity-50">Drop Unit Here</span>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
-      </div>
-    );
+  const handleToggleTag = (unitKey: string, tag: Tag, add: boolean) => {
+    setUnitMappings(prev => {
+      const unitData = prev[unitKey] || { clos: [], tags: [] };
+      if (add) {
+        if (currentCourse?.courseId) {
+          addUnitTags([{ courseId: currentCourse.courseId, unitId: unitKey, tagId: tag.tagId }]);
+        }
+        return { ...prev, [unitKey]: { ...unitData, tags: [...unitData.tags, tag] } };
+      } else {
+        return { ...prev, [unitKey]: { ...unitData, tags: unitData.tags.filter(t => t.tagId !== tag.tagId) } };
+      }
+    });
+  };
+
+  // Handle Drop onto a Unit Box from Sidebar
+  const handleDropOnUnit = (unitKey: string, transferItem: any) => {
+    setUnitMappings((prev) => {
+      const unitData = prev[unitKey] || { clos: [], tags: [] };
+      if (transferItem.type === 'clo') {
+        if (!unitData.clos.find((c) => c.cloId === transferItem.data.cloId)) {
+          return { ...prev, [unitKey]: { ...unitData, clos: [...unitData.clos, transferItem.data] } };
+        }
+      } else if (transferItem.type === 'tag') {
+        if (!unitData.tags.find((t) => t.tagId === transferItem.data.tagId)) {
+          if (currentCourse?.courseId) {
+             addUnitTags([{ courseId: currentCourse.courseId, unitId: unitKey, tagId: transferItem.data.tagId }]);
+          }
+          return { ...prev, [unitKey]: { ...unitData, tags: [...unitData.tags, transferItem.data] } };
+        }
+      }
+      return prev;
+    });
+  };
+
+  const toggleExpand = (e: React.MouseEvent, unitId: number) => {
+    e.stopPropagation();
+    setExpandedUnits(prev => {
+      const next = new Set(prev);
+      if (next.has(unitId)) next.delete(unitId);
+      else next.add(unitId);
+      return next;
+    });
   };
 
   const yearsCount = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
   const semPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
   const innerWidth = Math.max(1200, START_X + yearsCount * COL_WIDTH + 100);
   const innerHeight = Math.max(800, START_Y + (semPerYear * MAX_UNITS_PER_SEM) * ROW_HEIGHT + 100);
+
+  // Wrapper for the onDrop handler to process logic locally in UnitCanvas
+  const handleUnitBoxDrop = (unitKey: string, parsed: any) => {
+    handleDropOnUnit(unitKey, parsed);
+    const unit = unitBoxes.find(u => u.unitId === unitKey || u.id.toString() === unitKey);
+    if (unit && !expandedUnits.has(unit.id)) {
+      setExpandedUnits(prev => new Set(prev).add(unit.id));
+    }
+    if (unit) {
+      setActiveTabs(prev => ({...prev, [unit.id]: parsed.type === 'clo' ? 'clos' : 'tags'}));
+    }
+  };
 
   return (
     <div className="flex h-screen relative overflow-hidden pt-16" onClick={() => setContextMenu({ ...contextMenu, visible: false })}>
@@ -650,28 +575,43 @@ export const CanvasPage: React.FC = () => {
 
       <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={handleMouseDownCanvas} onContextMenu={(e) => handleRightClick(e)}>
         <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
-          {renderGridBackground()}
+          <GridBackground
+            expectedDuration={yearsCount}
+            numberTeachingPeriods={semPerYear}
+          />
           
           {unitBoxes.map((unit) => (
-            <div 
-              key={unit.id} 
-              className="absolute cursor-move select-none group" 
-              style={{ left: `${unit.x}px`, top: `${unit.y}px`, zIndex: draggedUnit === unit.id ? 30 : 10, width: `${UNIT_BOX_WIDTH}px`, height: '80px' }} 
-              onMouseDown={(e) => handleMouseDown(e, unit.id)} 
-              onDoubleClick={() => handleDoubleClick(unit.id)} 
-              onClick={connectionMode ? () => handleUnitClickForConnection(unit.unitId!) : undefined}
-            >
-              <div className={`transition-shadow duration-200 relative w-full h-full ${draggedUnit === unit.id ? "shadow-lg scale-105" : "shadow-sm"}`}>
-                <div className={`border ${selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""} rounded shadow-sm hover:shadow-md transition-shadow duration-300 w-full h-full flex items-center justify-center`} style={{ backgroundColor: unit.color || "#3B82F6", color: "white" }}>
-                  <h2 className="text-lg font-semibold text-center text-white px-2">{unit.unitId || unit.name}</h2>
-                </div>
-                <button onClick={(e) => { e.stopPropagation(); deleteUnit(unit.id); }} className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">×</button>
-              </div>
-            </div>
+            <UnitBox
+              key={unit.id}
+              unit={unit}
+              draggedUnit={draggedUnit}
+              selectedUnits={selectedUnits}
+              connectionMode={connectionMode}
+              connectionSource={connectionSource}
+              isExpanded={expandedUnits.has(unit.id)}
+              activeTab={activeTabs[unit.id] || 'info'}
+              unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
+              currentCLOs={currentCLOs || []}
+              onMouseDown={handleMouseDown}
+              onDoubleClick={handleDoubleClick}
+              onClick={handleUnitClickForConnection}
+              onMouseEnter={() => {}} // Disabled hover
+              onMouseLeave={() => {}} // Disabled hover
+              onContextMenu={handleUnitRightClick}
+              onDrop={handleUnitBoxDrop}
+              toggleExpand={toggleExpand}
+              setActiveTab={(id, tab) => setActiveTabs(prev => ({ ...prev, [id]: tab }))}
+              deleteUnit={deleteUnit}
+            />
           ))}
           
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
-            {renderConnectionLines()}
+            <ConnectionLines
+              relationships={relationships}
+              unitBoxes={unitBoxes}
+              numberTeachingPeriods={semPerYear}
+              onDeleteRelationship={handleDeleteRelationship}
+            />
           </svg>
         </div>
 
@@ -725,21 +665,76 @@ export const CanvasPage: React.FC = () => {
         </div>
       )}
 
+      {/* Dynamic Context Menu (Quick-Tick Mapping OR Bulk Tools) */}
       {contextMenu.visible && (
         <div 
-          className="fixed bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col text-left z-[300] overflow-hidden py-1" 
-          style={{ top: contextMenu.y, left: contextMenu.x, minWidth: "180px" }} 
+          className="fixed bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col text-left z-[300] overflow-hidden" 
+          style={{ top: contextMenu.y, left: contextMenu.x, minWidth: "220px", maxWidth: "280px" }} 
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 mb-1">
-            <span className="text-[10px] font-bold text-gray-500 uppercase">Bulk Tools ({selectedUnits.length} selected)</span>
-          </div>
-          <button className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors" onClick={() => { setViewingTagMenu(true); setTagData(currentCLOs.map((clo: CourseLearningOutcome) => ({ name: clo.cloDesc, id: clo.cloId }))); setContextMenu({...contextMenu, visible: false}); }}>Add Learning Outcome</button>
-          <button className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors" onClick={() => { setViewingTagMenu(true); setTagData(existingTags.map((tag: Tag) => ({ name: tag.tagName, id: tag.tagId }))); setContextMenu({...contextMenu, visible: false}); }}>Add Tag</button>
+          {contextMenu.unitId ? (
+            // Specific Unit Context Menu (Quick-Tick Checklist)
+            <>
+              <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex justify-between items-center">
+                <span className="font-bold text-[11px] text-gray-500 uppercase tracking-wider">Quick Mapping - {contextMenu.unitId}</span>
+                <button onClick={() => setContextMenu({...contextMenu, visible: false})} className="text-gray-400 hover:text-gray-700 leading-none">✕</button>
+              </div>
+              
+              <div className="overflow-y-auto max-h-[300px] p-2 flex flex-col gap-3">
+                
+                {/* CLOs Checklist */}
+                <div>
+                  <span className="text-[10px] font-bold text-purple-600 mb-1 block uppercase tracking-wider">Course Outcomes</span>
+                  {currentCLOs && currentCLOs.length > 0 ? currentCLOs.map(clo => {
+                    const isMapped = unitMappings[contextMenu.unitId!]?.clos?.some(c => c.cloId === clo.cloId);
+                    return (
+                      <label key={clo.cloId} className="flex items-start gap-2 p-1.5 hover:bg-purple-50 rounded cursor-pointer transition-colors group">
+                        <input 
+                          type="checkbox" 
+                          className="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer" 
+                          checked={!!isMapped} 
+                          onChange={(e) => handleToggleCLO(contextMenu.unitId!, clo, e.target.checked)} 
+                        />
+                        <span className="text-gray-700 text-xs leading-tight group-hover:text-purple-900">{clo.cloDesc}</span>
+                      </label>
+                    );
+                  }) : <span className="text-xs text-gray-400 italic px-1">No CLOs to map.</span>}
+                </div>
+
+                {/* Tags Checklist */}
+                <div className="border-t border-gray-100 pt-2">
+                  <span className="text-[10px] font-bold text-green-600 mb-1 block uppercase tracking-wider">Tags</span>
+                  {existingTags && existingTags.length > 0 ? existingTags.map(tag => {
+                    const isMapped = unitMappings[contextMenu.unitId!]?.tags?.some(t => t.tagId === tag.tagId);
+                    return (
+                      <label key={tag.tagId} className="flex items-center gap-2 p-1.5 hover:bg-green-50 rounded cursor-pointer transition-colors group">
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer" 
+                          checked={!!isMapped} 
+                          onChange={(e) => handleToggleTag(contextMenu.unitId!, tag, e.target.checked)} 
+                        />
+                        <span className="text-gray-700 text-xs group-hover:text-green-900">{tag.tagName}</span>
+                      </label>
+                    );
+                  }) : <span className="text-xs text-gray-400 italic px-1">No tags available.</span>}
+                </div>
+
+              </div>
+            </>
+          ) : (
+            // General Canvas Context Menu (Bulk Operations)
+            <div className="py-1">
+              <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 mb-1">
+                <span className="text-[10px] font-bold text-gray-500 uppercase">Bulk Tools ({selectedUnits.length} selected)</span>
+              </div>
+              <button className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors" onClick={() => { setViewingTagMenu(true); setTagData(currentCLOs.map((clo: CourseLearningOutcome) => ({ name: clo.cloDesc, id: clo.cloId }))); setContextMenu({...contextMenu, visible: false}); }}>Add Learning Outcome</button>
+              <button className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors" onClick={() => { setViewingTagMenu(true); setTagData(existingTags.map((tag: Tag) => ({ name: tag.tagName, id: tag.tagId }))); setContextMenu({...contextMenu, visible: false}); }}>Add Tag</button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Legacy Bulk Add Modal */}
       {viewingTagMenu && (
         <AddTagMenu x={contextMenu.x} y={contextMenu.y} data={tagData} onClose={() => setViewingTagMenu(false)} onSave={handleAddTagToUnits} />
       )}

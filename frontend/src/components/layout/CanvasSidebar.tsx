@@ -2,14 +2,7 @@ import React, { useState } from "react";
 import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
-
-export interface Unit {
-  unitId: string;
-  unitName: string;
-  unitDesc: string;
-  credits: number;
-  semestersOffered: number[];
-}
+import type { Unit } from "../../types";
 
 interface CanvasSidebarProps {
   sidebarTab: 'units' | 'connections' | 'mapping';
