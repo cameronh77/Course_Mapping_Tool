@@ -6,6 +6,7 @@ import courseLearningOutcomeRoutes from "./course-learning-outcome/routes/course
 import unitLearningOutcomeRoutes from "./unit-learning-outcome/routes/unitLearningOutcomeRoutes.js";
 import tagRoutes from "./tag/routes/tagRoutes.js";
 import unitRelationshipRoutes from "./unit-relationship/routes/unitRelationshipRoutes.js";
+import assessmentRoutes from "./Assessment/routes/assessmentRoutes.js";
 import cors from "cors";
 
 const app = express();
@@ -25,6 +26,7 @@ app.use("/api/CLO", courseLearningOutcomeRoutes);
 app.use("/api/ULO", unitLearningOutcomeRoutes);
 app.use("/api/tag", tagRoutes);
 app.use("/api/unit-relationship", unitRelationshipRoutes);
+app.use("/api/assessment", assessmentRoutes);
 
 const server = app.listen(3000, () =>
   console.log(`

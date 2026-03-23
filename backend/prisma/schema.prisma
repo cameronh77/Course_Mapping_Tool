@@ -44,7 +44,8 @@ model Unit {
   learningOutcomes UnitLearningOutcome[]  
   relationships    UnitRelationship[]     @relation("UnitRelations")
   relatedTo        UnitRelationship[]     @relation("RelatedUnits")
-  AssessmentULO    AssessmentULO[]        
+  AssessmentULO    AssessmentULO[]     
+  Assessments      Assessment[]  
 
   existingTags      CourseUnitTags[]      
 }
@@ -143,12 +144,16 @@ model UnitLearningOutcome {
 
 model Assessment {
   assessmentId Int    @id @default(autoincrement())
-  aDesc        String
+  assessmentDesc      String
+  assessmentType      String
+  unitId              String
 
   unitLos AssessmentULO[]
 
   outgoingRelationships AssessmentRelationship[] @relation("AssessmentRelations")
   incomingRelationships AssessmentRelationship[] @relation("RelatedAssessments")
+
+  unit                Unit  @relation(fields: [unitId], references:[unitId], onDelete:Cascade)
 }
 
 model AssessmentULO {
