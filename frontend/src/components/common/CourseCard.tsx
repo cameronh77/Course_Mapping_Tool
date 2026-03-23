@@ -16,7 +16,7 @@ export const CourseCard = ({
   onClick,
 }: CourseCardProps) => {
   return (
-    <div className="bg-white flex flex-col w-[%30] h-[50%] rounded-xl justify-evenly">
+    <div className="bg-white flex flex-col w-[%30] h-[25rem] rounded-xl justify-evenly p-6">
       <p className="text-black">{courseName}</p>
       <p className="text-gray-500">ID: {courseId}</p>
       <hr />

@@ -93,9 +93,9 @@ export const TmpNewHomePage = () => {
     <div>
       {addingCourse == 1 && (
         <div className="w-full h-[100%] z-100 bg-white/75 absolute flex justify-center items-center">
-          <div className="w-[80%] h-[80%] bg-white outline-[2px] opacity-100 outline-gray-500 rounded-xl flex flex-col">
+          <div className="w-[80%] h-[80%] bg-white outline-[2px] opacity-100 outline-gray-500 rounded-xl flex flex-col p-6">
             <div className="items-left">
-              <p className="text-black">Create New Course</p>
+              <p className="text-black font-bold text-xl">Create New Course</p>
               <p className="text-gray-500">
                 Set up your course structure and metadata
               </p>
@@ -218,7 +218,7 @@ export const TmpNewHomePage = () => {
         </div>
       )}
       <div className="min-h-screen flex lg:flex-row">
-        <div className="grow-2 flex flex-col items-center p-6 sm:p-12 bg-white">
+        <div className="grow-1 flex flex-col bg-white justify-left">
           <ul className="menu rounded-box">
             <li>
               <a className="tooltip tooltip-right">
@@ -302,7 +302,7 @@ export const TmpNewHomePage = () => {
               />
             ))}
             <button
-              className="flex flex-col w-[%30] h-[50%] rounded-xl items-center justify-center border-gray-300 border-[2px] border-dashed"
+              className="flex flex-col w-[%30] h-[25rem] rounded-xl items-center justify-center border-gray-300 border-[2px] border-dashed"
               onClick={() => setAddingCourse(addingCourse + 1)}
             >
               <p className="text-black">Add new Course</p>
