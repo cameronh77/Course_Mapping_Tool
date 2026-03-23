@@ -4,7 +4,16 @@ import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
 import { useUnitStore } from "../stores/useUnitStore";
-import type { Unit, UnitBox as UnitBoxType } from "../types";
+import { useCourseStore } from "../stores/useCourseStore";
+import { useCLOStore } from "../stores/useCLOStore";
+import { useTagStore } from "../stores/useTagStore";
+import type {
+  Unit,
+  UnitBox as UnitBoxType,
+  CourseLearningOutcome,
+  Tag,
+  UnitMappings,
+} from "../types";
 
 const UNIT_BOX_WIDTH = 256;
 
@@ -32,6 +41,13 @@ export const WhiteboardCanvas: React.FC = () => {
 
   const unitStore = useUnitStore() as any;
   const { checkUnitExists, viewUnits, createUnit, updateUnit } = unitStore;
+  const courseStore = useCourseStore() as any;
+  const cloStore = useCLOStore() as any;
+  const tagStore = useTagStore() as any;
+
+  const { currentCourse } = courseStore;
+  const { currentCLOs, viewCLOsByCourse } = cloStore;
+  const { existingTags, addUnitTags, viewCourseTags } = tagStore;
 
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
   const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
@@ -53,10 +69,24 @@ export const WhiteboardCanvas: React.FC = () => {
   const [selectedRelationType, setSelectedRelationType] = useState<any>("PREREQUISITE");
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
   const [activeTabs, setActiveTabs] = useState<Record<number, 'info' | 'clos' | 'tags'>>({});
+  const [unitMappings, setUnitMappings] = useState<UnitMappings>({});
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    unitId?: string;
+  }>({ visible: false, x: 0, y: 0 });
 
   useEffect(() => {
     viewUnits();
   }, []);
+
+  useEffect(() => {
+    if (currentCourse?.courseId) {
+      viewCLOsByCourse(currentCourse);
+      viewCourseTags(currentCourse.courseId);
+    }
+  }, [currentCourse?.courseId]);
 
   const getMouseCoords = (e: MouseEvent | React.MouseEvent, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect();
@@ -86,6 +116,10 @@ export const WhiteboardCanvas: React.FC = () => {
     };
 
     setUnitBoxes((prev) => [...prev, newUnit]);
+    setUnitMappings((prev) => ({
+      ...prev,
+      [selectedUnit.unitId]: prev[selectedUnit.unitId] || { clos: [], tags: [] },
+    }));
   };
 
   const handleNewUnitMouseDown = (e: React.MouseEvent, unit: Unit) => {
@@ -241,6 +275,73 @@ export const WhiteboardCanvas: React.FC = () => {
     alert("Whiteboard view is currently unsaved.");
   };
 
+  const handleUnitRightClick = (e: React.MouseEvent, unitKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, unitId: unitKey });
+  };
+
+  const handleToggleCLO = (unitKey: string, clo: CourseLearningOutcome, add: boolean) => {
+    setUnitMappings((prev) => {
+      const unitData = prev[unitKey] || { clos: [], tags: [] };
+      if (add) {
+        if (unitData.clos.some((c) => c.cloId === clo.cloId)) return prev;
+        return { ...prev, [unitKey]: { ...unitData, clos: [...unitData.clos, clo] } };
+      }
+      return {
+        ...prev,
+        [unitKey]: { ...unitData, clos: unitData.clos.filter((c) => c.cloId !== clo.cloId) },
+      };
+    });
+  };
+
+  const handleToggleTag = (unitKey: string, tag: Tag, add: boolean) => {
+    setUnitMappings((prev) => {
+      const unitData = prev[unitKey] || { clos: [], tags: [] };
+      if (add) {
+        if (unitData.tags.some((t) => t.tagId === tag.tagId)) return prev;
+        if (currentCourse?.courseId) {
+          addUnitTags([{ courseId: currentCourse.courseId, unitId: unitKey, tagId: tag.tagId }]);
+        }
+        return { ...prev, [unitKey]: { ...unitData, tags: [...unitData.tags, tag] } };
+      }
+      return {
+        ...prev,
+        [unitKey]: { ...unitData, tags: unitData.tags.filter((t) => t.tagId !== tag.tagId) },
+      };
+    });
+  };
+
+  const handleDropOnUnit = (unitKey: string, transferItem: any) => {
+    setUnitMappings((prev) => {
+      const unitData = prev[unitKey] || { clos: [], tags: [] };
+      if (transferItem.type === "clo") {
+        if (!unitData.clos.find((c) => c.cloId === transferItem.data.cloId)) {
+          return { ...prev, [unitKey]: { ...unitData, clos: [...unitData.clos, transferItem.data] } };
+        }
+      } else if (transferItem.type === "tag") {
+        if (!unitData.tags.find((t) => t.tagId === transferItem.data.tagId)) {
+          if (currentCourse?.courseId) {
+            addUnitTags([{ courseId: currentCourse.courseId, unitId: unitKey, tagId: transferItem.data.tagId }]);
+          }
+          return { ...prev, [unitKey]: { ...unitData, tags: [...unitData.tags, transferItem.data] } };
+        }
+      }
+      return prev;
+    });
+  };
+
+  const handleUnitBoxDrop = (unitKey: string, parsed: any) => {
+    handleDropOnUnit(unitKey, parsed);
+    const unit = unitBoxes.find((u) => u.unitId === unitKey || u.id.toString() === unitKey);
+    if (unit && !expandedUnits.has(unit.id)) {
+      setExpandedUnits((prev) => new Set(prev).add(unit.id));
+    }
+    if (unit) {
+      setActiveTabs((prev) => ({ ...prev, [unit.id]: parsed.type === "clo" ? "clos" : "tags" }));
+    }
+  };
+
   const toggleExpand = (e: React.MouseEvent, unitId: number) => {
     e.stopPropagation();
     setExpandedUnits((prev) => {
@@ -253,9 +354,10 @@ export const WhiteboardCanvas: React.FC = () => {
 
   const innerWidth = 5000;
   const innerHeight = 3000;
+  const closeContextMenu = () => setContextMenu((prev) => ({ ...prev, visible: false }));
 
   return (
-    <div className="flex h-screen relative overflow-hidden pt-16">
+    <div className="flex h-screen relative overflow-hidden pt-16" onClick={closeContextMenu}>
       <div className="flex flex-col h-full z-20 w-[300px] border-r shadow-xl">
         <CanvasSidebar
           sidebarTab={sidebarTab}
@@ -289,8 +391,8 @@ export const WhiteboardCanvas: React.FC = () => {
               connectionSource={connectionSource}
               isExpanded={expandedUnits.has(unit.id)}
               activeTab={activeTabs[unit.id] || "info"}
-              unitMappings={{ clos: [], tags: [] }}
-              currentCLOs={[]}
+              unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
+              currentCLOs={currentCLOs || []}
               onMouseDown={handleMouseDown}
               onDoubleClick={(unitId) => {
                 if (isDragging) return;
@@ -299,11 +401,21 @@ export const WhiteboardCanvas: React.FC = () => {
               onClick={() => undefined}
               onMouseEnter={() => undefined}
               onMouseLeave={() => undefined}
-              onContextMenu={(e) => e.preventDefault()}
-              onDrop={() => undefined}
+              onContextMenu={handleUnitRightClick}
+              onDrop={handleUnitBoxDrop}
               toggleExpand={toggleExpand}
               setActiveTab={(id, tab) => setActiveTabs((prev) => ({ ...prev, [id]: tab }))}
-              deleteUnit={(unitId) => setUnitBoxes(unitBoxes.filter((u) => u.id !== unitId))}
+              deleteUnit={(unitId) => {
+                const targetUnit = unitBoxes.find((u) => u.id === unitId);
+                setUnitBoxes(unitBoxes.filter((u) => u.id !== unitId));
+                if (targetUnit?.unitId) {
+                  setUnitMappings((prev) => {
+                    const next = { ...prev };
+                    delete next[targetUnit.unitId!];
+                    return next;
+                  });
+                }
+              }}
               getCLOColor={getCLOColor}
             />
           ))}
@@ -375,6 +487,57 @@ export const WhiteboardCanvas: React.FC = () => {
           <div className="bg-blue-600 p-4 rounded shadow-2xl border-2 border-white text-white">
             <h2 className="text-lg font-bold text-center">{draggedNewUnit.unit.unitId}</h2>
             <p className="text-xs text-center opacity-80">{draggedNewUnit.unit.unitName}</p>
+          </div>
+        </div>
+      )}
+
+      {contextMenu.visible && contextMenu.unitId && (
+        <div
+          className="fixed bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col text-left z-[300] overflow-hidden"
+          style={{ top: contextMenu.y, left: contextMenu.x, minWidth: "220px", maxWidth: "280px" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex justify-between items-center">
+            <span className="font-bold text-[11px] text-gray-500 uppercase tracking-wider">Quick Mapping - {contextMenu.unitId}</span>
+            <button onClick={closeContextMenu} className="text-gray-400 hover:text-gray-700 leading-none">x</button>
+          </div>
+
+          <div className="overflow-y-auto max-h-[300px] p-2 flex flex-col gap-3">
+            <div>
+              <span className="text-[10px] font-bold text-purple-600 mb-1 block uppercase tracking-wider">Course Outcomes</span>
+              {currentCLOs && currentCLOs.length > 0 ? currentCLOs.map((clo: CourseLearningOutcome) => {
+                const isMapped = unitMappings[contextMenu.unitId!]?.clos?.some((c) => c.cloId === clo.cloId);
+                return (
+                  <label key={clo.cloId} className="flex items-start gap-2 p-1.5 hover:bg-purple-50 rounded cursor-pointer transition-colors group">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                      checked={!!isMapped}
+                      onChange={(e) => handleToggleCLO(contextMenu.unitId!, clo, e.target.checked)}
+                    />
+                    <span className="text-gray-700 text-xs leading-tight group-hover:text-purple-900">{clo.cloDesc}</span>
+                  </label>
+                );
+              }) : <span className="text-xs text-gray-400 italic px-1">No CLOs to map.</span>}
+            </div>
+
+            <div className="border-t border-gray-100 pt-2">
+              <span className="text-[10px] font-bold text-green-600 mb-1 block uppercase tracking-wider">Tags</span>
+              {existingTags && existingTags.length > 0 ? existingTags.map((tag: Tag) => {
+                const isMapped = unitMappings[contextMenu.unitId!]?.tags?.some((t) => t.tagId === tag.tagId);
+                return (
+                  <label key={tag.tagId} className="flex items-center gap-2 p-1.5 hover:bg-green-50 rounded cursor-pointer transition-colors group">
+                    <input
+                      type="checkbox"
+                      className="rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
+                      checked={!!isMapped}
+                      onChange={(e) => handleToggleTag(contextMenu.unitId!, tag, e.target.checked)}
+                    />
+                    <span className="text-gray-700 text-xs group-hover:text-green-900">{tag.tagName}</span>
+                  </label>
+                );
+              }) : <span className="text-xs text-gray-400 italic px-1">No tags available.</span>}
+            </div>
           </div>
         </div>
       )}
