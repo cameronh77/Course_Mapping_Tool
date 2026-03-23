@@ -64,7 +64,7 @@ export const deleteCourseUnit = async (req, res) => {
 
 export const saveCanvasState = async (req, res) => {
   const { courseId } = req.params;
-  const { units } = req.body;
+  const { units, unitMappings } = req.body;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -78,24 +78,89 @@ export const saveCanvasState = async (req, res) => {
         const courseUnitsData = units.map((unit) => ({
           courseId: courseId,
           unitId: unit.unitId,
-          semester: 0, // Default/placeholder value
-          year: 0, // Default/placeholder value
-          elective: false, // Default/placeholder value
+          semester: 0,
+          year: 0,
+          elective: false,
           position: { x: unit.x, y: unit.y },
           color: unit.color || null,
         }));
 
         await tx.courseUnit.createMany({
           data: courseUnitsData,
-          skipDuplicates: true, // This will prevent errors if a record already exists
+          skipDuplicates: true,
         });
+      }
+
+      // Save CLO mappings (UnitLearningOutcomes)
+      if (unitMappings) {
+        for (const [unitId, mappings] of Object.entries(unitMappings)) {
+          const mappingsData = mappings as any;
+          
+          // Clear existing CLO mappings for this unit
+          await tx.unitLearningOutcome.deleteMany({
+            where: { unitId: unitId },
+          });
+
+          // Create new CLO mappings
+          if (mappingsData.clos && mappingsData.clos.length > 0) {
+            const cloMappingsData = mappingsData.clos.map((clo: any) => ({
+              uloDesc: `CLO: ${clo.cloDesc}`,
+              unitId: unitId,
+              cloId: parseInt(clo.cloId),
+            }));
+
+            try {
+              await tx.unitLearningOutcome.createMany({
+                data: cloMappingsData,
+                skipDuplicates: false,
+              });
+            } catch (cloError) {
+              console.error(`Error creating CLO mappings for unit ${unitId}:`, cloError);
+              throw cloError;
+            }
+          }
+        }
+      }
+
+      // Save Tag mappings (CourseUnitTags)
+      if (unitMappings) {
+        for (const [unitId, mappings] of Object.entries(unitMappings)) {
+          const mappingsData = mappings as any;
+          
+          // Clear existing tag mappings for this unit in this course
+          await tx.courseUnitTags.deleteMany({
+            where: {
+              courseId: courseId,
+              unitId: unitId,
+            },
+          });
+
+          // Create new tag mappings
+          if (mappingsData.tags && mappingsData.tags.length > 0) {
+            const tagMappingsData = mappingsData.tags.map((tag: any) => ({
+              courseId: courseId,
+              unitId: unitId,
+              tagId: parseInt(tag.tagId),
+            }));
+
+            try {
+              await tx.courseUnitTags.createMany({
+                data: tagMappingsData,
+                skipDuplicates: false,
+              });
+            } catch (tagError) {
+              console.error(`Error creating tag mappings for unit ${unitId}:`, tagError);
+              throw tagError;
+            }
+          }
+        }
       }
     });
 
     return res.status(200).json({ message: "Canvas state saved successfully" });
   } catch (error) {
     console.error("Error saving canvas state:", error);
-    return res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error", error: error instanceof Error ? error.message : "Unknown error" });
   }
 };
 
