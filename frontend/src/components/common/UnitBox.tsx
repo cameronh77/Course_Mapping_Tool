@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import type { CourseLearningOutcome, Tag, UnitBox as UnitBoxType } from "../../types";
 
 const UNIT_BOX_WIDTH = 256;
@@ -51,6 +51,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   deleteUnit
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
+  const [hoveredCLODesc, setHoveredCLODesc] = useState<string | null>(null);
 
   return (
     <div
@@ -181,31 +182,37 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
               )}
 
               {activeTab === 'clos' && (
-                <div className="flex flex-col gap-1.5 h-full">
-                  {(unitMappings?.clos || []).map(clo => {
-                    const cloColor = clo.cloId ? getCLOColor(clo.cloId) : '#9CA3AF';
-                    const borderColor = cloColor + '33';
-                    const bgColor = cloColor + '15';
-                    return (
-                      <div 
-                        key={clo.cloId} 
-                        className="text-xs px-2 py-1.5 rounded flex items-start gap-1.5 shadow-sm border"
-                        style={{
-                          backgroundColor: bgColor,
-                          borderColor: borderColor,
-                          color: cloColor,
-                        }}
-                      >
-                        <span className="font-bold mt-[1px]">☷</span>
-                        <span className="group/clos cursor-help">
-                          <span>{clo.cloId}</span>
-                          <span className="block max-h-0 overflow-hidden opacity-0 transition-all duration-200 ease-out group-hover/clos:mt-1 group-hover/clos:max-h-24 group-hover/clos:opacity-100 text-[10px] leading-snug text-gray-700">
-                            {clo.cloDesc}
-                          </span>
-                        </span>
-                      </div>
-                    );
-                  })}
+                <div className="flex flex-col gap-2 h-full">
+                  {(unitMappings?.clos || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 content-start">
+                      {(unitMappings?.clos || []).map(clo => {
+                        const cloColor = clo.cloId ? getCLOColor(clo.cloId) : '#9CA3AF';
+                        const borderColor = cloColor + '33';
+                        const bgColor = cloColor + '15';
+                        return (
+                          <button
+                            key={clo.cloId}
+                            type="button"
+                            className="text-xs px-2 py-1 rounded shadow-sm border inline-flex items-center justify-center w-auto"
+                            style={{
+                              backgroundColor: bgColor,
+                              borderColor: borderColor,
+                              color: cloColor,
+                            }}
+                            onMouseEnter={() => setHoveredCLODesc(clo.cloDesc || null)}
+                            onMouseLeave={() => setHoveredCLODesc(null)}
+                          >
+                            {clo.cloId}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {(unitMappings?.clos || []).length > 0 && hoveredCLODesc && (
+                    <div className="mt-1 text-[10px] leading-snug text-gray-700 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 min-h-[44px]">
+                      {hoveredCLODesc}
+                    </div>
+                  )}
                   {!(unitMappings?.clos?.length) && (
                     <div className="flex-1 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50/50">
                       <svg className="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
