@@ -197,7 +197,12 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
                         }}
                       >
                         <span className="font-bold mt-[1px]">☷</span>
-                        <span>{clo.cloDesc}</span>
+                        <span className="group/clos cursor-help">
+                          <span>{clo.cloId}</span>
+                          <span className="block max-h-0 overflow-hidden opacity-0 transition-all duration-200 ease-out group-hover/clos:mt-1 group-hover/clos:max-h-24 group-hover/clos:opacity-100 text-[10px] leading-snug text-gray-700">
+                            {clo.cloDesc}
+                          </span>
+                        </span>
                       </div>
                     );
                   })}

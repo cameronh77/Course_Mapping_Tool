@@ -169,10 +169,15 @@ export const CanvasPage: React.FC = () => {
 
           // Load existing CLO and Tag mappings for each unit
           const mappingsData: UnitMappings = {};
-          
-          // Get all CLOs for this course - fetch fresh data
-          await useCLOStore.getState().viewCLOsByCourse(currentCourse);
-          const allCLOs = useCLOStore.getState().currentCLOs;
+
+          // Fetch CLOs directly for this course to avoid stale store timing
+          let allCLOs: CourseLearningOutcome[] = [];
+          try {
+            const cloResponse = await axiosInstance.get(`/CLO/viewAll/${currentCourse.courseId}`);
+            allCLOs = cloResponse.data || [];
+          } catch (error) {
+            console.error("Error loading CLOs for course:", error);
+          }
           
           // Load all ULOs once instead of per unit
           let allULOs: any[] = [];
@@ -203,8 +208,8 @@ export const CanvasPage: React.FC = () => {
             );
             
             const mappedCLOs = unitCLOMappings
-              .map((ulo: any) => allCLOs?.find((clo: any) => clo.cloId === ulo.cloId))
-              .filter(Boolean);
+              .map((ulo: any) => allCLOs.find((clo: CourseLearningOutcome) => clo.cloId === ulo.cloId))
+              .filter((clo): clo is CourseLearningOutcome => Boolean(clo));
             
             mappingsData[unitId].clos = mappedCLOs;
 
@@ -771,9 +776,22 @@ export const CanvasPage: React.FC = () => {
               </div>
               
               <div className="overflow-y-auto max-h-[300px] p-2 flex flex-col gap-3">
+                <div>
+                  <span className="text-[10px] font-bold text-blue-600 mb-1 block uppercase tracking-wider">Mapped To This Unit</span>
+                  {unitMappings[contextMenu.unitId!]?.clos?.length ? (
+                    unitMappings[contextMenu.unitId!].clos.map((clo) => (
+                      <div key={clo.cloId} className="p-1.5 rounded bg-blue-50 border border-blue-100 mb-1">
+                        <div className="text-gray-700 text-xs leading-tight">{clo.cloDesc}</div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">CLO ID: {clo.cloId}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-xs text-gray-400 italic px-1">No CLO currently mapped to this unit.</span>
+                  )}
+                </div>
                 
                 {/* CLOs Checklist */}
-                <div>
+                <div className="border-t border-gray-100 pt-2">
                   <span className="text-[10px] font-bold text-purple-600 mb-1 block uppercase tracking-wider">Course Outcomes</span>
                   {currentCLOs && currentCLOs.length > 0 ? currentCLOs.map(clo => {
                     const isMapped = unitMappings[contextMenu.unitId!]?.clos?.some(c => c.cloId === clo.cloId);
@@ -785,7 +803,10 @@ export const CanvasPage: React.FC = () => {
                           checked={!!isMapped} 
                           onChange={(e) => handleToggleCLO(contextMenu.unitId!, clo, e.target.checked)} 
                         />
-                        <span className="text-gray-700 text-xs leading-tight group-hover:text-purple-900">{clo.cloDesc}</span>
+                        <div className="leading-tight">
+                          <div className="text-gray-700 text-xs group-hover:text-purple-900">{clo.cloDesc}</div>
+                          <div className="text-[10px] text-gray-500 mt-0.5">CLO ID: {clo.cloId}</div>
+                        </div>
                       </label>
                     );
                   }) : <span className="text-xs text-gray-400 italic px-1">No CLOs to map.</span>}
