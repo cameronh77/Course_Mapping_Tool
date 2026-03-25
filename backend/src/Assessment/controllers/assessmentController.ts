@@ -66,7 +66,7 @@ export const viewAssessments = async (req, res) => {
     if (searchTerm) {
       const assessments = await prisma.assessment.findMany({
         where: {
-          assessmentID: parseInt(req.params),
+          assessmentID: parseInt(req.body),
         },
       });
       return res.status(200).json(assessments);

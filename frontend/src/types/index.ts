@@ -23,7 +23,11 @@ export interface UnitRelationship {
   id: number;
   unitId: string;
   relatedId: string;
-  relationshipType: "PREREQUISITE" | "COREQUISITE" | "PROGRESSION" | "CONNECTED";
+  relationshipType:
+    | "PREREQUISITE"
+    | "COREQUISITE"
+    | "PROGRESSION"
+    | "CONNECTED";
   courseId: string | null;
   sId: number | null;
   entryType: number;
@@ -39,6 +43,24 @@ export interface UnitBox {
   x: number;
   y: number;
   color?: string;
+}
+
+export interface Assessment {
+  id: number;
+  description: string;
+  unitId: string;
+  type: "Project" | "Test" | null;
+  x: number;
+  y: number;
+}
+
+export interface AssessmentBox {
+  id: number;
+  description: string;
+  unitId: string;
+  type: "Project" | "Test" | null;
+  x: number;
+  y: number;
 }
 
 export interface UnitMapping {

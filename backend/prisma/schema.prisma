@@ -150,6 +150,7 @@ model Assessment {
 
   unitLos AssessmentULO[]
 
+  position            Json?
   outgoingRelationships AssessmentRelationship[] @relation("AssessmentRelations")
   incomingRelationships AssessmentRelationship[] @relation("RelatedAssessments")
 

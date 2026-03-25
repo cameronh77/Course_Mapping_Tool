@@ -3,6 +3,7 @@ import { axiosInstance } from "../lib/axios";
 
 export const useUnitStore = create((set) => ({
   existingUnits: [],
+  currentUnit: null,
 
   checkUnitExists: async (unitId) => {
     try {
@@ -10,16 +11,14 @@ export const useUnitStore = create((set) => ({
 
       const units = res.data;
 
-      const foundById = units.find(
-        (unit) => unit.unitId === unitId
-      )
+      const foundById = units.find((unit) => unit.unitId === unitId);
 
       if (foundById) {
         return { isDuplicate: true, field: "unitId" };
       }
 
       return { isDuplicate: false };
-    } catch(error) {
+    } catch (error) {
       console.error("Error checking unit existence:", error);
       throw new Error("Failed to perform duplicate check.");
     }
@@ -59,4 +58,6 @@ export const useUnitStore = create((set) => ({
       console.log(error.response.data.message);
     }
   },
+
+  setUnit: async (unit) => set({ currentUnit: unit }),
 }));
