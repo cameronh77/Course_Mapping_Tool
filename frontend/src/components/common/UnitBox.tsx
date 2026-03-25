@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import type { CourseLearningOutcome, Tag, UnitBox as UnitBoxType } from "../../types";
 
-const UNIT_BOX_WIDTH = 256;
+// width is now passed as a prop (unit.width)
 
 interface UnitBoxProps {
   unit: UnitBoxType;
@@ -56,7 +56,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   return (
     <div
       className={`absolute group transition-shadow duration-200 ${draggedUnit === unit.id ? "shadow-2xl scale-105 z-50" : (isExpanded ? "z-40 shadow-xl" : "z-10 shadow-sm hover:shadow-md")}`}
-      style={{ left: `${unit.x}px`, top: `${unit.y}px`, width: `${UNIT_BOX_WIDTH}px`, height: isExpanded ? 'auto' : '80px', minHeight: '80px' }}
+      style={{ left: `${unit.x}px`, top: `${unit.y}px`, width: `${unit.width ?? 256}px`, height: isExpanded ? 'auto' : '80px', minHeight: '80px' }}
       onClick={connectionMode && unit.unitId ? () => onClick(unit.unitId!) : undefined}
       onMouseEnter={() => onMouseEnter(unit.unitId || null)}
       onMouseLeave={onMouseLeave}

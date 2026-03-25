@@ -15,7 +15,7 @@ import type {
   UnitMappings,
 } from "../types";
 
-const UNIT_BOX_WIDTH = 256;
+const NUM_COLUMNS = 9;
 
 const CLO_COLOR_PALETTE = [
   "#EC4899",
@@ -38,6 +38,19 @@ const getCLOColor = (cloId: number): string => {
 
 export const WhiteboardCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const [columnWidth, setColumnWidth] = useState<number>(256);
+  // Update column width on window or canvas resize
+  useEffect(() => {
+    const updateColumnWidth = () => {
+      if (canvasRef.current) {
+        const width = canvasRef.current.offsetWidth;
+        setColumnWidth(width / NUM_COLUMNS);
+      }
+    };
+    updateColumnWidth();
+    window.addEventListener('resize', updateColumnWidth);
+    return () => window.removeEventListener('resize', updateColumnWidth);
+  }, []);
 
   const unitStore = useUnitStore() as any;
   const { checkUnitExists, viewUnits, createUnit, updateUnit } = unitStore;
@@ -103,6 +116,10 @@ export const WhiteboardCanvas: React.FC = () => {
       return;
     }
 
+    // Snap x to nearest column
+    const col = Math.max(0, Math.round(x / columnWidth));
+    const snappedX = col * columnWidth;
+
     const newUnit: UnitBoxType = {
       id: Date.now(),
       name: selectedUnit.unitName,
@@ -110,9 +127,10 @@ export const WhiteboardCanvas: React.FC = () => {
       description: selectedUnit.unitDesc,
       credits: selectedUnit.credits,
       semestersOffered: selectedUnit.semestersOffered,
-      x,
+      x: snappedX,
       y,
       color: "#3B82F6",
+      width: columnWidth,
     };
 
     setUnitBoxes((prev) => [...prev, newUnit]);
@@ -143,7 +161,7 @@ export const WhiteboardCanvas: React.FC = () => {
           upEvent.clientY <= rect.bottom
         ) {
           const canvasCoords = getMouseCoords(upEvent as unknown as React.MouseEvent, canvasRef.current);
-          addUnitToCanvasAtPos(unit, canvasCoords.x - UNIT_BOX_WIDTH / 2, canvasCoords.y - 40);
+          addUnitToCanvasAtPos(unit, canvasCoords.x - columnWidth / 2, canvasCoords.y - 40);
         }
       }
 
@@ -171,15 +189,17 @@ export const WhiteboardCanvas: React.FC = () => {
       setIsDragging(true);
       const { x: newMouseX, y: newMouseY } = getMouseCoords(moveEvent, canvasRef.current);
       setUnitBoxes((prevUnits) =>
-        prevUnits.map((u) =>
-          u.id === id
-            ? {
-                ...u,
-                x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH)),
-                y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 100)),
-              }
-            : u
-        )
+        prevUnits.map((u) => {
+          if (u.id === id) {
+            const width = u.width ?? columnWidth;
+            return {
+              ...u,
+              x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - width)),
+              y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 100)),
+            };
+          }
+          return u;
+        })
       );
     };
 
@@ -352,7 +372,7 @@ export const WhiteboardCanvas: React.FC = () => {
     });
   };
 
-  const innerWidth = 5000;
+  // const innerWidth = 5000; // removed unused
   const innerHeight = 3000;
   const closeContextMenu = () => setContextMenu((prev) => ({ ...prev, visible: false }));
 
@@ -412,7 +432,7 @@ export const WhiteboardCanvas: React.FC = () => {
           {unitBoxes.map((unit) => (
             <UnitBox
               key={unit.id}
-              unit={unit}
+              unit={{ ...unit, width: columnWidth }}
               draggedUnit={draggedUnit}
               selectedUnits={selectedUnits}
               connectionMode={connectionMode}
@@ -510,7 +530,7 @@ export const WhiteboardCanvas: React.FC = () => {
       {draggedNewUnit && (
         <div
           className="fixed pointer-events-none z-[200] opacity-80"
-          style={{ left: draggedNewUnit.x - UNIT_BOX_WIDTH / 2, top: draggedNewUnit.y - 40, width: UNIT_BOX_WIDTH }}
+          style={{ left: draggedNewUnit.x - columnWidth / 2, top: draggedNewUnit.y - 40, width: columnWidth }}
         >
           <div className="bg-blue-600 p-4 rounded shadow-2xl border-2 border-white text-white">
             <h2 className="text-lg font-bold text-center">{draggedNewUnit.unit.unitId}</h2>
