@@ -358,7 +358,8 @@ export const WhiteboardCanvas: React.FC = () => {
 
   return (
     <div className="flex h-screen relative overflow-hidden pt-16" onClick={closeContextMenu}>
-      <div className="flex flex-col h-full z-20 w-[300px] border-r shadow-xl">
+      {/* Sidebar: 1/6 width, left */}
+      <div className="flex flex-col h-full z-20 w-1/6 min-w-[200px] max-w-[400px] border-r shadow-xl">
         <CanvasSidebar
           sidebarTab={sidebarTab}
           setSidebarTab={setSidebarTab}
@@ -379,8 +380,35 @@ export const WhiteboardCanvas: React.FC = () => {
         />
       </div>
 
-      <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }}>
-        <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
+      {/* Canvas: 5/6 width, right */}
+      <div ref={canvasRef} className="w-5/6 bg-white overflow-auto relative" style={{ userSelect: "none" }}>
+        <div
+          className="relative"
+          style={{
+            width: `100%`,
+            height: `${innerHeight}px`,
+            backgroundColor: '#fff',
+            backgroundImage:
+              'radial-gradient(#d1d5db 1px, transparent 1px)',
+            backgroundSize: '24px 24px',
+            backgroundPosition: '0 0',
+          }}
+        >
+          {/* 9 column separators matching canvas width */}
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={`col-separator-${i}`}
+              style={{
+                position: 'absolute',
+                left: `calc(${((i + 1) / 9) * 100}% )`,
+                top: 0,
+                bottom: 0,
+                width: '1px',
+                background: 'rgba(128,128,128,0.25)',
+                zIndex: 1,
+              }}
+            />
+          ))}
           {unitBoxes.map((unit) => (
             <UnitBox
               key={unit.id}
