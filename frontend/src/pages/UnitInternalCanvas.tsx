@@ -74,7 +74,9 @@ export const UnitInternalCanvas: React.FC = () => {
   const [showForm, setShowForm] = useState<boolean>(false);
 
   // State for dragging existing Assessments
-  const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
+  const [draggedAssessment, setDraggedAssessment] = useState<number | null>(
+    null
+  );
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
@@ -245,6 +247,72 @@ export const UnitInternalCanvas: React.FC = () => {
       }
     }
   };
+
+  function handleMouseDown(e: React.MouseEvent, strid: string) {
+    setContextMenu({ visible: false, x: 0, y: 0, unitId: undefined });
+    e.preventDefault();
+    e.stopPropagation();
+
+    const id = Number(strid);
+    const assessment = assessmentBoxes.find((a) => a.id === id);
+    console.log(strid);
+    if (!assessment || !canvasRef.current) return;
+    console.log("mouse is down");
+    const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
+    const offset = { x: mouseX - assessment.x, y: mouseY - assessment.y };
+    setDragOffset(offset);
+    setDraggedAssessment(id);
+    setIsDragging(false);
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      if (!canvasRef.current) return;
+      setIsDragging(true);
+      const { x: newMouseX, y: newMouseY } = getMouseCoords(
+        moveEvent,
+        canvasRef.current
+      );
+      setAssessmentBoxes((prevAssessments) =>
+        prevAssessments.map((a) =>
+          a.id === id
+            ? {
+                ...a,
+                x: Math.max(
+                  0,
+                  Math.min(
+                    newMouseX - offset.x,
+                    canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH
+                  )
+                ),
+                y: Math.max(
+                  0,
+                  Math.min(
+                    newMouseY - offset.y,
+                    canvasRef.current!.scrollHeight - 100
+                  )
+                ),
+              }
+            : a
+        )
+      );
+    };
+
+    const handleUp = () => {
+      setAssessmentBoxes((prevAssessments) =>
+        prevAssessments.map((a) => {
+          if (a.id === id) {
+            return { ...a, x: a.x, y: a.y };
+          }
+          return a;
+        })
+      );
+      setDraggedAssessment(null);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+      setTimeout(() => setIsDragging(false), 100);
+    };
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  }
 
   const handleNewAssessmentMouseDown = (
     e: React.MouseEvent,
@@ -540,6 +608,7 @@ export const UnitInternalCanvas: React.FC = () => {
               onClick={handleAssessmentClickForConnection}
               onDoubleClick={handleEditAssessment}
               deleteAssessment={deleteAssessment}
+              onMouseDown={handleMouseDown}
             ></AssessmentBox>
           ))}
 

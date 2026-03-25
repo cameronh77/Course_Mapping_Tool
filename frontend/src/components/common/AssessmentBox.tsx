@@ -17,10 +17,9 @@ interface AssessmentBoxProps {
   draggedAssessment?: number | null;
   selectedAssessments?: string[];
 
-  //onMouseDown: (e: React.MouseEvent, id: number) => void;
+  onMouseDown: (e: React.MouseEvent, id: number) => void;
   onDoubleClick: (id: number) => void;
   onClick: (assessmentId: string) => void;
-
   deleteAssessment: (id: number) => void;
 }
 
@@ -29,6 +28,7 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
   draggedAssessment,
   onDoubleClick,
   onClick,
+  onMouseDown,
   deleteAssessment,
 }) => {
   const key = assessment.assessmentId || assessment.id.toString();
@@ -51,6 +51,7 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
           ? () => onClick(assessment.assessmentId!)
           : undefined
       }
+      onMouseDown={(e) => onMouseDown(e, assessment.id!)}
     >
       {/* Header */}
       <div
