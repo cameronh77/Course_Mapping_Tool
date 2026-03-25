@@ -53,7 +53,7 @@ export const WhiteboardCanvas: React.FC = () => {
   }, []);
 
   const unitStore = useUnitStore() as any;
-  const { checkUnitExists, viewUnits, createUnit, updateUnit } = unitStore;
+  const { checkUnitExists, createUnit, updateUnit } = unitStore;
   const courseStore = useCourseStore() as any;
   const cloStore = useCLOStore() as any;
   const tagStore = useTagStore() as any;
@@ -90,9 +90,35 @@ export const WhiteboardCanvas: React.FC = () => {
     unitId?: string;
   }>({ visible: false, x: 0, y: 0 });
 
+
+  // Place all Semester 1 units in the leftmost column when course is loaded
   useEffect(() => {
-    viewUnits();
-  }, []);
+    const loadAndPlaceSavedCanvasUnits = async () => {
+      if (!currentCourse?.courseId || !canvasRef.current) return;
+      try {
+        const response = await axiosInstance.get(`/course-unit/view?courseId=${currentCourse.courseId}`);
+        const courseUnits = response.data;
+        const width = canvasRef.current.offsetWidth;
+        const columnWidth = width / NUM_COLUMNS;
+        const placed: UnitBoxType[] = courseUnits.map((cu: any) => ({
+          id: Date.now() + Math.random(),
+          name: cu.unit.unitName,
+          unitId: cu.unitId,
+          description: cu.unit.unitDesc,
+          credits: cu.unit.credits,
+          semestersOffered: cu.unit.semestersOffered,
+          x: cu.position.x ?? 0,
+          y: cu.position.y ?? 40,
+          color: cu.color || "#3B82F6",
+          width: columnWidth,
+        }));
+        setUnitBoxes(placed);
+      } catch (error) {
+        console.error("Error loading saved canvas units:", error);
+      }
+    };
+    loadAndPlaceSavedCanvasUnits();
+  }, [currentCourse?.courseId]);
 
   useEffect(() => {
     if (currentCourse?.courseId) {
