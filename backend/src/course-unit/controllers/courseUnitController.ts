@@ -78,8 +78,8 @@ export const saveCanvasState = async (req, res) => {
         const courseUnitsData = units.map((unit) => ({
           courseId: courseId,
           unitId: unit.unitId,
-          semester: 0,
-          year: 0,
+          semester: unit.semester || 0,
+          year: unit.year || 0,
           elective: false,
           position: { x: unit.x, y: unit.y },
           color: unit.color || null,

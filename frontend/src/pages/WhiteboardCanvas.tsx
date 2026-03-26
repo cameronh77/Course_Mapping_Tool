@@ -111,6 +111,8 @@ export const WhiteboardCanvas: React.FC = () => {
           y: cu.position.y ?? 40,
           color: cu.color || "#3B82F6",
           width: columnWidth,
+          semester: cu.semester || 0,
+          year: cu.year || 0,
         }));
         setUnitBoxes(placed);
 

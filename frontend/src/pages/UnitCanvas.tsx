@@ -263,10 +263,27 @@ export const CanvasPage: React.FC = () => {
   const handleSaveCanvas = async () => {
     if (currentCourse?.courseId) {
       try {
+        const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+        const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+
+        const unitsWithSemester = unitBoxes.map((u) => {
+          const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
+          let closestRow = 0;
+          let minDistance = Infinity;
+          for (let r = 0; r < totalRows; r++) {
+            const expectedY = START_Y + r * ROW_HEIGHT + 20;
+            const dist = Math.abs(u.y - expectedY);
+            if (dist < minDistance) { minDistance = dist; closestRow = r; }
+          }
+          const semester = Math.floor(closestRow / MAX_UNITS_PER_SEM) + 1;
+          const year = col + 1;
+          return { ...u, semester, year };
+        });
+
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
-          { 
-            units: unitBoxes,
+          {
+            units: unitsWithSemester,
             unitMappings: unitMappings
           }
         );

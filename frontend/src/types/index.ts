@@ -40,6 +40,8 @@ export interface UnitBox {
   y: number;
   color?: string;
   width?: number;
+  semester?: number;
+  year?: number;
 }
 
 export interface UnitMapping {
