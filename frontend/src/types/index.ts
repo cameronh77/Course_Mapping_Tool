@@ -46,19 +46,36 @@ export interface UnitBox {
 }
 
 export interface Assessment {
+  //Frontend ID
   id: number;
+  dbID: number | null;
   description: string;
   unitId: string;
   type: "Project" | "Test" | null;
+  name: string;
+  value: number | null;
+  hurdleReq: number | null;
+  dueWeek: number[];
+  conditions: string;
+  feedbackWeek: number[];
+  feedbackDetails: string[];
   x: number;
   y: number;
 }
 
 export interface AssessmentBox {
   id: number;
+  dbID: number | null;
   description: string;
   unitId: string;
   type: "Project" | "Test" | null;
+  name: string;
+  value: number | null;
+  hurdleReq: number | null;
+  dueWeek: number[];
+  conditions: string;
+  feedbackWeek: number[];
+  feedbackDetails: string[];
   x: number;
   y: number;
 }

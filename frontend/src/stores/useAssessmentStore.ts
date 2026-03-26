@@ -28,10 +28,13 @@ export const useAssessmentStore = create((set) => ({
 
   updateAssessment: async (assessmentId, data) => {
     try {
-      const res = await axiosInstance.put(`/unit/update/${assessmentId}`, data);
+      const res = await axiosInstance.put(
+        `/assessment/update/${assessmentId}`,
+        data
+      );
       set((state) => ({
         currentAssessments: state.existingUnits.map((assessment) =>
-          assessment.assessmentID === assessmentId
+          assessment.id === assessmentId
             ? { ...assessment, ...data }
             : assessment
         ),

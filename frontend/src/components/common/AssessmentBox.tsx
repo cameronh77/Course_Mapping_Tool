@@ -1,16 +1,7 @@
 import React from "react";
+import type { Assessment } from "../../types";
 
 const BOX_WIDTH = 256;
-
-interface Assessment {
-  id: number;
-  assessmentId?: string;
-  description?: string;
-  type?: "Project" | "Test" | null;
-  x: number;
-  y: number;
-  color?: string;
-}
 
 interface AssessmentBoxProps {
   assessment: Assessment;
@@ -31,7 +22,7 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
   onMouseDown,
   deleteAssessment,
 }) => {
-  const key = assessment.assessmentId || assessment.id.toString();
+  const key = assessment.id.toString();
 
   return (
     <div
@@ -47,9 +38,7 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
         minHeight: "100px",
       }}
       onClick={
-        assessment.assessmentId
-          ? () => onClick(assessment.assessmentId!)
-          : undefined
+        assessment.id ? () => onClick(assessment.id.toString()!) : undefined
       }
       onMouseDown={(e) => onMouseDown(e, assessment.id!)}
     >
@@ -57,7 +46,7 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
       <div
         className="h-16 w-full flex items-center justify-between px-4 cursor-grab active:cursor-grabbing relative"
         style={{
-          backgroundColor: assessment.color || "#8B5CF6",
+          backgroundColor: "#8B5CF6",
           color: "white",
         }}
         onDoubleClick={() => onDoubleClick(assessment.id)}
@@ -65,9 +54,9 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
         <div className="flex-1 truncate pr-6">
           <h2
             className="text-lg font-semibold leading-tight"
-            title={assessment.assessmentId}
+            title={assessment.name}
           >
-            {assessment.assessmentId}
+            {assessment.name}
           </h2>
         </div>
 

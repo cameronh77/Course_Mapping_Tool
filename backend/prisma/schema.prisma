@@ -143,7 +143,15 @@ model UnitLearningOutcome {
 }
 
 model Assessment {
-  assessmentId Int    @id @default(autoincrement())
+  assessmentId Int      @id @default(autoincrement())
+  assessmentName        String
+  value                 Int
+  hurdleReq             Int?
+  dueWeek               Int[]
+  assessmentConditions  String
+  feedbackWeek          Int[]
+  feedbackDetails       String[]
+
   assessmentDesc      String
   assessmentType      String
   unitId              String

@@ -1,17 +1,36 @@
 import prisma from "../../../database/prismaClient.js";
 
 export const addAssessment = async (req, res) => {
-  const { assessmentId, assessmentDesc, assessmentType, unitId } = req.body;
+  const {
+    assessmentId,
+    description,
+    type,
+    unitId,
+    name,
+    value,
+    hurdleReq,
+    dueWeek,
+    conditions,
+    feedBackWeek,
+    feedBackDetails,
+    position,
+    unit,
+  } = req.body;
   try {
-    if (!assessmentDesc || !assessmentType || !unitId) {
-      return res.status(400).json({ message: "All fields must be filled in" });
-    }
-
     const newAssessment = await prisma.assessment.create({
       data: {
-        assessmentDesc: assessmentDesc,
-        assessmentType: assessmentType,
+        assessmentName: name,
+        assessmentDesc: description,
+        assessmentType: type,
         unitId: unitId,
+        value: value,
+        hurdleReq: hurdleReq,
+        dueWeek: dueWeek,
+        assessmentConditions: conditions,
+        feedBackWeek: feedBackWeek,
+        feedBackDetails: feedBackDetails,
+        position: position,
+        //unit: unit,
       },
     });
     return res.status(201).json(newAssessment);
@@ -39,16 +58,36 @@ export const deleteAssessment = async (req, res) => {
 
 export const updateAssessment = async (req, res) => {
   const { assessmentId } = req.params;
-  const { assessmentDesc, assessmentType } = req.body;
+  const {
+    description,
+    type,
+    unitId,
+    name,
+    value,
+    hurdleReq,
+    dueWeek,
+    conditions,
+    feedBackWeek,
+    feedBackDetails,
+  } = req.body;
 
   try {
+    console.log(req.body);
     const updatedAssessment = await prisma.assessment.update({
       where: {
         assessmentId: assessmentId,
       },
       data: {
-        assessmentDesc: assessmentDesc,
-        assessmentType: assessmentType,
+        assessmentName: name,
+        assessmentDesc: description,
+        assessmentType: type,
+        unitId: unitId,
+        value: value,
+        hurdleReq: hurdleReq,
+        dueWeek: dueWeek,
+        assessmentConditions: conditions,
+        feedBackWeek: feedBackWeek,
+        feedBackDetails: feedBackDetails,
       },
     });
 

@@ -323,12 +323,20 @@ export const UnitInternalCanvas: React.FC = () => {
     console.log("test");
     if (!currentUnit) return;
     const newAssessment: Assessment = {
+      dbID: null,
       id: Date.now(),
+      name: "",
+      value: null,
+      hurdleReq: null,
       description: "",
-      type: template.type as any,
+      type: "Project",
       x: e.clientX,
       y: e.clientY,
       unitId: currentUnit.unitId,
+      feedbackDetails: [],
+      feedbackWeek: [],
+      dueWeek: [],
+      conditions: "",
     };
 
     setDraggedNewAssessment({
@@ -399,6 +407,7 @@ export const UnitInternalCanvas: React.FC = () => {
       unitId: currentUnit.unitId,
     };
 
+    setShowCreateAssessmentForm(true);
     setAssessmentBoxes((prev) => [...prev, newAssessment]);
   };
 
@@ -409,8 +418,16 @@ export const UnitInternalCanvas: React.FC = () => {
       );
       if (editedAssessment) {
         updateAssessment(editedAssessment.id!, {
-          assessmentDesc: formData.description || editedAssessment.description,
-          assessmentType: formData.type || editedAssessment.type,
+          description: formData.description || editedAssessment.description,
+          type: formData.type || editedAssessment.type,
+          name: formData.name || editedAssessment.name,
+          value: formData.value || editedAssessment.value,
+          hurdleReq: formData.hurdleReq || editedAssessment.hurdleReq,
+          dueWeek: formData.dueWeek || editedAssessment.dueWeek,
+          conditions: formData.conditions || editedAssessment.conditions,
+          feedbackWeek: formData.feedbackWeek || editedAssessment.feedbackWeek,
+          feedbackDetails:
+            formData.feedbackDetails || editedAssessment.feedbackDetails,
         })
           .then(() => {
             setAssessmentBoxes(
@@ -418,9 +435,21 @@ export const UnitInternalCanvas: React.FC = () => {
                 assessment.id === editingId
                   ? {
                       ...assessment,
-                      assessmentDesc:
+                      description:
                         formData.description || editedAssessment.description,
-                      assessmentType: formData.type || editedAssessment.type,
+                      type: formData.type || editedAssessment.type,
+                      name: formData.name || editedAssessment.name,
+                      value: formData.value || editedAssessment.value,
+                      hurdleReq:
+                        formData.hurdleReq || editedAssessment.hurdleReq,
+                      dueWeek: formData.dueWeek || editedAssessment.dueWeek,
+                      conditions:
+                        formData.conditions || editedAssessment.conditions,
+                      feedbackWeek:
+                        formData.feedbackWeek || editedAssessment.feedbackWeek,
+                      feedbackDetails:
+                        formData.feedbackDetails ||
+                        editedAssessment.feedbackDetails,
                     }
                   : assessment
               )
@@ -455,10 +484,19 @@ export const UnitInternalCanvas: React.FC = () => {
         description: data.description,
         type: data.type,
         unitId: currentUnit.unitId,
+
         position: {
-          x: 100,
-          y: 100,
+          x: data.x,
+          y: data.y,
         },
+        name: data.name,
+        value: data.value,
+        hurdleReq: data.hurdleReq,
+        feedbackDetails: data.feedbackDetails,
+        feedbackWeek: data.feedbackWeek,
+        dueWeek: data.dueWeek,
+        conditions: data.conditions,
+        unit: currentUnit,
       });
       setShowCreateAssessmentForm(false);
     } catch (err) {
@@ -638,10 +676,31 @@ export const UnitInternalCanvas: React.FC = () => {
                 initialData={{
                   description:
                     assessmentBoxes.find((a) => a.id === editingId)
-                      ?.description || null,
+                      ?.description || undefined,
                   type:
-                    assessmentBoxes.find((u) => u.id === editingId)?.type ||
+                    assessmentBoxes.find((a) => a.id === editingId)?.type ||
                     null,
+                  name:
+                    assessmentBoxes.find((a) => a.id === editingId)?.name ||
+                    undefined,
+                  value:
+                    assessmentBoxes.find((a) => a.id === editingId)?.value ||
+                    undefined,
+                  hurdleReq:
+                    assessmentBoxes.find((a) => a.id === editingId)
+                      ?.hurdleReq || undefined,
+                  dueWeek:
+                    assessmentBoxes.find((a) => a.id === editingId)?.dueWeek ||
+                    undefined,
+                  conditions:
+                    assessmentBoxes.find((a) => a.id === editingId)
+                      ?.conditions || undefined,
+                  feedbackWeek:
+                    assessmentBoxes.find((a) => a.id === editingId)
+                      ?.feedbackWeek || undefined,
+                  feedbackDetails:
+                    assessmentBoxes.find((a) => a.id === editingId)
+                      ?.feedbackDetails || undefined,
                 }}
                 onView={() => navigate("/")}
               />
@@ -667,8 +726,8 @@ export const UnitInternalCanvas: React.FC = () => {
               <AssessmentForm
                 onSave={handleCreateAssessment}
                 initialData={{
-                  description: null,
-                  type: null,
+                  description: undefined,
+                  type: "Project",
                 }}
                 onView={() => console.log("nothing")}
               />
@@ -689,11 +748,8 @@ export const UnitInternalCanvas: React.FC = () => {
         >
           <div className="bg-blue-600 p-4 rounded shadow-2xl border-2 border-white text-white">
             <h2 className="text-lg font-bold text-center">
-              {draggedNewAssessment.assessment.id}
+              {draggedNewAssessment.assessment.name || "Assessment"}
             </h2>
-            <p className="text-xs text-center opacity-80">
-              {draggedNewAssessment.assessment.id}
-            </p>
           </div>
         </div>
       )}
