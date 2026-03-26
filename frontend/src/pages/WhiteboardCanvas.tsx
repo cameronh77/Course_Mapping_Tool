@@ -91,7 +91,7 @@ export const WhiteboardCanvas: React.FC = () => {
   }>({ visible: false, x: 0, y: 0 });
 
 
-  // Place all Semester 1 units in the leftmost column when course is loaded
+  // Load saved canvas units and their CLO/Tag mappings when course is loaded
   useEffect(() => {
     const loadAndPlaceSavedCanvasUnits = async () => {
       if (!currentCourse?.courseId || !canvasRef.current) return;
@@ -113,6 +113,51 @@ export const WhiteboardCanvas: React.FC = () => {
           width: columnWidth,
         }));
         setUnitBoxes(placed);
+
+        // Load existing CLO and Tag mappings for each unit
+        const mappingsData: UnitMappings = {};
+
+        let allCLOs: CourseLearningOutcome[] = [];
+        try {
+          const cloResponse = await axiosInstance.get(`/CLO/viewAll/${currentCourse.courseId}`);
+          allCLOs = cloResponse.data || [];
+        } catch (error) {
+          console.error("Error loading CLOs for course:", error);
+        }
+
+        let allULOs: any[] = [];
+        try {
+          const uloResponse = await axiosInstance.get(`/ULO/view`);
+          allULOs = uloResponse.data || [];
+        } catch (error) {
+          console.error("Error loading unit learning outcomes:", error);
+        }
+
+        let allTagsForCourse: any[] = [];
+        try {
+          const tagResponse = await axiosInstance.get(`/tag/view-unit-course/${currentCourse.courseId}`);
+          allTagsForCourse = tagResponse.data || [];
+        } catch (error) {
+          console.error("Error loading tags for course:", error);
+        }
+
+        for (const cu of courseUnits) {
+          const unitId = cu.unitId;
+          mappingsData[unitId] = { clos: [], tags: [] };
+
+          const unitCLOMappings = allULOs.filter(
+            (ulo: any) => ulo.unitId === unitId && ulo.cloId
+          );
+          mappingsData[unitId].clos = unitCLOMappings
+            .map((ulo: any) => allCLOs.find((clo: CourseLearningOutcome) => clo.cloId === ulo.cloId))
+            .filter((clo): clo is CourseLearningOutcome => Boolean(clo));
+
+          mappingsData[unitId].tags = allTagsForCourse.filter(
+            (ut: any) => ut.unitId === unitId
+          );
+        }
+
+        setUnitMappings(mappingsData);
       } catch (error) {
         console.error("Error loading saved canvas units:", error);
       }
