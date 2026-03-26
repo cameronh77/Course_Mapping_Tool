@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
-import type { Assessment } from "../../types";
 
 export interface AssessmentTemplate {
   type: string;
@@ -17,12 +16,18 @@ interface UnitSidebarProps {
     template: AssessmentTemplate
   ) => void;
 
+  handleNewULOMouseDown: (
+    e: React.MouseEvent,
+    template: { type: string; label: string }
+  ) => void;
+
   getCLOColor: (cloId: number) => string;
 }
 
 export const UnitSidebar: React.FC<UnitSidebarProps> = ({
   handleSaveCanvas,
   handleNewAssessmentMouseDown,
+  handleNewULOMouseDown,
   getCLOColor,
 }) => {
   const { currentCourse } = useCourseStore();
@@ -31,7 +36,7 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
 
   const [newTag, setNewTag] = useState("");
 
-  // 🔹 Assessment templates (you can expand this later)
+  // 🔹 Assessment templates
   const assessmentTemplates: AssessmentTemplate[] = [
     { type: "ASSIGNMENT", label: "📝 Assignment" },
     { type: "QUIZ", label: "❓ Quiz" },
@@ -77,6 +82,33 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
         </div>
 
         {/* ========================= */}
+        {/* CREATE UNIT LEARNING OUTCOME */}
+        {/* ========================= */}
+        <div>
+          <h2 className="text-sm font-bold mb-2 text-orange-800 border-b pb-1">
+            Create Unit Learning Outcome
+          </h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Drag onto canvas to create a new ULO.
+          </p>
+
+          <div className="flex flex-col gap-2">
+            <div
+              draggable
+              onMouseDown={(e) =>
+                handleNewULOMouseDown(e, {
+                  type: "ULO",
+                  label: "New ULO",
+                })
+              }
+              className="p-3 rounded border bg-orange-50 hover:bg-orange-100 cursor-grab active:cursor-grabbing shadow-sm text-sm font-medium text-orange-800 transition"
+            >
+              ➕ New ULO
+            </div>
+          </div>
+        </div>
+
+        {/* ========================= */}
         {/* CLO MAPPING */}
         {/* ========================= */}
         <div>
@@ -110,57 +142,6 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
                 </div>
               );
             })}
-          </div>
-        </div>
-
-        {/* ========================= */}
-        {/* TAGS */}
-        {/* ========================= */}
-        <div>
-          <h2 className="text-sm font-bold mb-2 text-green-800 border-b pb-1">
-            Tags
-          </h2>
-
-          <div className="flex flex-wrap gap-2 mb-3 max-h-[20vh] overflow-y-auto">
-            {existingTags?.map((tag: any) => (
-              <div
-                key={tag.tagId}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData(
-                    "application/json",
-                    JSON.stringify({ type: "tag", data: tag })
-                  );
-                }}
-                className="bg-green-50 hover:bg-green-100 text-green-800 text-xs py-1 px-2 rounded-full cursor-grab border"
-              >
-                ● {tag.tagName}
-              </div>
-            ))}
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="New tag..."
-              className="border rounded w-full py-1 px-2 text-sm"
-              value={newTag}
-              onChange={(e) => setNewTag(e.target.value)}
-            />
-            <button
-              className="bg-green-500 text-white px-3 rounded text-sm"
-              onClick={() => {
-                if (newTag && currentCourse?.courseId) {
-                  createTag({
-                    tagName: newTag,
-                    courseId: currentCourse.courseId,
-                  });
-                  setNewTag("");
-                }
-              }}
-            >
-              Add
-            </button>
           </div>
         </div>
       </div>

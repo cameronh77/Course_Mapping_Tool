@@ -16,8 +16,10 @@ import type {
   CourseLearningOutcome,
   UnitBox as UnitBoxType,
   AssessmentBox as AssessmentBoxType,
+  unitLearningOutcomeBox as unitLearningOutcomeBoxType,
   UnitMappings,
   Assessment,
+  unitLearningOutcome,
 } from "../types";
 import { useAssessmentStore } from "../stores/useAssessmentStore";
 import { AssessmentBox } from "../components/common/AssessmentBox";
@@ -27,6 +29,9 @@ import {
   UnitSidebar,
   type AssessmentTemplate,
 } from "../components/layout/UnitCanvasSideBar";
+import { ULOBox } from "../components/common/ULOBox";
+import UnitLearningOutcomeForm from "../components/common/ULOForm";
+import { useULOStore } from "../stores/useULOStore";
 
 // Grid Layout Constants
 const COL_WIDTH = 600;
@@ -64,6 +69,8 @@ export const UnitInternalCanvas: React.FC = () => {
     []
   );
 
+  const [uloBoxes, setULOBoxes] = useState<unitLearningOutcomeBoxType[]>([]);
+
   // UX State - Sidebar Navigation Tab
   const [sidebarTab, setSidebarTab] = useState<
     "unit components" | "connections" | "mapping"
@@ -77,6 +84,11 @@ export const UnitInternalCanvas: React.FC = () => {
   const [draggedAssessment, setDraggedAssessment] = useState<number | null>(
     null
   );
+
+  const [draggedULO, setDraggedULO] = useState<number | null>(null);
+
+  const [showULOForm, setShowULOForm] = useState<boolean>(false);
+  const [showCreateULOForm, setShowCreateULOForm] = useState<boolean>(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
@@ -87,8 +99,17 @@ export const UnitInternalCanvas: React.FC = () => {
     y: number;
   } | null>(null);
 
+  const [draggedNewULO, setDraggedNewULO] = useState<{
+    id: number;
+    ulo: unitLearningOutcome;
+    x: number;
+    y: number;
+  } | null>(null);
+
   // State for hover highlighting connections
-  const [hoveredUnit, setHoveredUnit] = useState<string | null>(null);
+  const [hoveredAssessment, setHoveredAssessment] = useState<string | null>(
+    null
+  );
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const { currentUnit } = useUnitStore();
@@ -105,6 +126,7 @@ export const UnitInternalCanvas: React.FC = () => {
   const { checkUnitExists, viewUnits, createUnit, updateUnit } = useUnitStore();
   const { createAssessment, viewAssessments, updateAssessment } =
     useAssessmentStore();
+  const { currentULOS, createULO, viewULOsByUnit, updateULO } = useULOStore();
 
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
   const [showCreateAssessmentForm, setShowCreateAssessmentForm] =
@@ -314,6 +336,72 @@ export const UnitInternalCanvas: React.FC = () => {
     document.addEventListener("mouseup", handleUp);
   }
 
+  function handleULOBoxMouseDown(e: React.MouseEvent, strid: string) {
+    setContextMenu({ visible: false, x: 0, y: 0, unitId: undefined });
+    e.preventDefault();
+    e.stopPropagation();
+
+    const id = Number(strid);
+    const ulo = uloBoxes.find((u) => u.id === id);
+    console.log(strid);
+    if (!ulo || !canvasRef.current) return;
+    console.log("mouse is down");
+    const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
+    const offset = { x: mouseX - ulo.x, y: mouseY - ulo.y };
+    setDragOffset(offset);
+    setDraggedULO(id);
+    setIsDragging(false);
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      if (!canvasRef.current) return;
+      setIsDragging(true);
+      const { x: newMouseX, y: newMouseY } = getMouseCoords(
+        moveEvent,
+        canvasRef.current
+      );
+      setULOBoxes((prevULOs) =>
+        prevULOs.map((u) =>
+          u.id === id
+            ? {
+                ...u,
+                x: Math.max(
+                  0,
+                  Math.min(
+                    newMouseX - offset.x,
+                    canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH
+                  )
+                ),
+                y: Math.max(
+                  0,
+                  Math.min(
+                    newMouseY - offset.y,
+                    canvasRef.current!.scrollHeight - 100
+                  )
+                ),
+              }
+            : a
+        )
+      );
+    };
+
+    const handleUp = () => {
+      setULOBoxes((prevULOs) =>
+        prevULOs.map((u) => {
+          if (u.id === id) {
+            return { ...u, x: u.x, y: u.y };
+          }
+          return u;
+        })
+      );
+      setDraggedULO(null);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+      setTimeout(() => setIsDragging(false), 100);
+    };
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  }
+
   const handleNewAssessmentMouseDown = (
     e: React.MouseEvent,
     template: AssessmentTemplate
@@ -462,6 +550,90 @@ export const UnitInternalCanvas: React.FC = () => {
     }
   }
 
+  const handleNewULOMouseDown = (
+    e: React.MouseEvent,
+    template: AssessmentTemplate
+  ) => {
+    e.preventDefault();
+
+    console.log("test");
+    if (!currentUnit) return;
+    const newULO: unitLearningOutcome = {
+      uloDesc: "",
+      unitId: currentUnit.unitId,
+    };
+
+    setDraggedNewULO({
+      id: Date.now(),
+      ulo: newULO,
+      x: e.clientX,
+      y: e.clientY,
+    });
+
+    const handleGlobalMove = (moveEvent: MouseEvent) => {
+      setDraggedNewULO((prev) =>
+        prev
+          ? {
+              ...prev,
+              x: moveEvent.clientX,
+              y: moveEvent.clientY,
+            }
+          : null
+      );
+    };
+
+    const handleGlobalUp = (upEvent: MouseEvent) => {
+      console.log("this is hit");
+      document.removeEventListener("mousemove", handleGlobalMove);
+      document.removeEventListener("mouseup", handleGlobalUp);
+
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        if (
+          upEvent.clientX >= rect.left &&
+          upEvent.clientX <= rect.right &&
+          upEvent.clientY >= rect.top &&
+          upEvent.clientY <= rect.bottom
+        ) {
+          const canvasCoords = getMouseCoords(
+            upEvent as unknown as React.MouseEvent,
+            canvasRef.current
+          );
+
+          addULOToCanvasAtPos(
+            newULO,
+            canvasCoords.x - UNIT_BOX_WIDTH / 2,
+            canvasCoords.y - 40
+          );
+        }
+      }
+
+      setDraggedNewULO(null);
+    };
+
+    document.addEventListener("mousemove", handleGlobalMove);
+    document.addEventListener("mouseup", handleGlobalUp);
+  };
+
+  const addULOToCanvasAtPos = (
+    selectedULO: unitLearningOutcome,
+    x: number,
+    y: number,
+    color?: string
+  ) => {
+    const newULO = {
+      uloDesc: selectedULO.uloDesc,
+      x: x,
+      y: y,
+      color: color || "#3B82F6",
+      unitId: currentUnit.unitId,
+      id: selectedULO.id,
+    };
+
+    setShowCreateULOForm(true);
+    setULOBoxes((prev) => [...prev, newULO]);
+  };
+
   function cancelEdit() {
     setEditingId(null);
     setShowAssessmentForm(false);
@@ -476,6 +648,15 @@ export const UnitInternalCanvas: React.FC = () => {
     setAssessmentBoxes(
       assessmentBoxes.filter((assessment) => assessment.id !== assessmentId)
     );
+  }
+
+  function handleEditULO(id: number) {
+    setEditingId(id);
+    setShowAssessmentForm(true);
+  }
+
+  function deleteULO(uloId: number) {
+    setULOBoxes(uloBoxes.filter((ulo) => ulo.id !== uloId));
   }
 
   const handleCreateAssessment = async (data: AssessmentFormData) => {
@@ -497,6 +678,19 @@ export const UnitInternalCanvas: React.FC = () => {
         dueWeek: data.dueWeek,
         conditions: data.conditions,
         unit: currentUnit,
+      });
+      setShowCreateAssessmentForm(false);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to create Assessment.");
+    }
+  };
+
+  const handleCreateULO = async (data: unitLearningOutcome) => {
+    try {
+      const newULO = await createULO({
+        description: data.uloDesc,
+        unitId: data.unitId,
       });
       setShowCreateAssessmentForm(false);
     } catch (err) {
@@ -625,6 +819,7 @@ export const UnitInternalCanvas: React.FC = () => {
         <UnitSidebar
           handleSaveCanvas={handleSaveCanvas}
           handleNewAssessmentMouseDown={handleNewAssessmentMouseDown}
+          handleNewULOMouseDown={handleNewULOMouseDown}
           getCLOColor={getCLOColor}
         />
       </div>
@@ -648,6 +843,16 @@ export const UnitInternalCanvas: React.FC = () => {
               deleteAssessment={deleteAssessment}
               onMouseDown={handleMouseDown}
             ></AssessmentBox>
+          ))}
+          {uloBoxes.map((ulo) => (
+            <ULOBox
+              key={ulo.id}
+              ulo={ulo}
+              onClick={handleAssessmentClickForConnection}
+              onDoubleClick={handleEditULO}
+              deleteAssessment={deleteULO}
+              onMouseDown={handleULOBoxMouseDown}
+            ></ULOBox>
           ))}
 
           <svg
@@ -734,6 +939,32 @@ export const UnitInternalCanvas: React.FC = () => {
             </div>
           </div>
         )}
+
+        {showCreateULOForm && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-black text-xl font-bold">
+                  Create Unit Learning Outcome
+                </h2>
+                <button
+                  onClick={() => setShowCreateULOForm(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors"
+                >
+                  &times;
+                </button>
+              </div>
+              <UnitLearningOutcomeForm
+                onSave={handleCreateAssessment}
+                initialData={{
+                  description: undefined,
+                  type: "Project",
+                }}
+                onView={() => console.log("nothing")}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Floating Drag Preview for New Units */}
@@ -749,6 +980,23 @@ export const UnitInternalCanvas: React.FC = () => {
           <div className="bg-blue-600 p-4 rounded shadow-2xl border-2 border-white text-white">
             <h2 className="text-lg font-bold text-center">
               {draggedNewAssessment.assessment.name || "Assessment"}
+            </h2>
+          </div>
+        </div>
+      )}
+
+      {draggedNewULO && (
+        <div
+          className="fixed pointer-events-none z-[200] opacity-80"
+          style={{
+            left: draggedNewULO.x - UNIT_BOX_WIDTH / 2,
+            top: draggedNewULO.y - 40,
+            width: UNIT_BOX_WIDTH,
+          }}
+        >
+          <div className="bg-blue-600 p-4 rounded shadow-2xl border-2 border-white text-white">
+            <h2 className="text-lg font-bold text-center">
+              {"Unit Learning Outcome"}
             </h2>
           </div>
         </div>
