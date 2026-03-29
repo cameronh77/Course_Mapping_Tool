@@ -100,13 +100,23 @@ export const WhiteboardCanvas: React.FC = () => {
         const courseUnits = response.data;
         const width = canvasRef.current.offsetWidth;
         const columnWidth = width / NUM_COLUMNS;
+        // Sort units by year ascending, then by y position ascending (top to bottom)
+        const sortedUnits = [...courseUnits].sort((a, b) => {
+          const yearA = a.year || 0;
+          const yearB = b.year || 0;
+          if (yearA !== yearB) return yearA - yearB;
+          const yA = (a.position?.y ?? 40);
+          const yB = (b.position?.y ?? 40);
+          return yA - yB;
+        });
+
         // Space out y values for semester 1 and 2 units to prevent overlap
         let semester1Y = 40;
         let semester2Y = 40;
         const semesterSpacing = 120; // px between units
-        const placed: UnitBoxType[] = courseUnits.map((cu: any) => {
-          let x = cu.position.x ?? 0;
-          let y = cu.position.y ?? 40;
+        const placed: UnitBoxType[] = sortedUnits.map((cu: any) => {
+          let x = cu.position?.x ?? 0;
+          let y = cu.position?.y ?? 40;
           if (cu.semester == 1) {
             x = 0;
             y = semester1Y;
