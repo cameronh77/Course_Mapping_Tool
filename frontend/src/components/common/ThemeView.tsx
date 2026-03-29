@@ -28,10 +28,6 @@ export interface ThemeViewProps {
   onUnitGroupChange: (unitKey: string, fromTag: Tag | null, toTag: Tag | null) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Pure helpers — no React, no side effects
-// ---------------------------------------------------------------------------
-
 function buildFreshLayout(
   unitBoxes: UnitBoxType[],
   unitMappings: UnitMappings,
@@ -93,10 +89,9 @@ function mergeWithSaved(fresh: ThemeViewStorage, saved: ThemeViewStorage): Theme
   return { groupUnits, freeUnits: saved.freeUnits, groupPositions };
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
+/**
+ * Theme View
+ */
 export const ThemeView: React.FC<ThemeViewProps> = ({
   courseId,
   unitBoxes,
@@ -109,7 +104,7 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     [existingTags]
   );
 
-  // Compute initial state exactly once via a ref — avoids calling buildFreshLayout 3×
+  // Compute initial state exactly once via a ref — avoids calling buildFreshLayout 3x
   const initRef = useRef<ThemeViewStorage | null>(null);
   if (initRef.current === null) {
     const fresh = buildFreshLayout(unitBoxes, unitMappings, existingTags);

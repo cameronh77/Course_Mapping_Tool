@@ -244,6 +244,38 @@ export const CanvasPage: React.FC = () => {
     };
   };
 
+  const handleUnitGroupChange = async (
+    unitKey: string,
+    fromTag: import("../types").Tag | null,
+    toTag: import("../types").Tag | null
+  ) => {
+    // Update local unitMappings immediately
+    setUnitMappings((prev) => {
+      const mapping = { ...(prev[unitKey] || { clos: [], tags: [] }) };
+      if (fromTag) {
+        mapping.tags = mapping.tags.filter((t) => t.tagId !== fromTag.tagId);
+      }
+      if (toTag && !mapping.tags.find((t) => t.tagId === toTag.tagId)) {
+        mapping.tags = [...mapping.tags, toTag];
+      }
+      return { ...prev, [unitKey]: mapping };
+    });
+
+    // Persist to backend
+    try {
+      if (fromTag) {
+        await axiosInstance.delete("/tag/delete-from-tag/", {
+          params: { tagId: fromTag.tagId, unitId: unitKey },
+        });
+      }
+      if (toTag && currentCourse?.courseId) {
+        await addUnitTags([{ courseId: currentCourse.courseId, unitId: unitKey, tagId: toTag.tagId }]);
+      }
+    } catch (err) {
+      console.error("Failed to persist tag change:", err);
+    }
+  };
+
   const handleAddTagToUnits = (tag: number) => {
     const apiData = selectedUnits.map((unit) => ({
       courseId: currentCourse.courseId,
@@ -725,10 +757,12 @@ export const CanvasPage: React.FC = () => {
         </div>
         ) : (
           <ThemeView
+            courseId={currentCourse?.courseId ?? ""}
             unitBoxes={unitBoxes}
             unitMappings={unitMappings}
             existingTags={existingTags}
             getCLOColor={getCLOColor}
+            onUnitGroupChange={handleUnitGroupChange}
           />
         )}
 
