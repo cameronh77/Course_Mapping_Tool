@@ -215,7 +215,7 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative select-none bg-gray-50"
+      className="relative select-none"
       style={{ width: canvasSize.width, height: canvasSize.height, cursor: draggingUnit ? "grabbing" : "default" }}
     >
       {/* Theme groups */}
