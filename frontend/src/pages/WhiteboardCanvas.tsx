@@ -100,20 +100,37 @@ export const WhiteboardCanvas: React.FC = () => {
         const courseUnits = response.data;
         const width = canvasRef.current.offsetWidth;
         const columnWidth = width / NUM_COLUMNS;
-        const placed: UnitBoxType[] = courseUnits.map((cu: any) => ({
-          id: Date.now() + Math.random(),
-          name: cu.unit.unitName,
-          unitId: cu.unitId,
-          description: cu.unit.unitDesc,
-          credits: cu.unit.credits,
-          semestersOffered: cu.unit.semestersOffered,
-          x: cu.position.x ?? 0,
-          y: cu.position.y ?? 40,
-          color: cu.color || "#3B82F6",
-          width: columnWidth,
-          semester: cu.semester || 0,
-          year: cu.year || 0,
-        }));
+        // Space out y values for semester 1 and 2 units to prevent overlap
+        let semester1Y = 40;
+        let semester2Y = 40;
+        const semesterSpacing = 120; // px between units
+        const placed: UnitBoxType[] = courseUnits.map((cu: any) => {
+          let x = cu.position.x ?? 0;
+          let y = cu.position.y ?? 40;
+          if (cu.semester == 1) {
+            x = 0;
+            y = semester1Y;
+            semester1Y += semesterSpacing;
+          } else if (cu.semester == 2) {
+            x = width - columnWidth;
+            y = semester2Y;
+            semester2Y += semesterSpacing;
+          }
+          return {
+            id: Date.now() + Math.random(),
+            name: cu.unit.unitName,
+            unitId: cu.unitId,
+            description: cu.unit.unitDesc,
+            credits: cu.unit.credits,
+            semestersOffered: cu.unit.semestersOffered,
+            x,
+            y,
+            color: cu.color || "#3B82F6",
+            width: columnWidth,
+            semester: cu.semester || 0,
+            year: cu.year || 0,
+          };
+        });
         setUnitBoxes(placed);
 
         // Load existing CLO and Tag mappings for each unit
