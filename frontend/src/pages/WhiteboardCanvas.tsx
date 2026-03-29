@@ -110,37 +110,78 @@ export const WhiteboardCanvas: React.FC = () => {
           return yA - yB;
         });
 
-        // Space out y values for semester 1 and 2 units to prevent overlap
-        let semester1Y = 40;
-        let semester2Y = 40;
-        const semesterSpacing = 120; // px between units
-        const placed: UnitBoxType[] = sortedUnits.map((cu: any) => {
-          let x = cu.position?.x ?? 0;
-          let y = cu.position?.y ?? 40;
-          if (cu.semester == 1) {
-            x = 0;
-            y = semester1Y;
+        // Group units by year
+        const unitsByYear: Record<number, any[]> = {};
+        for (const cu of sortedUnits) {
+          const year = cu.year || 0;
+          if (!unitsByYear[year]) unitsByYear[year] = [];
+          unitsByYear[year].push(cu);
+        }
+
+        const placed: UnitBoxType[] = [];
+        const semesterSpacing = 120;
+        let currentY = 40;
+        for (const year of Object.keys(unitsByYear).map(Number).sort((a, b) => a - b)) {
+          const yearUnits = unitsByYear[year];
+          const sem1Units = yearUnits.filter((u) => u.semester == 1);
+          const sem2Units = yearUnits.filter((u) => u.semester == 2);
+
+          // Place semester 1 units in leftmost column, spaced vertically
+          let semester1Y = currentY;
+          const sem1YPositions: number[] = [];
+          for (const cu of sem1Units) {
+            placed.push({
+              id: Date.now() + Math.random(),
+              name: cu.unit.unitName,
+              unitId: cu.unitId,
+              description: cu.unit.unitDesc,
+              credits: cu.unit.credits,
+              semestersOffered: cu.unit.semestersOffered,
+              x: 0,
+              y: semester1Y,
+              color: cu.color || "#3B82F6",
+              width: columnWidth,
+              semester: cu.semester || 0,
+              year: cu.year || 0,
+            });
+            sem1YPositions.push(semester1Y);
             semester1Y += semesterSpacing;
-          } else if (cu.semester == 2) {
-            x = width - columnWidth;
-            y = semester2Y;
-            semester2Y += semesterSpacing;
           }
-          return {
-            id: Date.now() + Math.random(),
-            name: cu.unit.unitName,
-            unitId: cu.unitId,
-            description: cu.unit.unitDesc,
-            credits: cu.unit.credits,
-            semestersOffered: cu.unit.semestersOffered,
-            x,
-            y,
-            color: cu.color || "#3B82F6",
-            width: columnWidth,
-            semester: cu.semester || 0,
-            year: cu.year || 0,
-          };
-        });
+
+          // Place semester 2 units in rightmost column
+          // First semester 2 unit aligns y with first semester 1 unit, rest spaced below
+          let semester2Y = sem1YPositions.length > 0 ? sem1YPositions[0] : currentY;
+          let isFirstSem2 = true;
+          for (const cu of sem2Units) {
+            placed.push({
+              id: Date.now() + Math.random(),
+              name: cu.unit.unitName,
+              unitId: cu.unitId,
+              description: cu.unit.unitDesc,
+              credits: cu.unit.credits,
+              semestersOffered: cu.unit.semestersOffered,
+              x: width - columnWidth,
+              y: semester2Y,
+              color: cu.color || "#3B82F6",
+              width: columnWidth,
+              semester: cu.semester || 0,
+              year: cu.year || 0,
+            });
+            if (isFirstSem2) {
+              semester2Y += semesterSpacing;
+              isFirstSem2 = false;
+            } else {
+              semester2Y += semesterSpacing;
+            }
+          }
+
+          // Update currentY for next year (max of last y used in this year + spacing)
+          const lastY = Math.max(
+            sem1YPositions.length > 0 ? sem1YPositions[sem1YPositions.length - 1] : currentY,
+            semester2Y - semesterSpacing
+          );
+          currentY = lastY + semesterSpacing;
+        }
         setUnitBoxes(placed);
 
         // Load existing CLO and Tag mappings for each unit
