@@ -128,11 +128,14 @@ export const deleteTag = async (req, res) => {
 
 export const deleteUnitFromTag = async (req, res) => {
   try {
-    const { tagId, unitId } = req.params;
-    const deletedTag = await prisma.courseUnitTag.delete({
+    const { tagId, unitId, courseId } = req.query;
+    const deletedTag = await prisma.courseUnitTags.delete({
       where: {
-        tagId: tagId,
-        unitId: unitId,
+        courseId_unitId_tagId: {
+          courseId: courseId as string,
+          unitId: unitId as string,
+          tagId: Number(tagId),
+        },
       },
     });
 

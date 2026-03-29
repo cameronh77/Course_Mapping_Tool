@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import type { Tag, UnitBox as UnitBoxType, UnitMappings } from "../../types";
 import { useThemeDrag } from "../../hooks/useThemeDrag";
-import { loadThemeLayout, saveThemeLayout, type ThemeViewStorage } from "../../lib/themeStorage";
+import { loadThemeLayout, type ThemeViewStorage } from "../../lib/themeStorage";
 import {
   THEME_COLORS,
   UNIT_CARD_W,
@@ -26,6 +26,8 @@ export interface ThemeViewProps {
   existingTags: Tag[];
   getCLOColor: (cloId: number) => string;
   onUnitGroupChange: (unitKey: string, fromTag: Tag | null, toTag: Tag | null) => void;
+  /** Ref kept up-to-date with current layout so the parent can persist it on save. */
+  layoutRef?: React.MutableRefObject<ThemeViewStorage | null>;
 }
 
 function buildFreshLayout(
@@ -98,6 +100,7 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   unitMappings,
   existingTags,
   onUnitGroupChange,
+  layoutRef,
 }) => {
   const groupMetas = useMemo<GroupMeta[]>(
     () => existingTags.map((tag, i) => ({ key: `tag-${tag.tagId}`, tag, colorIdx: i })),
@@ -159,10 +162,10 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     });
   }, [unitBoxes]);
 
-  // Persist to localStorage on every layout change
+  // Keep layoutRef in sync so the parent can persist on save
   useEffect(() => {
-    saveThemeLayout(courseId, { groupPositions, groupUnits, freeUnits });
-  }, [courseId, groupPositions, groupUnits, freeUnits]);
+    if (layoutRef) layoutRef.current = { groupPositions, groupUnits, freeUnits };
+  }, [layoutRef, groupPositions, groupUnits, freeUnits]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 

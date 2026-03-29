@@ -7,6 +7,7 @@ import { ConnectionLines } from "../components/common/ConnectionLines";
 import { ThemeView } from "../components/common/ThemeView";
 import { AddTagMenu } from "../components/common/AddTagMenu";
 import { axiosInstance } from "../lib/axios";
+import { saveThemeLayout, type ThemeViewStorage } from "../lib/themeStorage";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
@@ -78,6 +79,7 @@ export const CanvasPage: React.FC = () => {
   const [hoveredUnit, setHoveredUnit] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
 
@@ -261,19 +263,6 @@ export const CanvasPage: React.FC = () => {
       return { ...prev, [unitKey]: mapping };
     });
 
-    // Persist to backend
-    try {
-      if (fromTag) {
-        await axiosInstance.delete("/tag/delete-from-tag/", {
-          params: { tagId: fromTag.tagId, unitId: unitKey },
-        });
-      }
-      if (toTag && currentCourse?.courseId) {
-        await addUnitTags([{ courseId: currentCourse.courseId, unitId: unitKey, tagId: toTag.tagId }]);
-      }
-    } catch (err) {
-      console.error("Failed to persist tag change:", err);
-    }
   };
 
   const handleAddTagToUnits = (tag: number) => {
@@ -294,11 +283,17 @@ export const CanvasPage: React.FC = () => {
       try {
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
-          { 
+          {
             units: unitBoxes,
             unitMappings: unitMappings
           }
         );
+
+        // Persist theme layout
+        if (themeLayoutRef.current) {
+          saveThemeLayout(currentCourse.courseId, themeLayoutRef.current);
+        }
+
         alert("Canvas saved successfully!");
       } catch (error) {
         console.error("Error saving canvas:", error);
@@ -763,6 +758,7 @@ export const CanvasPage: React.FC = () => {
             existingTags={existingTags}
             getCLOColor={getCLOColor}
             onUnitGroupChange={handleUnitGroupChange}
+            layoutRef={themeLayoutRef}
           />
         )}
 
