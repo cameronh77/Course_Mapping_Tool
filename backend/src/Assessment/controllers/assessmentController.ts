@@ -69,13 +69,15 @@ export const updateAssessment = async (req, res) => {
     conditions,
     feedBackWeek,
     feedBackDetails,
+    position,
   } = req.body;
 
   try {
     console.log(req.body);
+    const trueId = Number(assessmentId);
     const updatedAssessment = await prisma.assessment.update({
       where: {
-        assessmentId: assessmentId,
+        assessmentId: trueId,
       },
       data: {
         assessmentName: name,
@@ -88,9 +90,10 @@ export const updateAssessment = async (req, res) => {
         assessmentConditions: conditions,
         feedBackWeek: feedBackWeek,
         feedBackDetails: feedBackDetails,
+        position: position,
       },
     });
-
+    console.log("This is the updated assessment", updatedAssessment);
     return res.status(200).json(updatedAssessment);
   } catch (error) {
     console.error(error);
@@ -101,17 +104,19 @@ export const updateAssessment = async (req, res) => {
 export const viewAssessments = async (req, res) => {
   try {
     const searchTerm = req.query.search as string;
-
+    //console.log(req);
+    console.log(searchTerm, "<- search term");
     if (searchTerm) {
       const assessments = await prisma.assessment.findMany({
         where: {
-          assessmentID: parseInt(req.body),
+          unitId: searchTerm,
         },
       });
+      console.log("here", assessments);
       return res.status(200).json(assessments);
     } else {
-      // If no search term is provided, return all units
-      const assessments = await prisma.unit.findMany({});
+      // If no search term is provided, return all assessments
+      const assessments = await prisma.assessment.findMany({});
       return res.status(200).json(assessments);
     }
   } catch (error) {
