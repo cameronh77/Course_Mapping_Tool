@@ -174,7 +174,14 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
             </div>
 
             <div>
-              <h2 className="text-sm font-bold mb-2 text-green-800 border-b border-green-100 pb-1">Tags</h2>
+              <h2 className="text-sm font-bold mb-2 text-green-800 border-b border-green-100 pb-1">Themes & Tags</h2>
+              <div className="flex gap-2">
+                <input type="text" placeholder="New tag name..." className="shadow-sm border border-gray-300 rounded w-full py-1.5 px-2 text-sm text-gray-700 focus:ring-green-400 focus:border-green-400" value={newTag} onChange={(e) => setNewTag(e.target.value)} />
+                <button className="bg-green-500 hover:bg-green-600 text-white font-bold py-1.5 px-3 rounded shadow-sm text-sm whitespace-nowrap transition-colors" onClick={() => { if(newTag && currentCourse?.courseId) { createTag({ tagName: newTag, courseId: currentCourse.courseId }); setNewTag(""); }}}>
+                  Add
+                </button>
+              </div>
+              <br></br>
               <div className="flex flex-wrap gap-2 mb-3 max-h-[20vh] overflow-y-auto">
                   {existingTags && existingTags.map((tag: any) => (
                     <div
@@ -190,12 +197,6 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
                       {tag.tagName}
                     </div>
                   ))}
-              </div>
-              <div className="flex gap-2">
-                <input type="text" placeholder="New tag name..." className="shadow-sm border border-gray-300 rounded w-full py-1.5 px-2 text-sm text-gray-700 focus:ring-green-400 focus:border-green-400" value={newTag} onChange={(e) => setNewTag(e.target.value)} />
-                <button className="bg-green-500 hover:bg-green-600 text-white font-bold py-1.5 px-3 rounded shadow-sm text-sm whitespace-nowrap transition-colors" onClick={() => { if(newTag && currentCourse?.courseId) { createTag({ tagName: newTag, courseId: currentCourse.courseId }); setNewTag(""); }}}>
-                  Add
-                </button>
               </div>
             </div>
           </div>

@@ -4,8 +4,10 @@ import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
 import { GridBackground } from "../components/common/GridBackground";
 import { ConnectionLines } from "../components/common/ConnectionLines";
+import { ThemeView } from "../components/common/ThemeView";
 import { AddTagMenu } from "../components/common/AddTagMenu";
 import { axiosInstance } from "../lib/axios";
+import { saveThemeLayout, type ThemeViewStorage } from "../lib/themeStorage";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
@@ -53,7 +55,8 @@ const getCLOColor = (cloId: number): string => {
 export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
 
-  // UX State - Sidebar Navigation Tab
+  // UX State - View Mode & Sidebar Navigation Tab
+  const [viewMode, setViewMode] = useState<'grid' | 'theme'>('grid');
   const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
 
   // State for editing
@@ -76,6 +79,7 @@ export const CanvasPage: React.FC = () => {
   const [hoveredUnit, setHoveredUnit] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
 
@@ -242,6 +246,25 @@ export const CanvasPage: React.FC = () => {
     };
   };
 
+  const handleUnitGroupChange = async (
+    unitKey: string,
+    fromTag: import("../types").Tag | null,
+    toTag: import("../types").Tag | null
+  ) => {
+    // Update local unitMappings immediately
+    setUnitMappings((prev) => {
+      const mapping = { ...(prev[unitKey] || { clos: [], tags: [] }) };
+      if (fromTag) {
+        mapping.tags = mapping.tags.filter((t) => t.tagId !== fromTag.tagId);
+      }
+      if (toTag && !mapping.tags.find((t) => t.tagId === toTag.tagId)) {
+        mapping.tags = [...mapping.tags, toTag];
+      }
+      return { ...prev, [unitKey]: mapping };
+    });
+
+  };
+
   const handleAddTagToUnits = (tag: number) => {
     const apiData = selectedUnits.map((unit) => ({
       courseId: currentCourse.courseId,
@@ -260,11 +283,17 @@ export const CanvasPage: React.FC = () => {
       try {
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
-          { 
+          {
             units: unitBoxes,
             unitMappings: unitMappings
           }
         );
+
+        // Persist theme layout
+        if (themeLayoutRef.current) {
+          saveThemeLayout(currentCourse.courseId, themeLayoutRef.current);
+        }
+
         alert("Canvas saved successfully!");
       } catch (error) {
         console.error("Error saving canvas:", error);
@@ -661,13 +690,30 @@ export const CanvasPage: React.FC = () => {
         />
       </div>
 
-      <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={handleMouseDownCanvas} onContextMenu={(e) => handleRightClick(e)}>
+      <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+        {/* View Mode Toggle */}
+        <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
+          <button
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+            onClick={() => setViewMode('grid')}
+          >
+            Grid View
+          </button>
+          <button
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'theme' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+            onClick={() => setViewMode('theme')}
+          >
+            Theme View
+          </button>
+        </div>
+
+        {viewMode === 'grid' ? (
         <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
           <GridBackground
             expectedDuration={yearsCount}
             numberTeachingPeriods={semPerYear}
           />
-          
+
           {unitBoxes.map((unit) => (
             <UnitBox
               key={unit.id}
@@ -693,7 +739,7 @@ export const CanvasPage: React.FC = () => {
               getCLOColor={getCLOColor}
             />
           ))}
-          
+
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
             <ConnectionLines
               relationships={relationships}
@@ -704,6 +750,17 @@ export const CanvasPage: React.FC = () => {
             />
           </svg>
         </div>
+        ) : (
+          <ThemeView
+            courseId={currentCourse?.courseId ?? ""}
+            unitBoxes={unitBoxes}
+            unitMappings={unitMappings}
+            existingTags={existingTags}
+            getCLOColor={getCLOColor}
+            onUnitGroupChange={handleUnitGroupChange}
+            layoutRef={themeLayoutRef}
+          />
+        )}
 
         {/* Modal: Edit Unit */}
         {showForm && editingId && (
