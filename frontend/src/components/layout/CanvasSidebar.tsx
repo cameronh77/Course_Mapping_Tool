@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
+import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
 import type { Unit } from "../../types";
 
 interface CanvasSidebarProps {
@@ -48,12 +49,48 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
 
   // Local state purely for the sidebar
   const [newTag, setNewTag] = useState<string>("");
+  const [addDropdownOpen, setAddDropdownOpen] = useState(false);
+  const handlers = getWhiteboardHandlers();
 
   return (
     <div className="bg-white p-4 w-full h-full flex flex-col">
       <button className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4 shadow-sm transition-colors" onClick={handleSaveCanvas}>
         Save Canvas
       </button>
+
+      <div className="relative mb-4">
+        <button
+          onClick={() => setAddDropdownOpen((prev) => !prev)}
+          className="btn btn-sm w-full gap-2 transition-colors bg-green-600 text-white hover:bg-green-700"
+        >
+          <span>Add</span>
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+        </button>
+        {addDropdownOpen && (
+          <div className="absolute top-full left-0 right-0 mt-1 flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-xl z-50">
+            <button
+              onClick={() => {
+                handlers.addUnit?.();
+                setAddDropdownOpen(false);
+              }}
+              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-blue-50 text-blue-600"
+            >
+              + Unit
+            </button>
+            <button
+              onClick={() => {
+                handlers.addCLO?.();
+                setAddDropdownOpen(false);
+              }}
+              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-pink-50 text-pink-600"
+            >
+              + CLO Box
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Phase Navigation Tabs */}
       <div className="flex w-full mb-5 bg-gray-100 rounded-lg p-1 border border-gray-200 shadow-inner">

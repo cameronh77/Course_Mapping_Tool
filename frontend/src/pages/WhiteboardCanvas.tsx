@@ -4,6 +4,7 @@ import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
 import { CLOBox } from "../components/common/CLOBox";
+import { registerWhiteboardHandlers, clearWhiteboardHandlers } from "../lib/whiteboardHandlers";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
@@ -19,6 +20,14 @@ import type {
 const NUM_COLUMNS = 9;
 const CLO_BOX_SIZE = 72;
 const CLO_VERTICAL_SPACING = 110;
+
+type CLOBoxItem = {
+  id: number;
+  clo: CourseLearningOutcome;
+  x: number;
+  y: number;
+  isCustom?: boolean;
+};
 
 const CLO_COLOR_PALETTE = [
   "#EC4899",
@@ -54,9 +63,7 @@ export const WhiteboardCanvas: React.FC = () => {
   const [draggedCLOId, setDraggedCLOId] = useState<number | null>(null);
   const [selectedCLOId, setSelectedCLOId] = useState<number | null>(null);
 
-  const [cloBoxes, setCloBoxes] = useState<
-    Array<{ id: number; clo: CourseLearningOutcome; x: number; y: number }>
-  >([]);
+  const [cloBoxes, setCloBoxes] = useState<CLOBoxItem[]>([]);
   // Update column width on window or canvas resize
   useEffect(() => {
     const updateColumnWidth = () => {
@@ -85,7 +92,9 @@ export const WhiteboardCanvas: React.FC = () => {
         setCloBoxes((prevCLOs) =>
           prevCLOs.map((cloBox) => ({
             ...cloBox,
-            x: getCLOAlignedX(width),
+            x: cloBox.isCustom
+              ? Math.max(0, Math.min(cloBox.x, width - CLO_BOX_SIZE))
+              : getCLOAlignedX(width),
           }))
         );
 
@@ -306,31 +315,41 @@ export const WhiteboardCanvas: React.FC = () => {
   }, [currentCourse?.courseId]);
 
   useEffect(() => {
+    registerWhiteboardHandlers({
+      addUnit: addPlaygroundUnit,
+      addCLO: addPlaygroundCLO,
+    });
+    return () => clearWhiteboardHandlers();
+  }, []);
+
+  useEffect(() => {
     if (!currentCourse?.courseId) return;
 
     setCloBoxes((prev) => {
       const isNewCourse = cloCourseRef.current !== currentCourse.courseId;
       const middleX = getCLOAlignedX(columnWidth * NUM_COLUMNS);
       const courseCLOs = (currentCLOs || []) as CourseLearningOutcome[];
+      const customBoxes = prev.filter((box) => box.isCustom);
 
       const existingById = new Map(prev.map((box) => [box.id, box]));
-      const next = courseCLOs
+      const syncedCourseBoxes = courseCLOs
         .filter((clo): clo is CourseLearningOutcome & { cloId: number } => typeof clo.cloId === "number")
         .map((clo, index) => {
           const existing = !isNewCourse ? existingById.get(clo.cloId) : undefined;
           if (existing) {
-            return { ...existing, clo, x: middleX };
+            return { ...existing, clo, x: middleX, isCustom: false };
           }
           return {
             id: clo.cloId,
             clo,
             x: middleX,
             y: 40 + index * CLO_VERTICAL_SPACING,
+            isCustom: false,
           };
         });
 
       cloCourseRef.current = currentCourse.courseId;
-      return next;
+      return [...syncedCourseBoxes, ...customBoxes];
     });
   }, [currentCourse?.courseId, currentCLOs, columnWidth]);
 
@@ -483,6 +502,68 @@ export const WhiteboardCanvas: React.FC = () => {
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleUp);
   };
+
+  const getViewportAnchor = () => {
+    if (!canvasRef.current) {
+      return { x: 40, y: 40, width: NUM_COLUMNS * columnWidth };
+    }
+    const container = canvasRef.current;
+    const width = container.offsetWidth;
+    const x = container.scrollLeft + width / 2;
+    const y = container.scrollTop + 140;
+    return { x, y, width };
+  };
+
+  const addPlaygroundUnit = () => {
+    const anchor = getViewportAnchor();
+    const snappedX = Math.max(0, Math.min(anchor.x - columnWidth / 2, anchor.width - columnWidth));
+    const newId = Date.now();
+
+    setUnitBoxes((prev) => [
+      ...prev,
+      {
+        id: newId,
+        name: `Playground Unit ${prev.length + 1}`,
+        unitId: `PLAY-${prev.length + 1}`,
+        description: "Temporary unit for whiteboard exploration.",
+        credits: 6,
+        semestersOffered: [1, 2],
+        x: snappedX,
+        y: anchor.y,
+        color: "#3B82F6",
+        width: columnWidth,
+      },
+    ]);
+  };
+
+  const addPlaygroundCLO = () => {
+    const anchor = getViewportAnchor();
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    const cloNumber = (cloBoxes.filter((c) => c.isCustom).length + 1);
+
+    setCloBoxes((prev) => [
+      ...prev,
+      {
+        id,
+        clo: {
+          cloId: id,
+          cloDesc: `Playground CLO ${cloNumber}`,
+          courseId: currentCourse?.courseId,
+        },
+        x: Math.max(0, Math.min(anchor.x - CLO_BOX_SIZE / 2, anchor.width - CLO_BOX_SIZE)),
+        y: anchor.y,
+        isCustom: true,
+      },
+    ]);
+  };
+
+  useEffect(() => {
+    registerWhiteboardHandlers({
+      addUnit: addPlaygroundUnit,
+      addCLO: addPlaygroundCLO,
+    });
+    return () => clearWhiteboardHandlers();
+  }, []);
 
   const startEdit = (id: number) => {
     setEditingId(id);
@@ -750,6 +831,32 @@ export const WhiteboardCanvas: React.FC = () => {
               color={getCLOColor(cloBox.clo.cloId || 0)}
               onMouseDown={(e) => handleCLOMouseDown(e, cloBox.id)}
               onClick={() => setSelectedCLOId((prev) => (prev === cloBox.id ? null : cloBox.id))}
+              onDescriptionUpdate={(newDescription) => {
+                // Update local state
+                setCloBoxes((prev) =>
+                  prev.map((box) =>
+                    box.id === cloBox.id
+                      ? {
+                          ...box,
+                          clo: { ...box.clo, cloDesc: newDescription },
+                        }
+                      : box
+                  )
+                );
+                
+                // Update via API if not custom CLO
+                if (!cloBox.isCustom && cloBox.clo.cloId && cloBox.clo.courseId) {
+                  cloStore.updateCLO({
+                    cloId: cloBox.clo.cloId,
+                    cloDesc: newDescription,
+                    courseId: cloBox.clo.courseId,
+                  });
+                }
+              }}
+              onDelete={() => {
+                setCloBoxes((prev) => prev.filter((box) => box.id !== cloBox.id));
+                setSelectedCLOId((prev) => (prev === cloBox.id ? null : prev));
+              }}
             />
           ))}
         </div>
