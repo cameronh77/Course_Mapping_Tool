@@ -3,6 +3,7 @@ import { axiosInstance } from "../lib/axios";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
+import { CLOBox } from "../components/common/CLOBox";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
@@ -16,6 +17,8 @@ import type {
 } from "../types";
 
 const NUM_COLUMNS = 9;
+const CLO_BOX_SIZE = 72;
+const CLO_VERTICAL_SPACING = 110;
 
 const CLO_COLOR_PALETTE = [
   "#EC4899",
@@ -36,15 +39,57 @@ const getCLOColor = (cloId: number): string => {
   return CLO_COLOR_PALETTE[cloId % CLO_COLOR_PALETTE.length];
 };
 
+const getCLOAlignedX = (canvasWidth: number): number => {
+  const line4 = (canvasWidth / NUM_COLUMNS) * 4;
+  const line5 = (canvasWidth / NUM_COLUMNS) * 5;
+  const midpoint = (line4 + line5) / 2;
+  return midpoint - CLO_BOX_SIZE / 2;
+};
+
 export const WhiteboardCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const previousColumnWidthRef = useRef<number>(256);
+  const cloCourseRef = useRef<string | null>(null);
   const [columnWidth, setColumnWidth] = useState<number>(256);
+  const [draggedCLOId, setDraggedCLOId] = useState<number | null>(null);
+  const [selectedCLOId, setSelectedCLOId] = useState<number | null>(null);
+
+  const [cloBoxes, setCloBoxes] = useState<
+    Array<{ id: number; clo: CourseLearningOutcome; x: number; y: number }>
+  >([]);
   // Update column width on window or canvas resize
   useEffect(() => {
     const updateColumnWidth = () => {
       if (canvasRef.current) {
         const width = canvasRef.current.offsetWidth;
-        setColumnWidth(width / NUM_COLUMNS);
+        const nextColumnWidth = width / NUM_COLUMNS;
+        const prevColumnWidth = previousColumnWidthRef.current || nextColumnWidth;
+
+        setColumnWidth(nextColumnWidth);
+
+        // Keep each unit in its logical column after resize.
+        setUnitBoxes((prevUnits) =>
+          prevUnits.map((unit) => {
+            const columnIndex = Math.max(
+              0,
+              Math.min(NUM_COLUMNS - 1, Math.round(unit.x / prevColumnWidth))
+            );
+            return {
+              ...unit,
+              x: columnIndex * nextColumnWidth,
+              width: nextColumnWidth,
+            };
+          })
+        );
+
+        setCloBoxes((prevCLOs) =>
+          prevCLOs.map((cloBox) => ({
+            ...cloBox,
+            x: getCLOAlignedX(width),
+          }))
+        );
+
+        previousColumnWidthRef.current = nextColumnWidth;
       }
     };
     updateColumnWidth();
@@ -260,6 +305,35 @@ export const WhiteboardCanvas: React.FC = () => {
     }
   }, [currentCourse?.courseId]);
 
+  useEffect(() => {
+    if (!currentCourse?.courseId) return;
+
+    setCloBoxes((prev) => {
+      const isNewCourse = cloCourseRef.current !== currentCourse.courseId;
+      const middleX = getCLOAlignedX(columnWidth * NUM_COLUMNS);
+      const courseCLOs = (currentCLOs || []) as CourseLearningOutcome[];
+
+      const existingById = new Map(prev.map((box) => [box.id, box]));
+      const next = courseCLOs
+        .filter((clo): clo is CourseLearningOutcome & { cloId: number } => typeof clo.cloId === "number")
+        .map((clo, index) => {
+          const existing = !isNewCourse ? existingById.get(clo.cloId) : undefined;
+          if (existing) {
+            return { ...existing, clo, x: middleX };
+          }
+          return {
+            id: clo.cloId,
+            clo,
+            x: middleX,
+            y: 40 + index * CLO_VERTICAL_SPACING,
+          };
+        });
+
+      cloCourseRef.current = currentCourse.courseId;
+      return next;
+    });
+  }, [currentCourse?.courseId, currentCLOs, columnWidth]);
+
   const getMouseCoords = (e: MouseEvent | React.MouseEvent, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect();
     return {
@@ -367,6 +441,43 @@ export const WhiteboardCanvas: React.FC = () => {
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
       setTimeout(() => setIsDragging(false), 100);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
+  const handleCLOMouseDown = (e: React.MouseEvent, id: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const cloBox = cloBoxes.find((c) => c.id === id);
+    if (!cloBox || !canvasRef.current) return;
+
+    const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
+    const offset = { x: mouseX - cloBox.x, y: mouseY - cloBox.y };
+    setDraggedCLOId(id);
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      if (!canvasRef.current) return;
+      const { x: newMouseX, y: newMouseY } = getMouseCoords(moveEvent, canvasRef.current);
+
+      setCloBoxes((prev) =>
+        prev.map((box) => {
+          if (box.id !== id) return box;
+          return {
+            ...box,
+            x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - columnWidth * 0.9)),
+            y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 80)),
+          };
+        })
+      );
+    };
+
+    const handleUp = () => {
+      setDraggedCLOId(null);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
     };
 
     document.addEventListener("mousemove", handleMove);
@@ -624,6 +735,21 @@ export const WhiteboardCanvas: React.FC = () => {
                 }
               }}
               getCLOColor={getCLOColor}
+            />
+          ))}
+
+          {cloBoxes.map((cloBox) => (
+            <CLOBox
+              key={cloBox.id}
+              clo={cloBox.clo}
+              x={cloBox.x}
+              y={cloBox.y}
+              width={CLO_BOX_SIZE}
+              isDragging={draggedCLOId === cloBox.id}
+              isSelected={selectedCLOId === cloBox.id}
+              color={getCLOColor(cloBox.clo.cloId || 0)}
+              onMouseDown={(e) => handleCLOMouseDown(e, cloBox.id)}
+              onClick={() => setSelectedCLOId((prev) => (prev === cloBox.id ? null : cloBox.id))}
             />
           ))}
         </div>
