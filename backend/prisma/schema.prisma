@@ -179,8 +179,9 @@ model AssessmentULO {
 }
 
 model AssessmentRelationship {
-  assessment   Assessment @relation("AssessmentRelations", fields: [assessmentId], references: [assessmentId])
-  assessmentId Int
+  assessment      Assessment @relation("AssessmentRelations", fields: [assessmentId], references: [assessmentId])
+  assessmentId    Int
+  connectionType  String
 
   related   Assessment @relation("RelatedAssessments", fields: [relatedId], references: [assessmentId])
   relatedId Int
