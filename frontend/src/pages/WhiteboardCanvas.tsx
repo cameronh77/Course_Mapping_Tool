@@ -100,8 +100,26 @@ export const WhiteboardCanvas: React.FC = () => {
         const courseUnits = response.data;
         const width = canvasRef.current.offsetWidth;
         const columnWidth = width / NUM_COLUMNS;
+
+        // Dev updates may leave semester/year as 0. Normalize from position so units still render.
+        const normalizedUnits = (courseUnits || []).map((cu: any) => {
+          const normalizedYear = typeof cu.year === "number" && cu.year > 0 ? cu.year : 1;
+          let normalizedSemester = typeof cu.semester === "number" ? cu.semester : 0;
+
+          if (normalizedSemester !== 1 && normalizedSemester !== 2) {
+            const x = cu.position?.x ?? 0;
+            normalizedSemester = x >= width / 2 ? 2 : 1;
+          }
+
+          return {
+            ...cu,
+            year: normalizedYear,
+            semester: normalizedSemester,
+          };
+        });
+
         // Sort units by year ascending, then by y position ascending (top to bottom)
-        const sortedUnits = [...courseUnits].sort((a, b) => {
+        const sortedUnits = [...normalizedUnits].sort((a, b) => {
           const yearA = a.year || 0;
           const yearB = b.year || 0;
           if (yearA !== yearB) return yearA - yearB;
@@ -211,7 +229,7 @@ export const WhiteboardCanvas: React.FC = () => {
           console.error("Error loading tags for course:", error);
         }
 
-        for (const cu of courseUnits) {
+        for (const cu of normalizedUnits) {
           const unitId = cu.unitId;
           mappingsData[unitId] = { clos: [], tags: [] };
 
