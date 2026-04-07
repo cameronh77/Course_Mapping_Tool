@@ -43,10 +43,13 @@ export const addAssessment = async (req, res) => {
 export const deleteAssessment = async (req, res) => {
   try {
     const { assessmentId } = req.body;
+    // Delete dependent records first
+    await prisma.assessmentULO.deleteMany({ where: { assessmentId } });
+    await prisma.assessmentRelationship.deleteMany({
+      where: { OR: [{ assessmentId }, { relatedId: assessmentId }] },
+    });
     const deletedAssessment = await prisma.assessment.delete({
-      where: {
-        assessmentId: assessmentId, // Replace 1 with the ID of the user you want to delete
-      },
+      where: { assessmentId },
     });
     console.log("deleted assessment", deletedAssessment);
     res.status(200).json(deletedAssessment);
