@@ -1,9 +1,18 @@
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 
+const getPersistedUnit = () => {
+  try {
+    const stored = localStorage.getItem("currentUnit");
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+};
+
 export const useUnitStore = create((set) => ({
   existingUnits: [],
-  currentUnit: null,
+  currentUnit: getPersistedUnit(),
 
   checkUnitExists: async (unitId) => {
     try {
@@ -59,5 +68,12 @@ export const useUnitStore = create((set) => ({
     }
   },
 
-  setUnit: async (unit) => set({ currentUnit: unit }),
+  setUnit: async (unit) => {
+    if (unit) {
+      localStorage.setItem("currentUnit", JSON.stringify(unit));
+    } else {
+      localStorage.removeItem("currentUnit");
+    }
+    set({ currentUnit: unit });
+  },
 }));
