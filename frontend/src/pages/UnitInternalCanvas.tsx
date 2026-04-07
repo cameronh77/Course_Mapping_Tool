@@ -32,6 +32,11 @@ import {
 import { ULOBox } from "../components/common/ULOBox";
 import UnitLearningOutcomeForm from "../components/common/ULOForm";
 import { useULOStore } from "../stores/useULOStore";
+import {
+  AssessmentULOLines,
+  OrphanWarnings,
+  type AssessmentULOLink,
+} from "../components/common/AssessmentULOLines";
 
 // Grid Layout Constants
 const COL_WIDTH = 600;
@@ -110,6 +115,15 @@ export const UnitInternalCanvas: React.FC = () => {
   const [hoveredAssessment, setHoveredAssessment] = useState<string | null>(
     null
   );
+
+  // Assessment-ULO link state
+  const [assessmentULOLinks, setAssessmentULOLinks] = useState<AssessmentULOLink[]>([]);
+  const [uloConnectionMode, setUloConnectionMode] = useState<boolean>(false);
+  const [uloConnectionSource, setUloConnectionSource] = useState<{
+    type: "assessment" | "ulo";
+    id: number;
+  } | null>(null);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const { currentUnit } = useUnitStore();
@@ -198,32 +212,50 @@ export const UnitInternalCanvas: React.FC = () => {
     const loadCanvasState = async () => {
       if (currentUnit?.unitId) {
         try {
-          const response = await viewAssessments(currentUnit.unitId);
-          console.log("This is the data", response);
-          const courseUnits = response.data;
-          const loadedAssessmentBoxes = courseUnits.map((assessment: any) => ({
-            id: assessment.id,
-            description: assessment.description,
-            x: assessment.position.x,
-            y: assessment.position.y,
+          // Load assessments
+          const response = await axiosInstance.get(
+            `/assessment/view?search=${currentUnit.unitId}`
+          );
+          const assessments = response.data;
+          const loadedAssessmentBoxes = assessments.map((a: any) => ({
+            id: a.assessmentId,
+            dbID: a.assessmentId,
+            name: a.assessmentName,
+            description: a.assessmentDesc,
+            type: a.assessmentType,
+            value: a.value,
+            hurdleReq: a.hurdleReq,
+            dueWeek: a.dueWeek,
+            conditions: a.assessmentConditions,
+            feedbackWeek: a.feedbackWeek,
+            feedbackDetails: a.feedbackDetails,
+            unitId: a.unitId,
+            x: a.position?.x ?? 100,
+            y: a.position?.y ?? 100,
           }));
           setAssessmentBoxes(loadedAssessmentBoxes);
 
-          // Load existing CLO and Tag mappings for each unit
-          const mappingsData: UnitMappings = {};
+          // Load ULOs for this unit
+          const uloResponse = await axiosInstance.get(`/ULO/view`);
+          const allULOs = (uloResponse.data || []).filter(
+            (u: any) => u.unitId === currentUnit.unitId
+          );
+          const loadedULOBoxes = allULOs.map((u: any) => ({
+            id: u.uloId,
+            uloId: u.uloId,
+            uloDesc: u.uloDesc,
+            unitId: u.unitId,
+            cloId: u.cloId,
+            x: u.position?.x ?? 500,
+            y: u.position?.y ?? 100,
+          }));
+          setULOBoxes(loadedULOBoxes);
 
-          // Get all CLOs for this course - fetch fresh data
-          await useCLOStore.getState().viewCLOsByCourse(currentCourse);
-          const allCLOs = useCLOStore.getState().currentCLOs;
-
-          // Load all ULOs once instead of per unit
-          let allULOs: any[] = [];
-          try {
-            const uloResponse = await axiosInstance.get(`/ULO/view`);
-            allULOs = uloResponse.data || [];
-          } catch (error) {
-            console.error("Error loading unit learning outcomes:", error);
-          }
+          // Load assessment-ULO links
+          const linksResponse = await axiosInstance.get(
+            `/assessment-ulo/view?unitId=${currentUnit.unitId}`
+          );
+          setAssessmentULOLinks(linksResponse.data || []);
         } catch (error) {
           console.error("Error loading canvas state:", error);
         }
@@ -253,20 +285,28 @@ export const UnitInternalCanvas: React.FC = () => {
   };
 
   const handleSaveCanvas = async () => {
-    if (currentCourse?.courseId) {
-      try {
-        await axiosInstance.post(
-          `/course-unit/canvas/${currentCourse.courseId}`,
-          {
-            units: unitBoxes,
-            unitMappings: unitMappings,
-          }
-        );
-        alert("Canvas saved successfully!");
-      } catch (error) {
-        console.error("Error saving canvas:", error);
-        alert("Failed to save canvas.");
+    if (!currentUnit?.unitId) return;
+    try {
+      // Save each assessment's position
+      for (const a of assessmentBoxes) {
+        const id = a.dbID ?? a.id;
+        await axiosInstance.put(`/assessment/update/${id}`, {
+          position: { x: a.x, y: a.y },
+        });
       }
+      // Save each ULO's position
+      for (const u of uloBoxes) {
+        const id = u.uloId ?? u.id;
+        if (id) {
+          await axiosInstance.put(`/ULO/update/${id}`, {
+            position: { x: u.x, y: u.y },
+          });
+        }
+      }
+      alert("Canvas saved successfully!");
+    } catch (error) {
+      console.error("Error saving canvas:", error);
+      alert("Failed to save canvas.");
     }
   };
 
@@ -379,7 +419,7 @@ export const UnitInternalCanvas: React.FC = () => {
                   )
                 ),
               }
-            : a
+            : u
         )
       );
     };
@@ -644,31 +684,58 @@ export const UnitInternalCanvas: React.FC = () => {
     setShowAssessmentForm(true);
   }
 
-  function deleteAssessment(assessmentId: number) {
+  async function deleteAssessment(assessmentId: number) {
+    const box = assessmentBoxes.find((a) => a.id === assessmentId);
+    const dbId = box?.dbID ?? assessmentId;
+    try {
+      await axiosInstance.delete("/assessment/delete", {
+        data: { assessmentId: dbId },
+      });
+    } catch (error) {
+      console.error("Failed to delete assessment from DB:", error);
+    }
     setAssessmentBoxes(
       assessmentBoxes.filter((assessment) => assessment.id !== assessmentId)
+    );
+    // Also remove any links for this assessment
+    setAssessmentULOLinks((prev) =>
+      prev.filter((l) => l.assessmentId !== dbId)
     );
   }
 
   function handleEditULO(id: number) {
     setEditingId(id);
-    setShowAssessmentForm(true);
+    setShowULOForm(true);
   }
 
-  function deleteULO(uloId: number) {
+  async function deleteULO(uloId: number) {
+    const box = uloBoxes.find((u) => u.id === uloId);
+    const dbId = box?.uloId ?? uloId;
+    try {
+      await axiosInstance.delete("/ULO/delete", {
+        data: { uloId: dbId },
+      });
+    } catch (error) {
+      console.error("Failed to delete ULO from DB:", error);
+    }
     setULOBoxes(uloBoxes.filter((ulo) => ulo.id !== uloId));
+    // Also remove any links for this ULO
+    setAssessmentULOLinks((prev) =>
+      prev.filter((l) => l.uloId !== dbId)
+    );
   }
 
   const handleCreateAssessment = async (data: AssessmentFormData) => {
+    // Find the box that was just dropped (last one added, no dbID yet)
+    const pendingBox = assessmentBoxes.find((a) => a.dbID === null);
     try {
-      const newAssessment = await createAssessment({
+      const res = await createAssessment({
         description: data.description,
         type: data.type,
         unitId: currentUnit.unitId,
-
         position: {
-          x: data.x,
-          y: data.y,
+          x: pendingBox?.x ?? 100,
+          y: pendingBox?.y ?? 100,
         },
         name: data.name,
         value: data.value,
@@ -679,6 +746,29 @@ export const UnitInternalCanvas: React.FC = () => {
         conditions: data.conditions,
         unit: currentUnit,
       });
+      // Update the box with the real DB ID
+      if (res && pendingBox) {
+        setAssessmentBoxes((prev) =>
+          prev.map((a) =>
+            a.id === pendingBox.id
+              ? {
+                  ...a,
+                  dbID: res.assessmentId,
+                  id: res.assessmentId,
+                  name: data.name || a.name,
+                  description: data.description || a.description,
+                  type: data.type || a.type,
+                  value: data.value ?? a.value,
+                  hurdleReq: data.hurdleReq ?? a.hurdleReq,
+                  dueWeek: data.dueWeek || a.dueWeek,
+                  conditions: data.conditions || a.conditions,
+                  feedbackWeek: data.feedbackWeek || a.feedbackWeek,
+                  feedbackDetails: data.feedbackDetails || a.feedbackDetails,
+                }
+              : a
+          )
+        );
+      }
       setShowCreateAssessmentForm(false);
     } catch (err) {
       console.error(err);
@@ -686,16 +776,38 @@ export const UnitInternalCanvas: React.FC = () => {
     }
   };
 
-  const handleCreateULO = async (data: unitLearningOutcome) => {
+  const handleCreateULO = async (description: string) => {
+    if (!currentUnit?.unitId) return;
+    // Find the pending ULO box (last added, no uloId from DB)
+    const pendingBox = uloBoxes.find((u) => !u.uloId);
     try {
-      const newULO = await createULO({
-        description: data.uloDesc,
-        unitId: data.unitId,
+      const res = await axiosInstance.post("/ULO/create", {
+        uloDesc: description,
+        unitId: currentUnit.unitId,
+        position: {
+          x: pendingBox?.x ?? 500,
+          y: pendingBox?.y ?? 100,
+        },
       });
-      setShowCreateAssessmentForm(false);
+      // Update the box with the real DB ID
+      if (res.data && pendingBox) {
+        setULOBoxes((prev) =>
+          prev.map((u) =>
+            u.id === pendingBox.id
+              ? {
+                  ...u,
+                  uloId: res.data.uloId,
+                  id: res.data.uloId,
+                  uloDesc: description,
+                }
+              : u
+          )
+        );
+      }
+      setShowCreateULOForm(false);
     } catch (err) {
       console.error(err);
-      alert("Failed to create Assessment.");
+      alert("Failed to create ULO.");
     }
   };
 
@@ -810,6 +922,73 @@ export const UnitInternalCanvas: React.FC = () => {
     });
   };
 
+  // Assessment-ULO link handlers
+  const handleItemClickForULOConnection = (
+    type: "assessment" | "ulo",
+    id: number
+  ) => {
+    if (!uloConnectionMode) return;
+
+    if (!uloConnectionSource) {
+      setUloConnectionSource({ type, id });
+    } else {
+      // Must connect an assessment to a ULO (not same type)
+      if (uloConnectionSource.type === type) {
+        setUloConnectionSource({ type, id });
+        return;
+      }
+      const assessmentId =
+        type === "assessment" ? id : uloConnectionSource.id;
+      const uloId = type === "ulo" ? id : uloConnectionSource.id;
+
+      createAssessmentULOLink(assessmentId, uloId);
+      setUloConnectionSource(null);
+    }
+  };
+
+  const createAssessmentULOLink = async (
+    assessmentId: number,
+    uloId: number
+  ) => {
+    if (!currentUnit?.unitId) return;
+    try {
+      const response = await axiosInstance.post("/assessment-ulo/create", {
+        assessmentId,
+        uloId,
+        unitId: currentUnit.unitId,
+      });
+      setAssessmentULOLinks((prev) => [...prev, response.data]);
+    } catch (error: any) {
+      console.error("Failed to create assessment-ULO link:", error);
+      alert(
+        error.response?.data?.message || "Failed to link assessment to ULO"
+      );
+    }
+  };
+
+  const handleDeleteAssessmentULOLink = async (
+    assessmentId: number,
+    uloId: number
+  ) => {
+    if (!currentUnit?.unitId) return;
+    try {
+      await axiosInstance.delete("/assessment-ulo/delete", {
+        data: {
+          assessmentId,
+          uloId,
+          unitId: currentUnit.unitId,
+        },
+      });
+      setAssessmentULOLinks((prev) =>
+        prev.filter(
+          (l) => !(l.assessmentId === assessmentId && l.uloId === uloId)
+        )
+      );
+    } catch (error) {
+      console.error("Failed to delete assessment-ULO link:", error);
+    }
+  };
+
   return (
     <div
       className="flex h-screen relative overflow-hidden pt-16"
@@ -821,6 +1000,9 @@ export const UnitInternalCanvas: React.FC = () => {
           handleNewAssessmentMouseDown={handleNewAssessmentMouseDown}
           handleNewULOMouseDown={handleNewULOMouseDown}
           getCLOColor={getCLOColor}
+          uloConnectionMode={uloConnectionMode}
+          setUloConnectionMode={setUloConnectionMode}
+          setUloConnectionSource={setUloConnectionSource}
         />
       </div>
 
@@ -835,30 +1017,91 @@ export const UnitInternalCanvas: React.FC = () => {
           style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}
         >
           {assessmentBoxes.map((assessment) => (
-            <AssessmentBox
+            <div
               key={assessment.id}
-              assessment={assessment}
-              onClick={handleAssessmentClickForConnection}
-              onDoubleClick={handleEditAssessment}
-              deleteAssessment={deleteAssessment}
-              onMouseDown={handleMouseDown}
-            ></AssessmentBox>
+              onMouseEnter={() =>
+                setHoveredItem(`assessment-${assessment.dbID ?? assessment.id}`)
+              }
+              onMouseLeave={() => setHoveredItem(null)}
+              onClick={
+                uloConnectionMode
+                  ? () =>
+                      handleItemClickForULOConnection(
+                        "assessment",
+                        assessment.dbID ?? assessment.id
+                      )
+                  : undefined
+              }
+              className={
+                uloConnectionMode &&
+                uloConnectionSource?.type === "assessment" &&
+                uloConnectionSource?.id === (assessment.dbID ?? assessment.id)
+                  ? "ring-4 ring-purple-400 rounded"
+                  : ""
+              }
+            >
+              <AssessmentBox
+                assessment={assessment}
+                onClick={handleAssessmentClickForConnection}
+                onDoubleClick={handleEditAssessment}
+                deleteAssessment={deleteAssessment}
+                onMouseDown={handleMouseDown}
+              />
+            </div>
           ))}
           {uloBoxes.map((ulo) => (
-            <ULOBox
+            <div
               key={ulo.id}
-              ulo={ulo}
-              onClick={handleAssessmentClickForConnection}
-              onDoubleClick={handleEditULO}
-              deleteAssessment={deleteULO}
-              onMouseDown={handleULOBoxMouseDown}
-            ></ULOBox>
+              onMouseEnter={() =>
+                setHoveredItem(`ulo-${ulo.uloId ?? ulo.id}`)
+              }
+              onMouseLeave={() => setHoveredItem(null)}
+              onClick={
+                uloConnectionMode
+                  ? () =>
+                      handleItemClickForULOConnection(
+                        "ulo",
+                        ulo.uloId ?? ulo.id!
+                      )
+                  : undefined
+              }
+              className={
+                uloConnectionMode &&
+                uloConnectionSource?.type === "ulo" &&
+                uloConnectionSource?.id === (ulo.uloId ?? ulo.id)
+                  ? "ring-4 ring-orange-400 rounded"
+                  : ""
+              }
+            >
+              <ULOBox
+                ulo={ulo}
+                onMouseDown={handleULOBoxMouseDown}
+                onDoubleClick={handleEditULO}
+                onDelete={deleteULO}
+              />
+            </div>
           ))}
 
+          {/* Assessment-ULO connection lines */}
           <svg
             className="absolute inset-0 w-full h-full pointer-events-none"
             style={{ zIndex: 5 }}
-          ></svg>
+          >
+            <AssessmentULOLines
+              links={assessmentULOLinks}
+              assessmentBoxes={assessmentBoxes}
+              uloBoxes={uloBoxes}
+              hoveredItem={hoveredItem}
+              onDeleteLink={handleDeleteAssessmentULOLink}
+            />
+          </svg>
+
+          {/* Orphan warnings */}
+          <OrphanWarnings
+            assessmentBoxes={assessmentBoxes}
+            uloBoxes={uloBoxes}
+            links={assessmentULOLinks}
+          />
         </div>
 
         {/* Modal: Edit Unit */}
@@ -955,12 +1198,50 @@ export const UnitInternalCanvas: React.FC = () => {
                 </button>
               </div>
               <UnitLearningOutcomeForm
-                onSave={handleCreateAssessment}
-                initialData={{
-                  description: undefined,
-                  type: "Project",
+                onSave={handleCreateULO}
+                onCancel={() => setShowCreateULOForm(false)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Edit ULO */}
+        {showULOForm && editingId && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-black text-xl font-bold">
+                  Edit Unit Learning Outcome
+                </h2>
+                <button
+                  onClick={() => { setShowULOForm(false); setEditingId(null); }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors"
+                >
+                  &times;
+                </button>
+              </div>
+              <UnitLearningOutcomeForm
+                onSave={async (description: string) => {
+                  const box = uloBoxes.find((u) => u.id === editingId);
+                  const dbId = box?.uloId ?? editingId;
+                  try {
+                    await axiosInstance.put(`/ULO/update/${dbId}`, {
+                      uloDesc: description,
+                      unitId: currentUnit?.unitId,
+                    });
+                    setULOBoxes((prev) =>
+                      prev.map((u) =>
+                        u.id === editingId ? { ...u, uloDesc: description } : u
+                      )
+                    );
+                  } catch (err) {
+                    console.error("Failed to update ULO:", err);
+                  }
+                  setShowULOForm(false);
+                  setEditingId(null);
                 }}
-                onView={() => console.log("nothing")}
+                onCancel={() => { setShowULOForm(false); setEditingId(null); }}
+                initialData={uloBoxes.find((u) => u.id === editingId)?.uloDesc}
               />
             </div>
           </div>
