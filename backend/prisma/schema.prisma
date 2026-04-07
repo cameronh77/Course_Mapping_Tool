@@ -131,10 +131,11 @@ model CourseLearningOutcome {
 }
 
 model UnitLearningOutcome {
-  uloId   Int    @id @default(autoincrement())
-  uloDesc String
-  unitId  String
-  cloId   Int?
+  uloId    Int    @id @default(autoincrement())
+  uloDesc  String
+  unitId   String
+  cloId    Int?
+  position Json?
 
   unit     Unit                   @relation(fields: [unitId], references: [unitId], onDelete:Cascade)
   courseLO CourseLearningOutcome? @relation(fields: [cloId], references: [cloId])
