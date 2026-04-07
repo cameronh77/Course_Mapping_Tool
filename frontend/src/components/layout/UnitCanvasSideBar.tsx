@@ -22,6 +22,10 @@ interface UnitSidebarProps {
   ) => void;
 
   getCLOColor: (cloId: number) => string;
+
+  uloConnectionMode: boolean;
+  setUloConnectionMode: (mode: boolean) => void;
+  setUloConnectionSource: (source: null) => void;
 }
 
 export const UnitSidebar: React.FC<UnitSidebarProps> = ({
@@ -29,6 +33,9 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
   handleNewAssessmentMouseDown,
   handleNewULOMouseDown,
   getCLOColor,
+  uloConnectionMode,
+  setUloConnectionMode,
+  setUloConnectionSource,
 }) => {
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
@@ -49,11 +56,31 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
     <div className="bg-white p-4 w-full h-full flex flex-col">
       {/* Save */}
       <button
-        className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded w-full mb-4 shadow-sm"
+        className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded w-full mb-2 shadow-sm"
         onClick={handleSaveCanvas}
       >
         Save Assessments
       </button>
+
+      {/* Link Mode Toggle */}
+      <button
+        className={`font-bold py-2 px-4 rounded w-full mb-4 shadow-sm transition-colors ${
+          uloConnectionMode
+            ? "bg-purple-600 hover:bg-purple-700 text-white"
+            : "bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300"
+        }`}
+        onClick={() => {
+          setUloConnectionMode(!uloConnectionMode);
+          setUloConnectionSource(null);
+        }}
+      >
+        {uloConnectionMode ? "Exit Link Mode" : "Link Assessment ↔ ULO"}
+      </button>
+      {uloConnectionMode && (
+        <p className="text-xs text-purple-600 mb-4 px-1">
+          Click an assessment, then click a ULO to link them. Click a line to remove it.
+        </p>
+      )}
 
       <div className="overflow-y-auto flex-1 flex flex-col gap-6">
         {/* ========================= */}
