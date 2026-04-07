@@ -8,6 +8,7 @@ import tagRoutes from "./tag/routes/tagRoutes.js";
 import unitRelationshipRoutes from "./unit-relationship/routes/unitRelationshipRoutes.js";
 import assessmentRoutes from "./Assessment/routes/assessmentRoutes.js";
 import assessmentRelationshipRoutes from "./AssessmentRelationships/routes/assessmentRelationshipRoutes.js";
+import assessmentULORoutes from "./assessment-ulo/routes/assessmentULORoutes.js";
 import cors from "cors";
 
 const app = express();
@@ -29,6 +30,7 @@ app.use("/api/tag", tagRoutes);
 app.use("/api/unit-relationship", unitRelationshipRoutes);
 app.use("/api/assessment", assessmentRoutes);
 app.use("/api/assessment-relationship", assessmentRelationshipRoutes);
+app.use("/api/assessment-ulo", assessmentULORoutes);
 
 const server = app.listen(3000, () =>
   console.log(`
