@@ -4,6 +4,7 @@ import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
 import { CLOBox } from "../components/common/CLOBox";
+import { ULOBox } from "../components/common/ULOBox";
 import { registerWhiteboardHandlers, clearWhiteboardHandlers } from "../lib/whiteboardHandlers";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
@@ -13,6 +14,7 @@ import type {
   Unit,
   UnitBox as UnitBoxType,
   CourseLearningOutcome,
+  UnitLearningOutcome,
   Tag,
   UnitMappings,
 } from "../types";
@@ -27,6 +29,13 @@ type CLOBoxItem = {
   x: number;
   y: number;
   isCustom?: boolean;
+};
+
+type ULOBoxItem = {
+  id: number;
+  ulo: UnitLearningOutcome;
+  x: number;
+  y: number;
 };
 
 const CLO_COLOR_PALETTE = [
@@ -62,8 +71,11 @@ export const WhiteboardCanvas: React.FC = () => {
   const [columnWidth, setColumnWidth] = useState<number>(256);
   const [draggedCLOId, setDraggedCLOId] = useState<number | null>(null);
   const [selectedCLOId, setSelectedCLOId] = useState<number | null>(null);
+  const [draggedULOId, setDraggedULOId] = useState<number | null>(null);
+  const [selectedULOId, setSelectedULOId] = useState<number | null>(null);
 
   const [cloBoxes, setCloBoxes] = useState<CLOBoxItem[]>([]);
+  const [uloBoxes, setUloBoxes] = useState<ULOBoxItem[]>([]);
   // Update column width on window or canvas resize
   useEffect(() => {
     const updateColumnWidth = () => {
@@ -95,6 +107,13 @@ export const WhiteboardCanvas: React.FC = () => {
             x: cloBox.isCustom
               ? Math.max(0, Math.min(cloBox.x, width - CLO_BOX_SIZE))
               : getCLOAlignedX(width),
+          }))
+        );
+
+        setUloBoxes((prevULOs) =>
+          prevULOs.map((uloBox) => ({
+            ...uloBox,
+            x: Math.max(0, Math.min(uloBox.x, width - CLO_BOX_SIZE)),
           }))
         );
 
@@ -318,6 +337,7 @@ export const WhiteboardCanvas: React.FC = () => {
     registerWhiteboardHandlers({
       addUnit: addPlaygroundUnit,
       addCLO: addPlaygroundCLO,
+      addULO: addPlaygroundULO,
     });
     return () => clearWhiteboardHandlers();
   }, []);
@@ -557,10 +577,69 @@ export const WhiteboardCanvas: React.FC = () => {
     ]);
   };
 
+  const addPlaygroundULO = () => {
+    const anchor = getViewportAnchor();
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    const uloNumber = uloBoxes.length + 1;
+
+    setUloBoxes((prev) => [
+      ...prev,
+      {
+        id,
+        ulo: {
+          uloId: id,
+          uloDesc: `Playground ULO ${uloNumber}`,
+          unitId: "PLAY-ULO",
+          cloId: null,
+        },
+        x: Math.max(0, Math.min(anchor.x - CLO_BOX_SIZE / 2, anchor.width - CLO_BOX_SIZE)),
+        y: anchor.y,
+      },
+    ]);
+  };
+
+  const handleULOMouseDown = (e: React.MouseEvent, id: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const uloBox = uloBoxes.find((u) => u.id === id);
+    if (!uloBox || !canvasRef.current) return;
+
+    const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
+    const offset = { x: mouseX - uloBox.x, y: mouseY - uloBox.y };
+    setDraggedULOId(id);
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      if (!canvasRef.current) return;
+      const { x: newMouseX, y: newMouseY } = getMouseCoords(moveEvent, canvasRef.current);
+
+      setUloBoxes((prev) =>
+        prev.map((box) => {
+          if (box.id !== id) return box;
+          return {
+            ...box,
+            x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - columnWidth * 0.9)),
+            y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 80)),
+          };
+        })
+      );
+    };
+
+    const handleUp = () => {
+      setDraggedULOId(null);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
   useEffect(() => {
     registerWhiteboardHandlers({
       addUnit: addPlaygroundUnit,
       addCLO: addPlaygroundCLO,
+      addULO: addPlaygroundULO,
     });
     return () => clearWhiteboardHandlers();
   }, []);
@@ -856,6 +935,37 @@ export const WhiteboardCanvas: React.FC = () => {
               onDelete={() => {
                 setCloBoxes((prev) => prev.filter((box) => box.id !== cloBox.id));
                 setSelectedCLOId((prev) => (prev === cloBox.id ? null : prev));
+              }}
+            />
+          ))}
+
+          {uloBoxes.map((uloBox) => (
+            <ULOBox
+              key={uloBox.id}
+              ulo={uloBox.ulo}
+              x={uloBox.x}
+              y={uloBox.y}
+              width={CLO_BOX_SIZE}
+              isDragging={draggedULOId === uloBox.id}
+              isSelected={selectedULOId === uloBox.id}
+              color="#06B6D4"
+              onMouseDown={(e) => handleULOMouseDown(e, uloBox.id)}
+              onClick={() => setSelectedULOId((prev) => (prev === uloBox.id ? null : uloBox.id))}
+              onDescriptionUpdate={(newDescription) => {
+                setUloBoxes((prev) =>
+                  prev.map((box) =>
+                    box.id === uloBox.id
+                      ? {
+                          ...box,
+                          ulo: { ...box.ulo, uloDesc: newDescription },
+                        }
+                      : box
+                  )
+                );
+              }}
+              onDelete={() => {
+                setUloBoxes((prev) => prev.filter((box) => box.id !== uloBox.id));
+                setSelectedULOId((prev) => (prev === uloBox.id ? null : prev));
               }}
             />
           ))}

@@ -88,6 +88,15 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
             >
               + CLO Box
             </button>
+            <button
+              onClick={() => {
+                handlers.addULO?.();
+                setAddDropdownOpen(false);
+              }}
+              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-cyan-50 text-cyan-600"
+            >
+              + ULO Box
+            </button>
           </div>
         )}
       </div>

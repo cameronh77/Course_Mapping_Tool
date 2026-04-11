@@ -4,11 +4,13 @@
 let handlers: {
   addUnit?: () => void;
   addCLO?: () => void;
+  addULO?: () => void;
 } = {};
 
 export const registerWhiteboardHandlers = (h: {
   addUnit?: () => void;
   addCLO?: () => void;
+  addULO?: () => void;
 }) => {
   handlers = h;
 };

@@ -13,6 +13,13 @@ export interface CourseLearningOutcome {
   courseId: string | undefined;
 }
 
+export interface UnitLearningOutcome {
+  uloId?: number | null;
+  uloDesc: string;
+  unitId: string;
+  cloId?: number | null;
+}
+
 export interface Tag {
   tagId: number;
   tagName: string;
