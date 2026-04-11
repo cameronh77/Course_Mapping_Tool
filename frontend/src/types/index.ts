@@ -18,6 +18,8 @@ export interface UnitLearningOutcome {
   uloDesc: string;
   unitId: string;
   cloId?: number | null;
+  cloIds?: number[];
+  assessmentIds?: number[];
 }
 
 export interface Tag {

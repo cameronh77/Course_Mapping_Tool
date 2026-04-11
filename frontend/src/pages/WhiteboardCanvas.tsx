@@ -38,6 +38,11 @@ type ULOBoxItem = {
   y: number;
 };
 
+type UnitOption = {
+  unitId: string;
+  label: string;
+};
+
 const CLO_COLOR_PALETTE = [
   "#EC4899",
   "#F59E0B",
@@ -156,6 +161,7 @@ export const WhiteboardCanvas: React.FC = () => {
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
   const [activeTabs, setActiveTabs] = useState<Record<number, 'info' | 'clos' | 'tags'>>({});
   const [unitMappings, setUnitMappings] = useState<UnitMappings>({});
+  const [savedCourseUnits, setSavedCourseUnits] = useState<UnitOption[]>([]);
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -190,6 +196,23 @@ export const WhiteboardCanvas: React.FC = () => {
             semester: normalizedSemester,
           };
         });
+
+        const uniqueSavedUnits: UnitOption[] = Array.from(
+          new Map<string, UnitOption>(
+            normalizedUnits
+              .filter((cu: any) => typeof cu.unitId === "string" && cu.unitId.length > 0)
+              .map(
+                (cu: any): [string, UnitOption] => [
+                  cu.unitId,
+                  {
+                    unitId: cu.unitId,
+                    label: `${cu.unitId} - ${cu.unit?.unitName || cu.unitId}`,
+                  },
+                ]
+              )
+          ).values()
+        );
+        setSavedCourseUnits(uniqueSavedUnits);
 
         // Sort units by year ascending, then by y position ascending (top to bottom)
         const sortedUnits = [...normalizedUnits].sort((a, b) => {
@@ -321,6 +344,7 @@ export const WhiteboardCanvas: React.FC = () => {
         setUnitMappings(mappingsData);
       } catch (error) {
         console.error("Error loading saved canvas units:", error);
+        setSavedCourseUnits([]);
       }
     };
     loadAndPlaceSavedCanvasUnits();
@@ -587,9 +611,9 @@ export const WhiteboardCanvas: React.FC = () => {
       {
         id,
         ulo: {
-          uloId: id,
+          uloId: null,
           uloDesc: `Playground ULO ${uloNumber}`,
-          unitId: "PLAY-ULO",
+          unitId: "",
           cloId: null,
         },
         x: Math.max(0, Math.min(anchor.x - CLO_BOX_SIZE / 2, anchor.width - CLO_BOX_SIZE)),
@@ -951,19 +975,108 @@ export const WhiteboardCanvas: React.FC = () => {
               color="#06B6D4"
               onMouseDown={(e) => handleULOMouseDown(e, uloBox.id)}
               onClick={() => setSelectedULOId((prev) => (prev === uloBox.id ? null : uloBox.id))}
-              onDescriptionUpdate={(newDescription) => {
+              availableUnits={savedCourseUnits}
+              availableCLOs={((currentCLOs || []) as CourseLearningOutcome[]).filter(
+                (clo): clo is CourseLearningOutcome & { cloId: number } => typeof clo.cloId === "number"
+              )}
+              onUpdate={(updated) => {
+                const nextCloIds = Array.from(new Set(updated.cloIds));
+                const primaryCloId = nextCloIds.length > 0 ? nextCloIds[0] : null;
+
                 setUloBoxes((prev) =>
                   prev.map((box) =>
                     box.id === uloBox.id
                       ? {
                           ...box,
-                          ulo: { ...box.ulo, uloDesc: newDescription },
+                          ulo: {
+                            ...box.ulo,
+                            uloDesc: updated.uloDesc,
+                            unitId: updated.unitId,
+                            cloId: primaryCloId,
+                            cloIds: nextCloIds,
+                            assessmentIds: updated.assessmentIds,
+                          },
                         }
                       : box
                   )
                 );
+
+                // Persist only when a real linked unit is selected.
+                if (!updated.unitId) {
+                  return;
+                }
+
+                if (typeof uloBox.ulo.uloId === "number") {
+                  axiosInstance
+                    .put(`/ULO/update/${uloBox.ulo.uloId}`, {
+                      uloDesc: updated.uloDesc,
+                      unitId: updated.unitId,
+                      cloId: primaryCloId,
+                    })
+                    .catch((error) => {
+                      console.error("Error updating ULO:", error);
+                      alert("Failed to save linked ULO fields to backend.");
+                    });
+                } else {
+                  axiosInstance
+                    .post("/ULO/create", {
+                      uloDesc: updated.uloDesc,
+                      unitId: updated.unitId,
+                      cloId: primaryCloId,
+                    })
+                    .then((response) => {
+                      const created = response.data as UnitLearningOutcome;
+                      const backendUloId = Number(created.uloId);
+
+                      if (!Number.isInteger(backendUloId)) {
+                        throw new Error("ULO was created but backend did not return a valid uloId.");
+                      }
+
+                      setUloBoxes((prev) =>
+                        prev.map((box) =>
+                          box.id === uloBox.id
+                            ? {
+                                ...box,
+                                id: backendUloId,
+                                ulo: {
+                                  ...box.ulo,
+                                  uloId: backendUloId,
+                                },
+                              }
+                            : box
+                        )
+                      );
+
+                      setSelectedULOId((prevSelected) =>
+                        prevSelected === uloBox.id ? backendUloId : prevSelected
+                      );
+                      setDraggedULOId((prevDragged) =>
+                        prevDragged === uloBox.id ? backendUloId : prevDragged
+                      );
+                    })
+                    .catch((error) => {
+                      console.error("Error creating ULO:", error);
+                      alert("Failed to create ULO in backend.");
+                    });
+                }
               }}
               onDelete={() => {
+                if (typeof uloBox.ulo.uloId === "number") {
+                  axiosInstance
+                    .delete("/ULO/delete", {
+                      data: { uloId: uloBox.ulo.uloId },
+                    })
+                    .then(() => {
+                      setUloBoxes((prev) => prev.filter((box) => box.id !== uloBox.id));
+                      setSelectedULOId((prev) => (prev === uloBox.id ? null : prev));
+                    })
+                    .catch((error) => {
+                      console.error("Error deleting ULO:", error);
+                      alert("Failed to delete ULO from backend.");
+                    });
+                  return;
+                }
+
                 setUloBoxes((prev) => prev.filter((box) => box.id !== uloBox.id));
                 setSelectedULOId((prev) => (prev === uloBox.id ? null : prev));
               }}

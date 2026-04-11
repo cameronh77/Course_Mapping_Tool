@@ -1,5 +1,17 @@
 import React, { useState } from "react";
-import type { UnitLearningOutcome } from "../../types";
+import type { CourseLearningOutcome, UnitLearningOutcome } from "../../types";
+
+type UnitOption = {
+  unitId: string;
+  label: string;
+};
+
+type ULOUpdatePayload = {
+  uloDesc: string;
+  unitId: string;
+  cloIds: number[];
+  assessmentIds: number[];
+};
 
 interface ULOBoxProps {
   ulo: UnitLearningOutcome;
@@ -11,8 +23,10 @@ interface ULOBoxProps {
   color: string;
   onMouseDown: (e: React.MouseEvent) => void;
   onClick: () => void;
+  availableUnits: UnitOption[];
+  availableCLOs: CourseLearningOutcome[];
   onDelete?: () => void;
-  onDescriptionUpdate?: (newDescription: string) => void;
+  onUpdate?: (updated: ULOUpdatePayload) => void;
 }
 
 export const ULOBox: React.FC<ULOBoxProps> = ({
@@ -25,21 +39,65 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
   color,
   onMouseDown,
   onClick,
+  availableUnits,
+  availableCLOs,
   onDelete,
-  onDescriptionUpdate,
+  onUpdate,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(ulo.uloDesc);
+  const [selectedUnitId, setSelectedUnitId] = useState(ulo.unitId || "");
+  const [selectedCloIds, setSelectedCloIds] = useState<number[]>(
+    ulo.cloIds && ulo.cloIds.length > 0
+      ? ulo.cloIds
+      : typeof ulo.cloId === "number"
+      ? [ulo.cloId]
+      : []
+  );
+  const [assessmentInput, setAssessmentInput] = useState(
+    (ulo.assessmentIds || []).join(",")
+  );
+  const [unitSearch, setUnitSearch] = useState(() => {
+    const selected = availableUnits.find((u) => u.unitId === (ulo.unitId || ""));
+    return selected?.label || ulo.unitId || "";
+  });
+
+  const filteredUnits = availableUnits.filter((unit) =>
+    unit.label.toLowerCase().includes(unitSearch.toLowerCase())
+  );
+
+  const parseAssessmentIds = (value: string) => {
+    return value
+      .split(",")
+      .map((v) => Number(v.trim()))
+      .filter((v) => Number.isInteger(v) && v > 0);
+  };
 
   const handleSave = () => {
     if (editText.trim()) {
-      onDescriptionUpdate?.(editText);
+      onUpdate?.({
+        uloDesc: editText,
+        unitId: selectedUnitId,
+        cloIds: selectedCloIds,
+        assessmentIds: parseAssessmentIds(assessmentInput),
+      });
     }
     setIsEditing(false);
   };
 
   const handleCancel = () => {
     setEditText(ulo.uloDesc);
+    setSelectedUnitId(ulo.unitId || "");
+    const selected = availableUnits.find((u) => u.unitId === (ulo.unitId || ""));
+    setUnitSearch(selected?.label || ulo.unitId || "");
+    setSelectedCloIds(
+      ulo.cloIds && ulo.cloIds.length > 0
+        ? ulo.cloIds
+        : typeof ulo.cloId === "number"
+        ? [ulo.cloId]
+        : []
+    );
+    setAssessmentInput((ulo.assessmentIds || []).join(","));
     setIsEditing(false);
   };
 
@@ -64,7 +122,7 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
       <span className="text-2xl leading-none select-none">{ulo.uloId ?? "-"}</span>
 
       {isSelected && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 min-w-[200px] max-w-[280px] p-2 rounded border border-gray-200 bg-white text-gray-700 text-xs leading-relaxed shadow-xl z-[60]">
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 min-w-[220px] max-w-[320px] p-2 rounded border border-gray-200 bg-white text-gray-700 text-xs leading-relaxed shadow-xl z-[60]">
           {isEditing ? (
             <>
               <textarea
@@ -75,6 +133,93 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
                 rows={3}
                 onClick={(e) => e.stopPropagation()}
               />
+              <div className="mb-2">
+                <label className="mb-1 block font-semibold text-[11px] text-gray-600">Linked Unit</label>
+                <input
+                  type="text"
+                  value={unitSearch}
+                  onChange={(e) => setUnitSearch(e.target.value)}
+                  placeholder="Search saved course units..."
+                  className="w-full rounded border border-gray-300 p-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <div
+                  className="mt-1 max-h-24 overflow-y-auto rounded border border-gray-300 p-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className={`mb-1 w-full rounded px-1 py-1 text-left text-[11px] ${
+                      selectedUnitId === "" ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
+                    }`}
+                    onClick={() => {
+                      setSelectedUnitId("");
+                      setUnitSearch("");
+                    }}
+                  >
+                    None
+                  </button>
+                  {filteredUnits.map((unit) => (
+                    <button
+                      key={unit.unitId}
+                      type="button"
+                      className={`mb-1 w-full rounded px-1 py-1 text-left text-[11px] ${
+                        selectedUnitId === unit.unitId ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
+                      }`}
+                      onClick={() => {
+                        setSelectedUnitId(unit.unitId);
+                        setUnitSearch(unit.label);
+                      }}
+                    >
+                      {unit.label}
+                    </button>
+                  ))}
+                  {!filteredUnits.length && (
+                    <div className="text-[11px] text-gray-400">No matching units</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mb-2">
+                <label className="mb-1 block font-semibold text-[11px] text-gray-600">Linked CLO(s)</label>
+                <div className="max-h-24 overflow-y-auto rounded border border-gray-300 p-1">
+                  {availableCLOs.map((clo) => {
+                    const cloId = clo.cloId;
+                    if (typeof cloId !== "number") return null;
+                    const checked = selectedCloIds.includes(cloId);
+                    return (
+                      <label key={cloId} className="mb-1 flex items-start gap-1 text-[11px] text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...selectedCloIds, cloId]
+                              : selectedCloIds.filter((id) => id !== cloId);
+                            setSelectedCloIds(next);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <span>{clo.cloDesc}</span>
+                      </label>
+                    );
+                  })}
+                  {!availableCLOs.length && <div className="text-[11px] text-gray-400">No CLOs available</div>}
+                </div>
+              </div>
+
+              <div className="mb-2">
+                <label className="mb-1 block font-semibold text-[11px] text-gray-600">Linked Assessment IDs</label>
+                <input
+                  type="text"
+                  value={assessmentInput}
+                  onChange={(e) => setAssessmentInput(e.target.value)}
+                  placeholder="e.g. 1,2,5"
+                  className="w-full rounded border border-gray-300 p-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+
               <div className="flex gap-1">
                 <button
                   type="button"
@@ -101,6 +246,15 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
           ) : (
             <>
               <div className="mb-2">{ulo.uloDesc}</div>
+              <div className="mb-2 text-[11px] text-gray-500">
+                Unit: {ulo.unitId || "None"}
+              </div>
+              <div className="mb-2 text-[11px] text-gray-500">
+                CLO(s): {(ulo.cloIds && ulo.cloIds.length > 0 ? ulo.cloIds : ulo.cloId ? [ulo.cloId] : []).join(", ") || "None"}
+              </div>
+              <div className="mb-2 text-[11px] text-gray-500">
+                Assessments: {(ulo.assessmentIds || []).join(", ") || "None"}
+              </div>
               <div className="flex gap-1">
                 <button
                   type="button"
