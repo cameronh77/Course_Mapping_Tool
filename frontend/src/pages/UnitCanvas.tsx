@@ -263,34 +263,50 @@ export const CanvasPage: React.FC = () => {
   const handleSaveCanvas = async () => {
     if (currentCourse?.courseId) {
       try {
-        const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
-        const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+        const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
 
         const unitsWithSemester = unitBoxes.map((u) => {
           const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
-          let closestRow = 0;
-          let minDistance = Infinity;
-          for (let r = 0; r < totalRows; r++) {
-            const expectedY = START_Y + r * ROW_HEIGHT + 20;
-            const dist = Math.abs(u.y - expectedY);
-            if (dist < minDistance) { minDistance = dist; closestRow = r; }
-          }
-          const semester = Math.floor(closestRow / MAX_UNITS_PER_SEM) + 1;
+          const semester = u.y < middleSemesterDividerY ? 1 : 2;
           const year = col + 1;
           return { ...u, semester, year };
         });
+
+        const unitIdsOnCanvas = new Set(
+          unitsWithSemester
+            .map((u) => u.unitId)
+            .filter((id): id is string => typeof id === "string" && id.length > 0)
+        );
+
+        const cleanedUnitMappings: UnitMappings = Object.fromEntries(
+          Object.entries(unitMappings)
+            .filter(([unitId]) => unitIdsOnCanvas.has(unitId))
+            .map(([unitId, mapping]) => {
+              const dedupClos = Array.from(
+                new Map((mapping?.clos || []).map((clo) => [clo.cloId, clo])).values()
+              );
+              const dedupTags = Array.from(
+                new Map((mapping?.tags || []).map((tag) => [tag.tagId, tag])).values()
+              );
+              return [unitId, { clos: dedupClos, tags: dedupTags }];
+            })
+        ) as UnitMappings;
 
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
           {
             units: unitsWithSemester,
-            unitMappings: unitMappings
+            unitMappings: cleanedUnitMappings
           }
         );
         alert("Canvas saved successfully!");
       } catch (error) {
         console.error("Error saving canvas:", error);
-        alert("Failed to save canvas.");
+        const errorMessage =
+          (error as any)?.response?.data?.error ||
+          (error as any)?.response?.data?.message ||
+          "Failed to save canvas.";
+        alert(errorMessage);
       }
     }
   };
@@ -502,7 +518,15 @@ export const CanvasPage: React.FC = () => {
   }
 
   function deleteUnit(unitId: number) {
+    const targetUnit = unitBoxes.find((unit) => unit.id === unitId);
     setUnitBoxes(unitBoxes.filter((unit) => unit.id !== unitId));
+    if (targetUnit?.unitId) {
+      setUnitMappings((prev) => {
+        const next = { ...prev };
+        delete next[targetUnit.unitId!];
+        return next;
+      });
+    }
   }
 
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -592,6 +616,7 @@ export const CanvasPage: React.FC = () => {
     setUnitMappings(prev => {
       const unitData = prev[unitKey] || { clos: [], tags: [] };
       if (add) {
+        if (unitData.clos.some((c) => c.cloId === clo.cloId)) return prev;
         return { ...prev, [unitKey]: { ...unitData, clos: [...unitData.clos, clo] } };
       } else {
         return { ...prev, [unitKey]: { ...unitData, clos: unitData.clos.filter(c => c.cloId !== clo.cloId) } };
@@ -603,6 +628,7 @@ export const CanvasPage: React.FC = () => {
     setUnitMappings(prev => {
       const unitData = prev[unitKey] || { clos: [], tags: [] };
       if (add) {
+        if (unitData.tags.some((t) => t.tagId === tag.tagId)) return prev;
         if (currentCourse?.courseId) {
           addUnitTags([{ courseId: currentCourse.courseId, unitId: unitKey, tagId: tag.tagId }]);
         }

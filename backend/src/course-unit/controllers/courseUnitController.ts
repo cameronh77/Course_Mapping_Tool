@@ -67,15 +67,22 @@ export const saveCanvasState = async (req, res) => {
   const { units, unitMappings } = req.body;
 
   try {
+    const unitsPayload = Array.isArray(units) ? units : [];
+    const mappedUnitIds = new Set(
+      unitsPayload
+        .map((unit: any) => unit?.unitId)
+        .filter((unitId: unknown): unitId is string => typeof unitId === "string" && unitId.length > 0)
+    );
+
     await prisma.$transaction(async (tx) => {
       // First, clear existing units for this course to handle deletions
       await tx.courseUnit.deleteMany({
         where: { courseId: courseId },
       });
 
-      if (units && units.length > 0) {
+      if (unitsPayload.length > 0) {
         // Then, create or update units with their new positions
-        const courseUnitsData = units.map((unit) => ({
+        const courseUnitsData = unitsPayload.map((unit: any) => ({
           courseId: courseId,
           unitId: unit.unitId,
           semester: unit.semester || 0,
@@ -94,7 +101,22 @@ export const saveCanvasState = async (req, res) => {
       // Save CLO mappings (UnitLearningOutcomes)
       if (unitMappings) {
         for (const [unitId, mappings] of Object.entries(unitMappings)) {
+          if (!mappedUnitIds.has(unitId)) continue;
           const mappingsData = mappings as any;
+
+          const existingUlos = await tx.unitLearningOutcome.findMany({
+            where: { unitId: unitId },
+            select: { uloId: true },
+          });
+
+          const existingUloIds = existingUlos.map((ulo) => ulo.uloId);
+          if (existingUloIds.length > 0) {
+            await tx.assessmentULO.deleteMany({
+              where: {
+                uloId: { in: existingUloIds },
+              },
+            });
+          }
           
           // Clear existing CLO mappings for this unit
           await tx.unitLearningOutcome.deleteMany({
@@ -125,6 +147,7 @@ export const saveCanvasState = async (req, res) => {
       // Save Tag mappings (CourseUnitTags)
       if (unitMappings) {
         for (const [unitId, mappings] of Object.entries(unitMappings)) {
+          if (!mappedUnitIds.has(unitId)) continue;
           const mappingsData = mappings as any;
           
           // Clear existing tag mappings for this unit in this course
@@ -155,7 +178,7 @@ export const saveCanvasState = async (req, res) => {
           }
         }
       }
-    });
+    }, { maxWait: 10000, timeout: 15000 });
 
     return res.status(200).json({ message: "Canvas state saved successfully" });
   } catch (error) {

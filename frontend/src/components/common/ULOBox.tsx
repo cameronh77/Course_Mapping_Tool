@@ -101,25 +101,28 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
     setIsEditing(false);
   };
 
-  const side = Math.min(width, 72);
+  const boxWidth = width;
+  const boxHeight = 72;
 
   return (
     <div
       className={`absolute border shadow transition-shadow flex items-center justify-center text-white font-bold cursor-grab active:cursor-grabbing ${
-        isDragging ? "z-50 shadow-2xl" : "z-20 hover:shadow-lg"
+        isDragging ? "z-50 shadow-2xl" : isSelected ? "z-40 hover:shadow-lg" : "z-20 hover:shadow-lg"
       } ${isSelected ? "ring-2 ring-blue-300" : ""}`}
       style={{
         left: `${x}px`,
         top: `${y}px`,
-        width: `${side}px`,
-        height: `${side}px`,
+        width: `${boxWidth}px`,
+        height: `${boxHeight}px`,
         backgroundColor: color,
       }}
       onMouseDown={onMouseDown}
       onClick={onClick}
       title={ulo.uloDesc}
     >
-      <span className="text-2xl leading-none select-none">{ulo.uloId ?? "-"}</span>
+      <span className="px-1 text-center text-[11px] leading-tight line-clamp-3 break-words select-none">
+        {ulo.uloDesc || "ULO"}
+      </span>
 
       {isSelected && (
         <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 min-w-[220px] max-w-[320px] p-2 rounded border border-gray-200 bg-white text-gray-700 text-xs leading-relaxed shadow-xl z-[60]">
