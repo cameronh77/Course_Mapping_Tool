@@ -5,12 +5,14 @@ let handlers: {
   addUnit?: () => void;
   addCLO?: () => void;
   addULO?: () => void;
+  addAssessment?: () => void;
 } = {};
 
 export const registerWhiteboardHandlers = (h: {
   addUnit?: () => void;
   addCLO?: () => void;
   addULO?: () => void;
+  addAssessment?: () => void;
 }) => {
   handlers = h;
 };

@@ -5,6 +5,7 @@ import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
 import { CLOBox } from "../components/common/CLOBox";
 import { ULOBox } from "../components/common/ULOBox";
+import { AssessmentBox } from "../components/common/AssessmentBox";
 import { registerWhiteboardHandlers, clearWhiteboardHandlers } from "../lib/whiteboardHandlers";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
@@ -15,6 +16,7 @@ import type {
   UnitBox as UnitBoxType,
   CourseLearningOutcome,
   UnitLearningOutcome,
+  Assessment,
   Tag,
   UnitMappings,
 } from "../types";
@@ -24,6 +26,7 @@ const CLO_BOX_SIZE = 72;
 const CLO_VERTICAL_SPACING = 110;
 const ULO_WIDTH_RATIO = 0.8;
 const ULO_VERTICAL_SPACING = 90;
+const ASSESSMENT_WIDTH_RATIO = 0.8;
 
 type CLOBoxItem = {
   id: number;
@@ -36,6 +39,13 @@ type CLOBoxItem = {
 type ULOBoxItem = {
   id: number;
   ulo: UnitLearningOutcome;
+  x: number;
+  y: number;
+};
+
+type AssessmentBoxItem = {
+  id: number;
+  assessment: Assessment;
   x: number;
   y: number;
 };
@@ -80,9 +90,12 @@ export const WhiteboardCanvas: React.FC = () => {
   const [selectedCLOId, setSelectedCLOId] = useState<number | null>(null);
   const [draggedULOId, setDraggedULOId] = useState<number | null>(null);
   const [selectedULOId, setSelectedULOId] = useState<number | null>(null);
+  const [draggedAssessmentId, setDraggedAssessmentId] = useState<number | null>(null);
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState<number | null>(null);
 
   const [cloBoxes, setCloBoxes] = useState<CLOBoxItem[]>([]);
   const [uloBoxes, setUloBoxes] = useState<ULOBoxItem[]>([]);
+  const [assessmentBoxes, setAssessmentBoxes] = useState<AssessmentBoxItem[]>([]);
   // Update column width on window or canvas resize
   useEffect(() => {
     const updateColumnWidth = () => {
@@ -121,6 +134,13 @@ export const WhiteboardCanvas: React.FC = () => {
           prevULOs.map((uloBox) => ({
             ...uloBox,
             x: Math.max(0, Math.min(uloBox.x, width - nextColumnWidth * ULO_WIDTH_RATIO)),
+          }))
+        );
+
+        setAssessmentBoxes((prevAssessments) =>
+          prevAssessments.map((assessmentBox) => ({
+            ...assessmentBox,
+            x: Math.max(0, Math.min(assessmentBox.x, width - nextColumnWidth * ASSESSMENT_WIDTH_RATIO)),
           }))
         );
 
@@ -709,6 +729,32 @@ export const WhiteboardCanvas: React.FC = () => {
     ]);
   };
 
+  const addPlaygroundAssessment = () => {
+    const anchor = getViewportAnchor();
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    const assessmentNumber = assessmentBoxes.length + 1;
+
+    setAssessmentBoxes((prev) => [
+      ...prev,
+      {
+        id,
+        assessment: {
+          assessmentId: null,
+          aDesc: `Playground Assessment ${assessmentNumber}`,
+          unitId: "",
+        },
+        x: Math.max(
+          0,
+          Math.min(
+            anchor.x - (columnWidth * ASSESSMENT_WIDTH_RATIO) / 2,
+            anchor.width - columnWidth * ASSESSMENT_WIDTH_RATIO
+          )
+        ),
+        y: anchor.y,
+      },
+    ]);
+  };
+
   const handleULOMouseDown = (e: React.MouseEvent, id: number) => {
     e.preventDefault();
     e.stopPropagation();
@@ -749,11 +795,52 @@ export const WhiteboardCanvas: React.FC = () => {
     document.addEventListener("mouseup", handleUp);
   };
 
+  const handleAssessmentMouseDown = (e: React.MouseEvent, id: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const assessmentBox = assessmentBoxes.find((a) => a.id === id);
+    if (!assessmentBox || !canvasRef.current) return;
+
+    const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
+    const offset = { x: mouseX - assessmentBox.x, y: mouseY - assessmentBox.y };
+    setDraggedAssessmentId(id);
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      if (!canvasRef.current) return;
+      const { x: newMouseX, y: newMouseY } = getMouseCoords(moveEvent, canvasRef.current);
+
+      setAssessmentBoxes((prev) =>
+        prev.map((box) => {
+          if (box.id !== id) return box;
+          return {
+            ...box,
+            x: Math.max(
+              0,
+              Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - columnWidth * ASSESSMENT_WIDTH_RATIO)
+            ),
+            y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 80)),
+          };
+        })
+      );
+    };
+
+    const handleUp = () => {
+      setDraggedAssessmentId(null);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
   useEffect(() => {
     registerWhiteboardHandlers({
       addUnit: addPlaygroundUnit,
       addCLO: addPlaygroundCLO,
       addULO: addPlaygroundULO,
+      addAssessment: addPlaygroundAssessment,
     });
     return () => clearWhiteboardHandlers();
   }, []);
@@ -1175,6 +1262,49 @@ export const WhiteboardCanvas: React.FC = () => {
                 setSelectedULOId((prev) => (prev === uloBox.id ? null : prev));
               }}
             />
+            );
+          })}
+
+          {assessmentBoxes.map((assessmentBox) => {
+            const linkedUnit = unitBoxes.find((unit) => unit.unitId === assessmentBox.assessment.unitId);
+            const assessmentColor = linkedUnit?.color || "#D97706";
+
+            return (
+              <AssessmentBox
+                key={assessmentBox.id}
+                assessment={assessmentBox.assessment}
+                x={assessmentBox.x}
+                y={assessmentBox.y}
+                width={columnWidth * ASSESSMENT_WIDTH_RATIO}
+                isDragging={draggedAssessmentId === assessmentBox.id}
+                isSelected={selectedAssessmentId === assessmentBox.id}
+                color={assessmentColor}
+                onMouseDown={(e) => handleAssessmentMouseDown(e, assessmentBox.id)}
+                onClick={() =>
+                  setSelectedAssessmentId((prev) => (prev === assessmentBox.id ? null : assessmentBox.id))
+                }
+                availableUnits={savedCourseUnits}
+                onUpdate={(updated) => {
+                  setAssessmentBoxes((prev) =>
+                    prev.map((box) =>
+                      box.id === assessmentBox.id
+                        ? {
+                            ...box,
+                            assessment: {
+                              ...box.assessment,
+                              aDesc: updated.aDesc,
+                              unitId: updated.unitId,
+                            },
+                          }
+                        : box
+                    )
+                  );
+                }}
+                onDelete={() => {
+                  setAssessmentBoxes((prev) => prev.filter((box) => box.id !== assessmentBox.id));
+                  setSelectedAssessmentId((prev) => (prev === assessmentBox.id ? null : prev));
+                }}
+              />
             );
           })}
         </div>

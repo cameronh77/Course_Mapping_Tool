@@ -43,9 +43,9 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   getCLOColor
 }) => {
   // Connect directly to stores
-  const { currentCourse } = useCourseStore();
-  const { currentCLOs } = useCLOStore();
-  const { existingTags, createTag } = useTagStore();
+  const { currentCourse } = useCourseStore() as any;
+  const { currentCLOs } = useCLOStore() as any;
+  const { existingTags, createTag } = useTagStore() as any;
 
   // Local state purely for the sidebar
   const [newTag, setNewTag] = useState<string>("");
@@ -96,6 +96,15 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
               className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-cyan-50 text-cyan-600"
             >
               + ULO Box
+            </button>
+            <button
+              onClick={() => {
+                handlers.addAssessment?.();
+                setAddDropdownOpen(false);
+              }}
+              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-amber-50 text-amber-700"
+            >
+              + Assessment Box
             </button>
           </div>
         )}

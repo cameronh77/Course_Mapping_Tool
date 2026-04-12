@@ -22,6 +22,12 @@ export interface UnitLearningOutcome {
   assessmentIds?: number[];
 }
 
+export interface Assessment {
+  assessmentId?: number | null;
+  aDesc: string;
+  unitId?: string;
+}
+
 export interface Tag {
   tagId: number;
   tagName: string;
