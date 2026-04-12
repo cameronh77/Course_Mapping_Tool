@@ -337,25 +337,45 @@ export const WhiteboardCanvas: React.FC = () => {
           console.error("Error loading unit learning outcomes:", error);
         }
 
+        let allAssessments: any[] = [];
+        try {
+          const assessmentResponse = await axiosInstance.get(`/assessment/view`);
+          allAssessments = assessmentResponse.data || [];
+        } catch (error) {
+          console.error("Error loading assessments:", error);
+        }
+
         const courseUnitIds = new Set(
           normalizedUnits
             .map((cu: any) => cu.unitId)
             .filter((unitId: unknown): unitId is string => typeof unitId === "string" && unitId.length > 0)
         );
+
         const uloWidth = columnWidth * ULO_WIDTH_RATIO;
-        const semesterColumnX: Record<1 | 2, number> = {
+        const uloColumnX: Record<1 | 2, number> = {
           1: columnWidth * 3 + (columnWidth - uloWidth) / 2, // 4th column (1-based)
           2: columnWidth * 5 + (columnWidth - uloWidth) / 2, // 6th column (1-based)
         };
-        const nextYBySemester: Record<1 | 2, number> = { 1: 40, 2: 40 };
+        const assessmentWidth = columnWidth * ASSESSMENT_WIDTH_RATIO;
+        const assessmentColumnX: Record<1 | 2, number> = {
+          1: columnWidth * 2 + (columnWidth - assessmentWidth) / 2, // 3rd column (1-based)
+          2: columnWidth * 6 + (columnWidth - assessmentWidth) / 2, // 7th column (1-based)
+        };
+
         const orderedUloBoxes: ULOBoxItem[] = [];
-        const gapYByUnitId = new Map<string, number>();
+        const orderedAssessmentBoxes: AssessmentBoxItem[] = [];
+        const unitYByUnitId = new Map<string, number>();
+        const nextBlockYBySemester: Record<1 | 2, number> = { 1: 40, 2: 40 };
+        const toSemester = (value: unknown): 1 | 2 => (value === 2 ? 2 : 1);
+        const orderedYears = Object.keys(unitsByYear).map(Number).sort((a, b) => a - b);
 
-        for (const semester of [1, 2] as const) {
-          const unitsInSemester = sortedUnits.filter((cu: any) => cu.semester === semester);
+        for (const year of orderedYears) {
+          const yearUnits = unitsByYear[year] || [];
 
-          for (const cu of unitsInSemester) {
-            const slotStartY = nextYBySemester[semester];
+          for (const semester of [1, 2] as const) {
+            const semesterUnits = yearUnits.filter((cu: any) => toSemester(cu.semester) === semester);
+
+            for (const cu of semesterUnits) {
             const ulosForUnit = allULOs
               .filter((ulo: any) => courseUnitIds.has(ulo.unitId) && ulo.unitId === cu.unitId)
               .sort((a: any, b: any) => {
@@ -364,62 +384,91 @@ export const WhiteboardCanvas: React.FC = () => {
                 return aId - bId;
               });
 
-            if (ulosForUnit.length === 0) {
-              // Keep a blank slot so ULO columns preserve unit-relative spacing.
-              gapYByUnitId.set(cu.unitId, slotStartY);
-              nextYBySemester[semester] += ULO_VERTICAL_SPACING;
-              continue;
-            }
+            const assessmentsForUnit = allAssessments
+              .filter((assessment: any) => courseUnitIds.has(assessment.unitId) && assessment.unitId === cu.unitId)
+              .sort((a: any, b: any) => {
+                const aId = typeof a.assessmentId === "number" ? a.assessmentId : Number.MAX_SAFE_INTEGER;
+                const bId = typeof b.assessmentId === "number" ? b.assessmentId : Number.MAX_SAFE_INTEGER;
+                return aId - bId;
+              });
 
-            for (const ulo of ulosForUnit) {
+            const slotCount = Math.max(1, ulosForUnit.length, assessmentsForUnit.length);
+            const blockTopY = nextBlockYBySemester[semester];
+            const blockHeight = (slotCount - 1) * ULO_VERTICAL_SPACING;
+
+            const getStartY = (itemCount: number) => {
+              if (itemCount <= 1) return blockTopY + blockHeight / 2;
+              const stackHeight = (itemCount - 1) * ULO_VERTICAL_SPACING;
+              return blockTopY + (blockHeight - stackHeight) / 2;
+            };
+
+            const uloStartY = getStartY(ulosForUnit.length);
+            ulosForUnit.forEach((ulo: any, index: number) => {
               orderedUloBoxes.push({
                 id:
                   typeof ulo.uloId === "number"
                     ? ulo.uloId
                     : Date.now() + Math.floor(Math.random() * 1000),
                 ulo,
-                x: semesterColumnX[semester],
-                y: nextYBySemester[semester],
+                x: uloColumnX[semester],
+                y: uloStartY + index * ULO_VERTICAL_SPACING,
               });
-              nextYBySemester[semester] += ULO_VERTICAL_SPACING;
+            });
+
+            const assessmentStartY = getStartY(assessmentsForUnit.length);
+            assessmentsForUnit.forEach((assessment: any, index: number) => {
+              orderedAssessmentBoxes.push({
+                id:
+                  typeof assessment.assessmentId === "number"
+                    ? assessment.assessmentId
+                    : Date.now() + Math.floor(Math.random() * 1000),
+                assessment: {
+                  assessmentId:
+                    typeof assessment.assessmentId === "number" ? assessment.assessmentId : null,
+                  aDesc:
+                    assessment.aDesc || assessment.assessmentDesc || assessment.assessmentName || "Assessment",
+                  unitId: assessment.unitId || "",
+                  assessmentType: assessment.assessmentType || "General",
+                  assessmentConditions: assessment.assessmentConditions || "",
+                  hurdleReq: typeof assessment.hurdleReq === "number" ? assessment.hurdleReq : null,
+                  unitLosIds: Array.isArray(assessment.unitLos)
+                    ? assessment.unitLos
+                        .map((link: any) => Number(link.uloId))
+                        .filter((id: number) => Number.isInteger(id) && id > 0)
+                    : [],
+                },
+                x: assessmentColumnX[semester],
+                y: assessmentStartY + index * ULO_VERTICAL_SPACING,
+              });
+            });
+
+            const unitCenterY = blockTopY + blockHeight / 2;
+            unitYByUnitId.set(cu.unitId, Math.max(0, unitCenterY));
+
+            nextBlockYBySemester[semester] += blockHeight + ULO_VERTICAL_SPACING;
             }
           }
+
+          const nextYearStartY = Math.max(nextBlockYBySemester[1], nextBlockYBySemester[2]);
+          nextBlockYBySemester[1] = nextYearStartY;
+          nextBlockYBySemester[2] = nextYearStartY;
         }
 
         setUloBoxes(orderedUloBoxes);
+        setAssessmentBoxes(orderedAssessmentBoxes);
 
-        const uloYByUnitId = new Map<string, number[]>();
-        for (const uloBox of orderedUloBoxes) {
-          const unitId = uloBox.ulo?.unitId;
-          if (!unitId) continue;
-          const ys = uloYByUnitId.get(unitId) || [];
-          ys.push(uloBox.y);
-          uloYByUnitId.set(unitId, ys);
-        }
-
-        const unitsAlignedToUloAverage = placed.map((unitBox) => {
+        const unitsAlignedToBlockCenter = placed.map((unitBox) => {
           const unitId = unitBox.unitId;
           if (!unitId) return unitBox;
-          const ys = uloYByUnitId.get(unitId);
-          if (!ys || ys.length === 0) {
-            const gapY = gapYByUnitId.get(unitId);
-            if (typeof gapY === "number") {
-              return {
-                ...unitBox,
-                y: gapY,
-              };
-            }
-            return unitBox;
-          }
-
-          const averageY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
+          const nextY = unitYByUnitId.get(unitId);
+          if (typeof nextY !== "number") return unitBox;
           return {
             ...unitBox,
-            y: averageY,
+            y: nextY,
           };
         });
 
-        setUnitBoxes(unitsAlignedToUloAverage);
+        setUnitBoxes(unitsAlignedToBlockCenter);
 
         let allTagsForCourse: any[] = [];
         try {
