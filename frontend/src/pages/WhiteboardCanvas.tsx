@@ -22,6 +22,8 @@ import type {
 const NUM_COLUMNS = 9;
 const CLO_BOX_SIZE = 72;
 const CLO_VERTICAL_SPACING = 110;
+const ULO_WIDTH_RATIO = 0.8;
+const ULO_VERTICAL_SPACING = 90;
 
 type CLOBoxItem = {
   id: number;
@@ -118,7 +120,7 @@ export const WhiteboardCanvas: React.FC = () => {
         setUloBoxes((prevULOs) =>
           prevULOs.map((uloBox) => ({
             ...uloBox,
-            x: Math.max(0, Math.min(uloBox.x, width - CLO_BOX_SIZE)),
+            x: Math.max(0, Math.min(uloBox.x, width - nextColumnWidth * ULO_WIDTH_RATIO)),
           }))
         );
 
@@ -296,8 +298,6 @@ export const WhiteboardCanvas: React.FC = () => {
           );
           currentY = lastY + semesterSpacing;
         }
-        setUnitBoxes(placed);
-
         // Load existing CLO and Tag mappings for each unit
         const mappingsData: UnitMappings = {};
 
@@ -316,6 +316,90 @@ export const WhiteboardCanvas: React.FC = () => {
         } catch (error) {
           console.error("Error loading unit learning outcomes:", error);
         }
+
+        const courseUnitIds = new Set(
+          normalizedUnits
+            .map((cu: any) => cu.unitId)
+            .filter((unitId: unknown): unitId is string => typeof unitId === "string" && unitId.length > 0)
+        );
+        const uloWidth = columnWidth * ULO_WIDTH_RATIO;
+        const semesterColumnX: Record<1 | 2, number> = {
+          1: columnWidth * 3 + (columnWidth - uloWidth) / 2, // 4th column (1-based)
+          2: columnWidth * 5 + (columnWidth - uloWidth) / 2, // 6th column (1-based)
+        };
+        const nextYBySemester: Record<1 | 2, number> = { 1: 40, 2: 40 };
+        const orderedUloBoxes: ULOBoxItem[] = [];
+        const gapYByUnitId = new Map<string, number>();
+
+        for (const semester of [1, 2] as const) {
+          const unitsInSemester = sortedUnits.filter((cu: any) => cu.semester === semester);
+
+          for (const cu of unitsInSemester) {
+            const slotStartY = nextYBySemester[semester];
+            const ulosForUnit = allULOs
+              .filter((ulo: any) => courseUnitIds.has(ulo.unitId) && ulo.unitId === cu.unitId)
+              .sort((a: any, b: any) => {
+                const aId = typeof a.uloId === "number" ? a.uloId : Number.MAX_SAFE_INTEGER;
+                const bId = typeof b.uloId === "number" ? b.uloId : Number.MAX_SAFE_INTEGER;
+                return aId - bId;
+              });
+
+            if (ulosForUnit.length === 0) {
+              // Keep a blank slot so ULO columns preserve unit-relative spacing.
+              gapYByUnitId.set(cu.unitId, slotStartY);
+              nextYBySemester[semester] += ULO_VERTICAL_SPACING;
+              continue;
+            }
+
+            for (const ulo of ulosForUnit) {
+              orderedUloBoxes.push({
+                id:
+                  typeof ulo.uloId === "number"
+                    ? ulo.uloId
+                    : Date.now() + Math.floor(Math.random() * 1000),
+                ulo,
+                x: semesterColumnX[semester],
+                y: nextYBySemester[semester],
+              });
+              nextYBySemester[semester] += ULO_VERTICAL_SPACING;
+            }
+          }
+        }
+
+        setUloBoxes(orderedUloBoxes);
+
+        const uloYByUnitId = new Map<string, number[]>();
+        for (const uloBox of orderedUloBoxes) {
+          const unitId = uloBox.ulo?.unitId;
+          if (!unitId) continue;
+          const ys = uloYByUnitId.get(unitId) || [];
+          ys.push(uloBox.y);
+          uloYByUnitId.set(unitId, ys);
+        }
+
+        const unitsAlignedToUloAverage = placed.map((unitBox) => {
+          const unitId = unitBox.unitId;
+          if (!unitId) return unitBox;
+          const ys = uloYByUnitId.get(unitId);
+          if (!ys || ys.length === 0) {
+            const gapY = gapYByUnitId.get(unitId);
+            if (typeof gapY === "number") {
+              return {
+                ...unitBox,
+                y: gapY,
+              };
+            }
+            return unitBox;
+          }
+
+          const averageY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
+          return {
+            ...unitBox,
+            y: averageY,
+          };
+        });
+
+        setUnitBoxes(unitsAlignedToUloAverage);
 
         let allTagsForCourse: any[] = [];
         try {
@@ -616,7 +700,10 @@ export const WhiteboardCanvas: React.FC = () => {
           unitId: "",
           cloId: null,
         },
-        x: Math.max(0, Math.min(anchor.x - CLO_BOX_SIZE / 2, anchor.width - CLO_BOX_SIZE)),
+        x: Math.max(
+          0,
+          Math.min(anchor.x - (columnWidth * ULO_WIDTH_RATIO) / 2, anchor.width - columnWidth * ULO_WIDTH_RATIO)
+        ),
         y: anchor.y,
       },
     ]);
@@ -642,7 +729,10 @@ export const WhiteboardCanvas: React.FC = () => {
           if (box.id !== id) return box;
           return {
             ...box,
-            x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - columnWidth * 0.9)),
+            x: Math.max(
+              0,
+              Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - columnWidth * ULO_WIDTH_RATIO)
+            ),
             y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 80)),
           };
         })
@@ -963,16 +1053,20 @@ export const WhiteboardCanvas: React.FC = () => {
             />
           ))}
 
-          {uloBoxes.map((uloBox) => (
+          {uloBoxes.map((uloBox) => {
+            const linkedUnit = unitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId);
+            const uloColor = linkedUnit?.color || "#06B6D4";
+
+            return (
             <ULOBox
               key={uloBox.id}
               ulo={uloBox.ulo}
               x={uloBox.x}
               y={uloBox.y}
-              width={CLO_BOX_SIZE}
+              width={columnWidth * ULO_WIDTH_RATIO}
               isDragging={draggedULOId === uloBox.id}
               isSelected={selectedULOId === uloBox.id}
-              color="#06B6D4"
+              color={uloColor}
               onMouseDown={(e) => handleULOMouseDown(e, uloBox.id)}
               onClick={() => setSelectedULOId((prev) => (prev === uloBox.id ? null : uloBox.id))}
               availableUnits={savedCourseUnits}
@@ -1081,7 +1175,8 @@ export const WhiteboardCanvas: React.FC = () => {
                 setSelectedULOId((prev) => (prev === uloBox.id ? null : prev));
               }}
             />
-          ))}
+            );
+          })}
         </div>
 
         {showForm && editingId && (
