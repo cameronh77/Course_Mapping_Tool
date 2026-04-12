@@ -26,6 +26,10 @@ export interface Assessment {
   assessmentId?: number | null;
   aDesc: string;
   unitId?: string;
+  assessmentType?: string;
+  assessmentConditions?: string;
+  hurdleReq?: number | null;
+  unitLosIds?: number[];
 }
 
 export interface Tag {

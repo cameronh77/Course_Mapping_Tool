@@ -148,6 +148,13 @@ model UnitLearningOutcome {
 model Assessment {
   assessmentId Int    @id @default(autoincrement())
   aDesc        String @map("assessmentDesc")
+  assessmentType       String
+  unitId               String
+  position             Json?
+  assessmentConditions String
+  assessmentName       String
+  hurdleReq            Int?
+  value                Int
 
   unitLos AssessmentULO[]
 

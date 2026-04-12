@@ -742,6 +742,10 @@ export const WhiteboardCanvas: React.FC = () => {
           assessmentId: null,
           aDesc: `Playground Assessment ${assessmentNumber}`,
           unitId: "",
+          assessmentType: "General",
+          assessmentConditions: "",
+          hurdleReq: null,
+          unitLosIds: [],
         },
         x: Math.max(
           0,
@@ -1284,6 +1288,16 @@ export const WhiteboardCanvas: React.FC = () => {
                   setSelectedAssessmentId((prev) => (prev === assessmentBox.id ? null : assessmentBox.id))
                 }
                 availableUnits={savedCourseUnits}
+                availableULOs={uloBoxes
+                  .map((box) => ({
+                    uloId: box.ulo.uloId,
+                    uloDesc: box.ulo.uloDesc,
+                    unitId: box.ulo.unitId,
+                  }))
+                  .filter(
+                    (ulo): ulo is { uloId: number; uloDesc: string; unitId: string } =>
+                      typeof ulo.uloId === "number" && !!ulo.unitId
+                  )}
                 onUpdate={(updated) => {
                   setAssessmentBoxes((prev) =>
                     prev.map((box) =>
@@ -1294,11 +1308,85 @@ export const WhiteboardCanvas: React.FC = () => {
                               ...box.assessment,
                               aDesc: updated.aDesc,
                               unitId: updated.unitId,
+                              assessmentType: updated.assessmentType,
+                              assessmentConditions: updated.assessmentConditions,
+                              hurdleReq: updated.hurdleReq,
+                              unitLosIds: updated.unitLosIds,
                             },
                           }
                         : box
                     )
                   );
+
+                  if (!updated.unitId) {
+                    return;
+                  }
+
+                  if (typeof assessmentBox.assessment.assessmentId === "number") {
+                    axiosInstance
+                      .put(`/assessment/update/${assessmentBox.assessment.assessmentId}`, {
+                        aDesc: updated.aDesc,
+                        unitId: updated.unitId,
+                        assessmentType: updated.assessmentType,
+                        assessmentConditions: updated.assessmentConditions,
+                        hurdleReq: updated.hurdleReq,
+                        unitLos: updated.unitLosIds,
+                      })
+                      .catch((error) => {
+                        console.error("Error updating assessment:", error);
+                        alert("Failed to save linked assessment fields to backend.");
+                      });
+                  } else {
+                    axiosInstance
+                      .post("/assessment/create", {
+                        aDesc: updated.aDesc,
+                        unitId: updated.unitId,
+                        assessmentType: updated.assessmentType,
+                        assessmentConditions: updated.assessmentConditions,
+                        hurdleReq: updated.hurdleReq,
+                        unitLos: updated.unitLosIds,
+                      })
+                      .then((response) => {
+                        const created = response.data as Assessment & { unitLos?: Array<{ uloId: number }> };
+                        const backendAssessmentId = Number(created.assessmentId);
+
+                        if (!Number.isInteger(backendAssessmentId)) {
+                          throw new Error("Assessment was created but backend did not return a valid assessmentId.");
+                        }
+
+                        setAssessmentBoxes((prev) =>
+                          prev.map((box) =>
+                            box.id === assessmentBox.id
+                              ? {
+                                  ...box,
+                                  id: backendAssessmentId,
+                                  assessment: {
+                                    ...box.assessment,
+                                    assessmentId: backendAssessmentId,
+                                    assessmentType: updated.assessmentType,
+                                    assessmentConditions: updated.assessmentConditions,
+                                    hurdleReq: updated.hurdleReq,
+                                    unitLosIds: Array.isArray(created.unitLos)
+                                      ? created.unitLos.map((link) => link.uloId)
+                                      : updated.unitLosIds,
+                                  },
+                                }
+                              : box
+                          )
+                        );
+
+                        setSelectedAssessmentId((prevSelected) =>
+                          prevSelected === assessmentBox.id ? backendAssessmentId : prevSelected
+                        );
+                        setDraggedAssessmentId((prevDragged) =>
+                          prevDragged === assessmentBox.id ? backendAssessmentId : prevDragged
+                        );
+                      })
+                      .catch((error) => {
+                        console.error("Error creating assessment:", error);
+                        alert("Failed to create assessment in backend.");
+                      });
+                  }
                 }}
                 onDelete={() => {
                   setAssessmentBoxes((prev) => prev.filter((box) => box.id !== assessmentBox.id));

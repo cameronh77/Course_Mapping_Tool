@@ -4,6 +4,7 @@ import unitRoutes from "./unit/routes/unitRoutes.js";
 import courseUnitRoutes from "./course-unit/routes/courseUnitRoutes.js";
 import courseLearningOutcomeRoutes from "./course-learning-outcome/routes/courseLearningOutcomeRoutes.js";
 import unitLearningOutcomeRoutes from "./unit-learning-outcome/routes/unitLearningOutcomeRoutes.js";
+import assessmentRoutes from "./assessment/routes/assessmentRoutes.js";
 import tagRoutes from "./tag/routes/tagRoutes.js";
 import unitRelationshipRoutes from "./unit-relationship/routes/unitRelationshipRoutes.js";
 import cors from "cors";
@@ -23,6 +24,7 @@ app.use("/api/unit", unitRoutes);
 app.use("/api/course-unit", courseUnitRoutes);
 app.use("/api/CLO", courseLearningOutcomeRoutes);
 app.use("/api/ULO", unitLearningOutcomeRoutes);
+app.use("/api/assessment", assessmentRoutes);
 app.use("/api/tag", tagRoutes);
 app.use("/api/unit-relationship", unitRelationshipRoutes);
 
