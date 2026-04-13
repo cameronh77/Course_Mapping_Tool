@@ -29,6 +29,7 @@ const ULO_WIDTH_RATIO = 0.8;
 const ULO_VERTICAL_SPACING = 90;
 const ASSESSMENT_WIDTH_RATIO = 0.8;
 const CLO_WIDTH_RATIO = 0.4;
+const SNAPSHOT_UNIT_GAP = 120;
 const UNIT_LEFT_COLUMN = 0;
 const UNIT_RIGHT_COLUMN = 8;
 const ASSESSMENT_LEFT_COLUMN = 2;
@@ -222,6 +223,7 @@ export const WhiteboardCanvas: React.FC = () => {
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
   const [activeTabs, setActiveTabs] = useState<Record<number, 'info' | 'clos' | 'tags'>>({});
   const [unitMappings, setUnitMappings] = useState<UnitMappings>({});
+  const [selectedTagFilters, setSelectedTagFilters] = useState<number[]>([]);
   const [savedCourseUnits, setSavedCourseUnits] = useState<UnitOption[]>([]);
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -230,23 +232,213 @@ export const WhiteboardCanvas: React.FC = () => {
     unitId?: string;
   }>({ visible: false, x: 0, y: 0 });
 
+  const hasTagFilter = selectedTagFilters.length > 0;
+  const visibleUnitKeys = new Set(
+    unitBoxes
+      .filter((unit) => {
+        if (!hasTagFilter) return true;
+        const unitKey = unit.unitId || unit.id.toString();
+        const mappedTags = unitMappings[unitKey]?.tags || [];
+        return mappedTags.some((tag) => selectedTagFilters.includes(tag.tagId));
+      })
+      .map((unit) => unit.unitId || unit.id.toString())
+  );
+
+  const visibleUloIds = new Set<number>();
+  const visibleAssessmentIds = new Set<number>();
+  const visibleCloIds = new Set<number>();
+
+  uloBoxes.forEach((uloBox) => {
+    if (!hasTagFilter || visibleUnitKeys.has(uloBox.ulo.unitId)) {
+      if (typeof uloBox.ulo.uloId === "number") {
+        visibleUloIds.add(uloBox.ulo.uloId);
+      }
+      const linkedCloIds = Array.isArray(uloBox.ulo.cloIds)
+        ? uloBox.ulo.cloIds
+        : typeof uloBox.ulo.cloId === "number"
+          ? [uloBox.ulo.cloId]
+          : [];
+      linkedCloIds.forEach((cloId) => {
+        if (typeof cloId === "number") visibleCloIds.add(cloId);
+      });
+    }
+  });
+
+  assessmentBoxes.forEach((assessmentBox) => {
+    if (!hasTagFilter || visibleUnitKeys.has(assessmentBox.assessment.unitId || "")) {
+      if (typeof assessmentBox.assessment.assessmentId === "number") {
+        visibleAssessmentIds.add(assessmentBox.assessment.assessmentId);
+      }
+      (assessmentBox.assessment.unitLosIds || []).forEach((uloId) => {
+        if (typeof uloId === "number") visibleUloIds.add(uloId);
+      });
+    }
+  });
+
+  if (hasTagFilter) {
+    visibleUnitKeys.forEach((unitKey) => {
+      (unitMappings[unitKey]?.clos || []).forEach((clo) => {
+        if (typeof clo.cloId === "number") visibleCloIds.add(clo.cloId);
+      });
+    });
+  }
+
+  const shouldRenderUnit = (unit: UnitBoxType) => {
+    if (!hasTagFilter) return true;
+    const unitKey = unit.unitId || unit.id.toString();
+    return visibleUnitKeys.has(unitKey);
+  };
+
+  const shouldRenderULO = (uloBox: ULOBoxItem) => {
+    if (!hasTagFilter) return true;
+    return typeof uloBox.ulo.uloId === "number" && visibleUloIds.has(uloBox.ulo.uloId);
+  };
+
+  const shouldRenderAssessment = (assessmentBox: AssessmentBoxItem) => {
+    if (!hasTagFilter) return true;
+    return (
+      typeof assessmentBox.assessment.assessmentId === "number" &&
+      visibleAssessmentIds.has(assessmentBox.assessment.assessmentId)
+    );
+  };
+
+  const shouldRenderCLO = (cloBox: CLOBoxItem) => {
+    if (!hasTagFilter) return true;
+    return typeof cloBox.clo.cloId === "number" && visibleCloIds.has(cloBox.clo.cloId);
+  };
+
+  const snapshotLayout = (() => {
+    if (!hasTagFilter) {
+      return {
+        unitBoxes,
+        uloBoxes,
+        assessmentBoxes,
+        cloBoxes,
+      };
+    }
+
+    const visibleUnits = unitBoxes
+      .filter((unit) => shouldRenderUnit(unit))
+      .sort((a, b) => a.y - b.y || a.id - b.id);
+
+    const visibleUlos = uloBoxes
+      .filter((uloBox) => shouldRenderULO(uloBox))
+      .sort((a, b) => a.y - b.y || a.id - b.id);
+
+    const visibleAssessments = assessmentBoxes
+      .filter((assessmentBox) => shouldRenderAssessment(assessmentBox))
+      .sort((a, b) => a.y - b.y || a.id - b.id);
+
+    const visibleClos = cloBoxes
+      .filter((cloBox) => shouldRenderCLO(cloBox))
+      .sort((a, b) => a.y - b.y || a.id - b.id);
+
+    const compactUnitBoxes: UnitBoxType[] = [];
+    const compactUloBoxes: ULOBoxItem[] = [];
+    const compactAssessmentBoxes: AssessmentBoxItem[] = [];
+
+    let nextBlockTopY = 40;
+    let minCompactY = Number.POSITIVE_INFINITY;
+    let maxCompactY = Number.NEGATIVE_INFINITY;
+
+    for (const unit of visibleUnits) {
+      const unitKey = unit.unitId || unit.id.toString();
+      const unitUlos = visibleUlos.filter((uloBox) => uloBox.ulo.unitId === unitKey);
+      const unitAssessments = visibleAssessments.filter(
+        (assessmentBox) => assessmentBox.assessment.unitId === unitKey
+      );
+
+      const slotCount = Math.max(1, unitUlos.length, unitAssessments.length);
+      const blockHeight = (slotCount - 1) * ULO_VERTICAL_SPACING;
+      const blockTopY = nextBlockTopY;
+      const blockBottomY = blockTopY + blockHeight;
+      const unitCenterY = blockTopY + blockHeight / 2;
+
+      compactUnitBoxes.push({
+        ...unit,
+        y: unitCenterY,
+      });
+
+      minCompactY = Math.min(minCompactY, blockTopY);
+      maxCompactY = Math.max(maxCompactY, blockBottomY);
+
+      const placeStartY = (itemCount: number) => {
+        if (itemCount <= 1) return unitCenterY;
+        const stackHeight = (itemCount - 1) * ULO_VERTICAL_SPACING;
+        return blockTopY + (blockHeight - stackHeight) / 2;
+      };
+
+      const uloStartY = placeStartY(unitUlos.length);
+      unitUlos.forEach((uloBox, index) => {
+        const y = uloStartY + index * ULO_VERTICAL_SPACING;
+        compactUloBoxes.push({
+          ...uloBox,
+          y,
+        });
+        minCompactY = Math.min(minCompactY, y);
+        maxCompactY = Math.max(maxCompactY, y + 72);
+      });
+
+      const assessmentStartY = placeStartY(unitAssessments.length);
+      unitAssessments.forEach((assessmentBox, index) => {
+        const y = assessmentStartY + index * ULO_VERTICAL_SPACING;
+        compactAssessmentBoxes.push({
+          ...assessmentBox,
+          y,
+        });
+        minCompactY = Math.min(minCompactY, y);
+        maxCompactY = Math.max(maxCompactY, y + 72);
+      });
+
+      nextBlockTopY += blockHeight + SNAPSHOT_UNIT_GAP;
+    }
+
+    const cloRangeStart = Number.isFinite(minCompactY) ? minCompactY : 40;
+    const cloRangeEnd = Number.isFinite(maxCompactY) ? maxCompactY : cloRangeStart;
+    const cloRange = Math.max(0, cloRangeEnd - cloRangeStart);
+    const compactCloBoxes: CLOBoxItem[] = visibleClos.map((cloBox, index) => {
+      const y =
+        visibleClos.length <= 1
+          ? cloRangeStart + cloRange / 2
+          : cloRangeStart + (cloRange * index) / (visibleClos.length - 1);
+
+      return {
+        ...cloBox,
+        x: getCLOAlignedX(columnWidth * NUM_COLUMNS),
+        y,
+      };
+    });
+
+    return {
+      unitBoxes: compactUnitBoxes,
+      uloBoxes: compactUloBoxes,
+      assessmentBoxes: compactAssessmentBoxes,
+      cloBoxes: compactCloBoxes,
+    };
+  })();
+
+  const displayedUnitBoxes = snapshotLayout.unitBoxes;
+  const displayedUloBoxes = snapshotLayout.uloBoxes;
+  const displayedAssessmentBoxes = snapshotLayout.assessmentBoxes;
+  const displayedCloBoxes = snapshotLayout.cloBoxes;
+
   const assessmentRenderWidth = columnWidth * ASSESSMENT_WIDTH_RATIO;
   const assessmentRenderHeight = 72;
   const uloRenderHeight = 72;
 
   const uloBoxById = new Map(
-    uloBoxes
+    displayedUloBoxes
       .map((box) => [box.ulo.uloId, box] as const)
       .filter(([uloId]) => typeof uloId === "number")
   );
 
   const cloBoxById = new Map(
-    cloBoxes
+    displayedCloBoxes
       .map((box) => [box.clo.cloId, box] as const)
       .filter(([cloId]) => typeof cloId === "number")
   );
 
-  const assessmentConnectorPaths = assessmentBoxes.flatMap((assessmentBox) => {
+  const assessmentConnectorPaths = displayedAssessmentBoxes.flatMap((assessmentBox) => {
     const linkedUloIds = Array.isArray(assessmentBox.assessment.unitLosIds)
       ? assessmentBox.assessment.unitLosIds
       : [];
@@ -270,14 +462,14 @@ export const WhiteboardCanvas: React.FC = () => {
         uloId: typeof uloBox.ulo.uloId === "number" ? uloBox.ulo.uloId : null,
         unitId: assessmentBox.assessment.unitId || uloBox.ulo.unitId,
         color: uloBox.ulo.unitId
-          ? (unitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId)?.color || "#94A3B8")
+          ? (displayedUnitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId)?.color || "#94A3B8")
           : "#94A3B8",
       };
     });
   });
 
   const uloRenderWidth = columnWidth * ULO_WIDTH_RATIO;
-  const uloToCloConnectorPaths = uloBoxes.flatMap((uloBox) => {
+  const uloToCloConnectorPaths = displayedUloBoxes.flatMap((uloBox) => {
     const fromUlo = Array.isArray(uloBox.ulo.cloIds)
       ? uloBox.ulo.cloIds
       : typeof uloBox.ulo.cloId === "number"
@@ -303,7 +495,7 @@ export const WhiteboardCanvas: React.FC = () => {
       const targetX = cloCenterX + (isTowardsRight ? -CLO_BOX_SIZE / 2 : CLO_BOX_SIZE / 2);
       const midX = (sourceX + targetX) / 2;
       const unitColor =
-        unitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId)?.color || "#94A3B8";
+        displayedUnitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId)?.color || "#94A3B8";
 
       return {
         key: `ulo-clo-${uloBox.id}-${cloBox.id}`,
@@ -1505,6 +1697,16 @@ export const WhiteboardCanvas: React.FC = () => {
     });
   };
 
+  const handleToggleTagFilter = (tagId: number) => {
+    setSelectedTagFilters((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
+  };
+
+  const handleClearTagFilters = () => {
+    setSelectedTagFilters([]);
+  };
+
   const handleDropOnUnit = (unitKey: string, transferItem: any) => {
     setUnitMappings((prev) => {
       const unitData = prev[unitKey] || { clos: [], tags: [] };
@@ -1570,6 +1772,9 @@ export const WhiteboardCanvas: React.FC = () => {
           selectedRelationType={selectedRelationType}
           setSelectedRelationType={setSelectedRelationType}
           getCLOColor={getCLOColor}
+          selectedTagFilters={selectedTagFilters}
+          onToggleTagFilter={handleToggleTagFilter}
+          onClearTagFilters={handleClearTagFilters}
         />
       </div>
 
@@ -1700,7 +1905,14 @@ export const WhiteboardCanvas: React.FC = () => {
             height="100%"
             style={{ zIndex: 25, pointerEvents: "none", overflow: "visible" }}
           >
-            {assessmentConnectorPaths.map((path) => (
+            {assessmentConnectorPaths
+              .filter((path) => {
+                if (!hasTagFilter) return true;
+                const unitVisible = path.unitId ? visibleUnitKeys.has(path.unitId) : false;
+                const uloVisible = path.uloId !== null && visibleUloIds.has(path.uloId);
+                return unitVisible || uloVisible;
+              })
+              .map((path) => (
               <path
                 key={path.key}
                 d={path.d}
@@ -1740,7 +1952,14 @@ export const WhiteboardCanvas: React.FC = () => {
               />
             ))}
 
-            {uloToCloConnectorPaths.map((path) => (
+            {uloToCloConnectorPaths
+              .filter((path) => {
+                if (!hasTagFilter) return true;
+                const uloVisible = path.uloId !== null && visibleUloIds.has(path.uloId);
+                const cloVisible = path.cloId !== null && visibleCloIds.has(path.cloId);
+                return uloVisible && cloVisible;
+              })
+              .map((path) => (
               <path
                 key={path.key}
                 d={path.d}
@@ -1771,7 +1990,7 @@ export const WhiteboardCanvas: React.FC = () => {
             ))}
           </svg>
 
-          {unitBoxes.map((unit) => {
+          {displayedUnitBoxes.map((unit) => {
             const unitId = unit.unitId || null;
             const isRelated = !hasHoverFocus || (unitId !== null && focusUnitIds.has(unitId));
             const handleUnitMouseDown = (e: React.MouseEvent) => {
@@ -1825,7 +2044,7 @@ export const WhiteboardCanvas: React.FC = () => {
             );
           })}
 
-          {cloBoxes.map((cloBox) => {
+          {displayedCloBoxes.map((cloBox) => {
             const cloId = cloBox.clo.cloId;
             const isRelated = !hasHoverFocus || (typeof cloId === "number" && hoveredCloIds.has(cloId));
             const handleCLOMouseDownGuarded = (e: React.MouseEvent) => {
@@ -1886,8 +2105,8 @@ export const WhiteboardCanvas: React.FC = () => {
             );
           })}
 
-          {uloBoxes.map((uloBox) => {
-            const linkedUnit = unitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId);
+          {displayedUloBoxes.map((uloBox) => {
+            const linkedUnit = displayedUnitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId);
             const uloColor = linkedUnit?.color || "#06B6D4";
             const isRelated = !hasHoverFocus || (typeof uloBox.ulo.uloId === "number" && hoveredUloIds.has(uloBox.ulo.uloId));
             const handleULOMouseDownGuarded = (e: React.MouseEvent) => {
@@ -2024,7 +2243,7 @@ export const WhiteboardCanvas: React.FC = () => {
             );
           })}
 
-          {assessmentBoxes.map((assessmentBox) => {
+          {assessmentBoxes.filter((assessmentBox) => shouldRenderAssessment(assessmentBox)).map((assessmentBox) => {
             const linkedUnit = unitBoxes.find((unit) => unit.unitId === assessmentBox.assessment.unitId);
             const assessmentColor = linkedUnit?.color || "#D97706";
             const isRelated =

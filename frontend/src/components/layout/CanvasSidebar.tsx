@@ -3,7 +3,7 @@ import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
 import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
-import type { Unit } from "../../types";
+import type { Tag, Unit } from "../../types";
 
 interface CanvasSidebarProps {
   sidebarTab: 'units' | 'connections' | 'mapping';
@@ -22,6 +22,9 @@ interface CanvasSidebarProps {
   selectedRelationType: string;
   setSelectedRelationType: (type: any) => void;
   getCLOColor: (cloId: number) => string;
+  selectedTagFilters: number[];
+  onToggleTagFilter: (tagId: number) => void;
+  onClearTagFilters: () => void;
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
@@ -41,6 +44,9 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   selectedRelationType,
   setSelectedRelationType,
   getCLOColor,
+  selectedTagFilters,
+  onToggleTagFilter,
+  onClearTagFilters,
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore() as any;
@@ -108,6 +114,44 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
             </button>
           </div>
         )}
+      </div>
+
+      <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Tag Filter</span>
+          {!!selectedTagFilters.length && (
+            <button
+              type="button"
+              className="text-[10px] font-bold text-blue-600 hover:text-blue-700"
+              onClick={onClearTagFilters}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <p className="mb-2 text-[11px] text-gray-500">
+          Select tags to show only matching units and their connections.
+        </p>
+        <div className="max-h-28 space-y-1 overflow-y-auto pr-1">
+          {existingTags && existingTags.length > 0 ? (
+            existingTags.map((tag: Tag) => {
+              const checked = selectedTagFilters.includes(tag.tagId);
+              return (
+                <label key={tag.tagId} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-gray-700 hover:bg-white">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+                    checked={checked}
+                    onChange={() => onToggleTagFilter(tag.tagId)}
+                  />
+                  <span className="truncate">{tag.tagName}</span>
+                </label>
+              );
+            })
+          ) : (
+            <p className="text-xs italic text-gray-400">No tags available.</p>
+          )}
+        </div>
       </div>
 
       {/* Phase Navigation Tabs */}
