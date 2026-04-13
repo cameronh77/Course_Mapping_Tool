@@ -47,7 +47,7 @@ export const CLOBox: React.FC<CLOBoxProps> = ({
     setIsEditing(false);
   };
 
-  const side = Math.min(width, 72);
+  const side = width;
 
   return (
     <div

@@ -22,10 +22,20 @@ import type {
 } from "../types";
 
 const NUM_COLUMNS = 9;
+const CANVAS_WIDTH_MULTIPLIER = 1.5;
 const CLO_BOX_SIZE = 72;
+const UNIT_WIDTH_RATIO = 0.9;
 const ULO_WIDTH_RATIO = 0.8;
 const ULO_VERTICAL_SPACING = 90;
 const ASSESSMENT_WIDTH_RATIO = 0.8;
+const CLO_WIDTH_RATIO = 0.4;
+const UNIT_LEFT_COLUMN = 0;
+const UNIT_RIGHT_COLUMN = 8;
+const ASSESSMENT_LEFT_COLUMN = 2;
+const ASSESSMENT_RIGHT_COLUMN = 6;
+const ULO_LEFT_COLUMN = 3;
+const ULO_RIGHT_COLUMN = 5;
+const CLO_COLUMN = 4;
 
 type CLOBoxItem = {
   id: number;
@@ -73,15 +83,19 @@ const getCLOColor = (cloId: number): string => {
   return CLO_COLOR_PALETTE[cloId % CLO_COLOR_PALETTE.length];
 };
 
+const getColumnAlignedX = (canvasWidth: number, columnIndex: number, boxWidth: number): number => {
+  const columnWidth = canvasWidth / NUM_COLUMNS;
+  return columnIndex * columnWidth + (columnWidth - boxWidth) / 2;
+};
+
 const getCLOAlignedX = (canvasWidth: number): number => {
-  const line4 = (canvasWidth / NUM_COLUMNS) * 4;
-  const line5 = (canvasWidth / NUM_COLUMNS) * 5;
-  const midpoint = (line4 + line5) / 2;
-  return midpoint - CLO_BOX_SIZE / 2;
+  const cloWidth = (canvasWidth / NUM_COLUMNS) * CLO_WIDTH_RATIO;
+  return getColumnAlignedX(canvasWidth, CLO_COLUMN, cloWidth);
 };
 
 export const WhiteboardCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const panStartRef = useRef<{ clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
   const previousColumnWidthRef = useRef<number>(256);
   const cloCourseRef = useRef<string | null>(null);
   const [columnWidth, setColumnWidth] = useState<number>(256);
@@ -103,7 +117,7 @@ export const WhiteboardCanvas: React.FC = () => {
   useEffect(() => {
     const updateColumnWidth = () => {
       if (canvasRef.current) {
-        const width = canvasRef.current.offsetWidth;
+        const width = canvasRef.current.offsetWidth * CANVAS_WIDTH_MULTIPLIER;
         const nextColumnWidth = width / NUM_COLUMNS;
         const prevColumnWidth = previousColumnWidthRef.current || nextColumnWidth;
         const scale = prevColumnWidth > 0 ? nextColumnWidth / prevColumnWidth : 1;
@@ -120,7 +134,7 @@ export const WhiteboardCanvas: React.FC = () => {
             return {
               ...unit,
               x: Number.isFinite(unit.x * scale) ? unit.x * scale : columnIndex * nextColumnWidth,
-              width: nextColumnWidth,
+              width: nextColumnWidth * UNIT_WIDTH_RATIO,
             };
           })
         );
@@ -129,7 +143,7 @@ export const WhiteboardCanvas: React.FC = () => {
           prevCLOs.map((cloBox) => ({
             ...cloBox,
             x: cloBox.isCustom
-              ? Math.max(0, Math.min(cloBox.x * scale, width - CLO_BOX_SIZE))
+              ? Math.max(0, Math.min(cloBox.x * scale, width - nextColumnWidth * CLO_WIDTH_RATIO))
               : getCLOAlignedX(width),
           }))
         );
@@ -186,9 +200,13 @@ export const WhiteboardCanvas: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
   const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isPanning, setIsPanning] = useState<boolean>(false);
   const [draggedNewUnit, setDraggedNewUnit] = useState<{ unit: Unit; x: number; y: number } | null>(null);
 
   const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [canvasTool, setCanvasTool] = useState<"hand" | "in" | "out" | null>(null);
+  const [zoomPaletteOpen, setZoomPaletteOpen] = useState<boolean>(false);
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Unit[]>([]);
@@ -529,7 +547,7 @@ export const WhiteboardCanvas: React.FC = () => {
       try {
         const response = await axiosInstance.get(`/course-unit/view?courseId=${currentCourse.courseId}`);
         const courseUnits = response.data;
-        const width = canvasRef.current.offsetWidth;
+        const width = canvasRef.current.offsetWidth * CANVAS_WIDTH_MULTIPLIER;
         const columnWidth = width / NUM_COLUMNS;
 
         // Dev updates may leave semester/year as 0. Normalize from position so units still render.
@@ -585,6 +603,11 @@ export const WhiteboardCanvas: React.FC = () => {
         }
 
         const placed: UnitBoxType[] = [];
+        const unitWidth = columnWidth * UNIT_WIDTH_RATIO;
+        const unitColumnX: Record<1 | 2, number> = {
+          1: getColumnAlignedX(width, UNIT_LEFT_COLUMN, unitWidth),
+          2: getColumnAlignedX(width, UNIT_RIGHT_COLUMN, unitWidth),
+        };
         const semesterSpacing = 120;
         let currentY = 40;
         for (const year of Object.keys(unitsByYear).map(Number).sort((a, b) => a - b)) {
@@ -603,10 +626,10 @@ export const WhiteboardCanvas: React.FC = () => {
               description: cu.unit.unitDesc,
               credits: cu.unit.credits,
               semestersOffered: cu.unit.semestersOffered,
-              x: 0,
+                x: unitColumnX[1],
               y: semester1Y,
               color: cu.color || "#3B82F6",
-              width: columnWidth,
+                width: unitWidth,
               semester: cu.semester || 0,
               year: cu.year || 0,
             });
@@ -626,10 +649,10 @@ export const WhiteboardCanvas: React.FC = () => {
               description: cu.unit.unitDesc,
               credits: cu.unit.credits,
               semestersOffered: cu.unit.semestersOffered,
-              x: width - columnWidth,
+                x: unitColumnX[2],
               y: semester2Y,
               color: cu.color || "#3B82F6",
-              width: columnWidth,
+                width: unitWidth,
               semester: cu.semester || 0,
               year: cu.year || 0,
             });
@@ -697,14 +720,14 @@ export const WhiteboardCanvas: React.FC = () => {
         );
 
         const uloWidth = columnWidth * ULO_WIDTH_RATIO;
-        const uloColumnX: Record<1 | 2, number> = {
-          1: columnWidth * 3 + (columnWidth - uloWidth) / 2, // 4th column (1-based)
-          2: columnWidth * 5 + (columnWidth - uloWidth) / 2, // 6th column (1-based)
-        };
         const assessmentWidth = columnWidth * ASSESSMENT_WIDTH_RATIO;
+        const uloColumnX: Record<1 | 2, number> = {
+          1: getColumnAlignedX(width, ULO_LEFT_COLUMN, uloWidth),
+          2: getColumnAlignedX(width, ULO_RIGHT_COLUMN, uloWidth),
+        };
         const assessmentColumnX: Record<1 | 2, number> = {
-          1: columnWidth * 2 + (columnWidth - assessmentWidth) / 2, // 3rd column (1-based)
-          2: columnWidth * 6 + (columnWidth - assessmentWidth) / 2, // 7th column (1-based)
+          1: getColumnAlignedX(width, ASSESSMENT_LEFT_COLUMN, assessmentWidth),
+          2: getColumnAlignedX(width, ASSESSMENT_RIGHT_COLUMN, assessmentWidth),
         };
 
         const orderedUloBoxes: ULOBoxItem[] = [];
@@ -1082,6 +1105,7 @@ export const WhiteboardCanvas: React.FC = () => {
     const anchor = getViewportAnchor();
     const snappedX = Math.max(0, Math.min(anchor.x - columnWidth / 2, anchor.width - columnWidth));
     const newId = Date.now();
+    const unitWidth = columnWidth * UNIT_WIDTH_RATIO;
 
     setUnitBoxes((prev) => [
       ...prev,
@@ -1092,10 +1116,10 @@ export const WhiteboardCanvas: React.FC = () => {
         description: "Temporary unit for whiteboard exploration.",
         credits: 6,
         semestersOffered: [1, 2],
-        x: snappedX,
+        x: Math.max(0, Math.min(snappedX, anchor.width - unitWidth)),
         y: anchor.y,
         color: "#3B82F6",
-        width: columnWidth,
+        width: unitWidth,
       },
     ]);
   };
@@ -1104,6 +1128,7 @@ export const WhiteboardCanvas: React.FC = () => {
     const anchor = getViewportAnchor();
     const id = Date.now() + Math.floor(Math.random() * 1000);
     const cloNumber = (cloBoxes.filter((c) => c.isCustom).length + 1);
+    const cloWidth = columnWidth * CLO_WIDTH_RATIO;
 
     setCloBoxes((prev) => [
       ...prev,
@@ -1114,7 +1139,7 @@ export const WhiteboardCanvas: React.FC = () => {
           cloDesc: `Playground CLO ${cloNumber}`,
           courseId: currentCourse?.courseId,
         },
-        x: Math.max(0, Math.min(anchor.x - CLO_BOX_SIZE / 2, anchor.width - CLO_BOX_SIZE)),
+        x: Math.max(0, Math.min(anchor.x - cloWidth / 2, anchor.width - cloWidth)),
         y: anchor.y,
         isCustom: true,
       },
@@ -1125,6 +1150,7 @@ export const WhiteboardCanvas: React.FC = () => {
     const anchor = getViewportAnchor();
     const id = Date.now() + Math.floor(Math.random() * 1000);
     const uloNumber = uloBoxes.length + 1;
+    const uloWidth = columnWidth * ULO_WIDTH_RATIO;
 
     setUloBoxes((prev) => [
       ...prev,
@@ -1138,7 +1164,7 @@ export const WhiteboardCanvas: React.FC = () => {
         },
         x: Math.max(
           0,
-          Math.min(anchor.x - (columnWidth * ULO_WIDTH_RATIO) / 2, anchor.width - columnWidth * ULO_WIDTH_RATIO)
+          Math.min(anchor.x - uloWidth / 2, anchor.width - uloWidth)
         ),
         y: anchor.y,
       },
@@ -1149,6 +1175,7 @@ export const WhiteboardCanvas: React.FC = () => {
     const anchor = getViewportAnchor();
     const id = Date.now() + Math.floor(Math.random() * 1000);
     const assessmentNumber = assessmentBoxes.length + 1;
+    const assessmentWidth = columnWidth * ASSESSMENT_WIDTH_RATIO;
 
     setAssessmentBoxes((prev) => [
       ...prev,
@@ -1166,8 +1193,8 @@ export const WhiteboardCanvas: React.FC = () => {
         x: Math.max(
           0,
           Math.min(
-            anchor.x - (columnWidth * ASSESSMENT_WIDTH_RATIO) / 2,
-            anchor.width - columnWidth * ASSESSMENT_WIDTH_RATIO
+            anchor.x - assessmentWidth / 2,
+            anchor.width - assessmentWidth
           )
         ),
         y: anchor.y,
@@ -1346,6 +1373,101 @@ export const WhiteboardCanvas: React.FC = () => {
     alert("Whiteboard view is currently unsaved.");
   };
 
+  const applyZoomAtPoint = (nextZoom: number, clientX: number, clientY: number) => {
+    if (!canvasRef.current) {
+      setZoomLevel(nextZoom);
+      return;
+    }
+
+    const container = canvasRef.current;
+    const rect = container.getBoundingClientRect();
+    const offsetX = clientX - rect.left;
+    const offsetY = clientY - rect.top;
+    const worldX = (container.scrollLeft + offsetX) / zoomLevel;
+    const worldY = (container.scrollTop + offsetY) / zoomLevel;
+
+    setZoomLevel(nextZoom);
+
+    requestAnimationFrame(() => {
+      container.scrollLeft = Math.max(0, worldX * nextZoom - offsetX);
+      container.scrollTop = Math.max(0, worldY * nextZoom - offsetY);
+    });
+  };
+
+  const handleZoomInAtPoint = (clientX: number, clientY: number) => {
+    const nextZoom = Math.min(2, Number((zoomLevel + 0.15).toFixed(2)));
+    applyZoomAtPoint(nextZoom, clientX, clientY);
+  };
+
+  const handleZoomOutAtPoint = (clientX: number, clientY: number) => {
+    const nextZoom = Math.max(0.5, Number((zoomLevel - 0.15).toFixed(2)));
+    applyZoomAtPoint(nextZoom, clientX, clientY);
+  };
+
+  const handleSelectZoomTool = (tool: "in" | "out") => {
+    setCanvasTool((prev) => (prev === tool ? null : tool));
+  };
+
+  const handleSelectHandTool = () => {
+    setCanvasTool((prev) => (prev === "hand" ? null : "hand"));
+  };
+
+  const handleResetZoom = () => {
+    setZoomLevel(1);
+    setCanvasTool(null);
+  };
+
+  const handleZoomBrushClick = () => {
+    setZoomPaletteOpen((prev) => !prev);
+  };
+
+  const handleCanvasZoomClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!canvasTool || canvasTool === "hand") return;
+    if (e.target !== e.currentTarget) return;
+
+    if (canvasTool === "in") {
+      handleZoomInAtPoint(e.clientX, e.clientY);
+    } else {
+      handleZoomOutAtPoint(e.clientX, e.clientY);
+    }
+  };
+
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (canvasTool !== "hand" || e.target !== e.currentTarget || !canvasRef.current) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    panStartRef.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      scrollLeft: canvasRef.current.scrollLeft,
+      scrollTop: canvasRef.current.scrollTop,
+    };
+    setIsPanning(true);
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      const start = panStartRef.current;
+      if (!start || !canvasRef.current) return;
+
+      const deltaX = moveEvent.clientX - start.clientX;
+      const deltaY = moveEvent.clientY - start.clientY;
+
+      canvasRef.current.scrollLeft = Math.max(0, start.scrollLeft - deltaX / zoomLevel);
+      canvasRef.current.scrollTop = Math.max(0, start.scrollTop - deltaY / zoomLevel);
+    };
+
+    const handleUp = () => {
+      panStartRef.current = null;
+      setIsPanning(false);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
   const handleUnitRightClick = (e: React.MouseEvent, unitKey: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1453,11 +1575,102 @@ export const WhiteboardCanvas: React.FC = () => {
 
       {/* Canvas: 5/6 width, right */}
       <div ref={canvasRef} className="w-5/6 bg-white overflow-auto relative" style={{ userSelect: "none" }}>
+        <div className="sticky left-3 top-3 z-[90] w-fit pointer-events-none">
+          {zoomPaletteOpen && (
+            <div className="mb-2 flex items-center gap-2 rounded-full border border-gray-200 bg-white/95 p-2 shadow-2xl backdrop-blur-sm pointer-events-auto">
+              <button
+                className={`h-10 w-10 rounded-full border transition-colors ${
+                  canvasTool === "hand"
+                    ? "bg-blue-50 text-blue-700 border-blue-300"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                }`}
+                onClick={handleSelectHandTool}
+                title="Hand tool"
+              >
+                <svg className="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M8 11V7a1 1 0 0 1 2 0v4" />
+                  <path d="M10 11V6a1 1 0 0 1 2 0v5" />
+                  <path d="M12 11V5a1 1 0 0 1 2 0v6" />
+                  <path d="M14 11V7a1 1 0 0 1 2 0v4" />
+                  <path d="M8 11c0-1 0-2 0-2a1 1 0 0 1 2 0v2" />
+                  <path d="M16 11v3c0 3-2 5-5 5s-5-2-5-5v-4" />
+                </svg>
+              </button>
+              <button
+                className={`h-10 w-10 rounded-full border transition-colors ${
+                  canvasTool === "out"
+                    ? "bg-blue-50 text-blue-700 border-blue-300"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                }`}
+                onClick={() => handleSelectZoomTool("out")}
+                title="Select zoom out tool"
+              >
+                <svg className="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.5-3.5" />
+                  <path d="M8 11h6" />
+                </svg>
+              </button>
+              <button
+                className={`h-10 w-10 rounded-full border transition-colors ${
+                  canvasTool === "in"
+                    ? "bg-blue-50 text-blue-700 border-blue-300"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                }`}
+                onClick={() => handleSelectZoomTool("in")}
+                title="Select zoom in tool"
+              >
+                <svg className="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.5-3.5" />
+                  <path d="M11 8v6" />
+                  <path d="M8 11h6" />
+                </svg>
+              </button>
+              <button
+                className="h-10 rounded-full border border-gray-300 bg-white px-3 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-100"
+                onClick={handleResetZoom}
+                title="Reset zoom"
+              >
+                Reset
+              </button>
+            </div>
+          )}
+          <button
+            className={`pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border shadow-xl transition-colors ${
+              zoomPaletteOpen ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+            }`}
+            onClick={handleZoomBrushClick}
+            title="Zoom tools"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 20l5.5-5.5" />
+              <path d="M13 5l6 6" />
+              <path d="M6 18l-1 1" />
+              <path d="M14 4l6 6" />
+              <path d="M9 15l-2 2" />
+              <path d="M15 3l6 6" />
+            </svg>
+          </button>
+        </div>
         <div
           className="relative"
+          onMouseDown={handleCanvasMouseDown}
+          onClick={handleCanvasZoomClick}
           style={{
-            width: `120%`,
+            width: `${CANVAS_WIDTH_MULTIPLIER * 100}%`,
             height: `${innerHeight}px`,
+            zoom: zoomLevel,
+            transformOrigin: "top left",
+            cursor: isPanning
+              ? "grabbing"
+              : canvasTool
+                ? canvasTool === "hand"
+                  ? "grab"
+                  : canvasTool === "in"
+                    ? "zoom-in"
+                    : "zoom-out"
+                : "default",
             backgroundColor: '#fff',
             backgroundImage:
               'radial-gradient(#d1d5db 1px, transparent 1px)',
@@ -1561,11 +1774,15 @@ export const WhiteboardCanvas: React.FC = () => {
           {unitBoxes.map((unit) => {
             const unitId = unit.unitId || null;
             const isRelated = !hasHoverFocus || (unitId !== null && focusUnitIds.has(unitId));
+            const handleUnitMouseDown = (e: React.MouseEvent) => {
+              if (canvasTool === "hand") return;
+              handleMouseDown(e, unit.id);
+            };
 
             return (
               <div key={unit.id} style={getNodeStateStyle(isRelated)}>
                 <UnitBox
-                  unit={{ ...unit, width: columnWidth }}
+                  unit={{ ...unit, width: columnWidth * UNIT_WIDTH_RATIO }}
                   draggedUnit={draggedUnit}
                   selectedUnits={selectedUnits}
                   connectionMode={connectionMode}
@@ -1574,7 +1791,7 @@ export const WhiteboardCanvas: React.FC = () => {
                   activeTab={activeTabs[unit.id] || "info"}
                   unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
                   currentCLOs={currentCLOs || []}
-                  onMouseDown={handleMouseDown}
+                  onMouseDown={handleUnitMouseDown}
                   onDoubleClick={(unitId) => {
                     if (isDragging) return;
                     startEdit(unitId);
@@ -1611,6 +1828,10 @@ export const WhiteboardCanvas: React.FC = () => {
           {cloBoxes.map((cloBox) => {
             const cloId = cloBox.clo.cloId;
             const isRelated = !hasHoverFocus || (typeof cloId === "number" && hoveredCloIds.has(cloId));
+            const handleCLOMouseDownGuarded = (e: React.MouseEvent) => {
+              if (canvasTool === "hand") return;
+              handleCLOMouseDown(e, cloBox.id);
+            };
 
             return (
               <div
@@ -1628,11 +1849,11 @@ export const WhiteboardCanvas: React.FC = () => {
                   clo={cloBox.clo}
                   x={cloBox.x}
                   y={cloBox.y}
-                  width={CLO_BOX_SIZE}
+                  width={columnWidth * CLO_WIDTH_RATIO}
                   isDragging={draggedCLOId === cloBox.id}
                   isSelected={selectedCLOId === cloBox.id}
                   color={getCLOColor(cloBox.clo.cloId || 0)}
-                  onMouseDown={(e) => handleCLOMouseDown(e, cloBox.id)}
+                  onMouseDown={handleCLOMouseDownGuarded}
                   onClick={() => setSelectedCLOId((prev) => (prev === cloBox.id ? null : cloBox.id))}
                   onDescriptionUpdate={(newDescription) => {
                     // Update local state
@@ -1669,6 +1890,10 @@ export const WhiteboardCanvas: React.FC = () => {
             const linkedUnit = unitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId);
             const uloColor = linkedUnit?.color || "#06B6D4";
             const isRelated = !hasHoverFocus || (typeof uloBox.ulo.uloId === "number" && hoveredUloIds.has(uloBox.ulo.uloId));
+            const handleULOMouseDownGuarded = (e: React.MouseEvent) => {
+              if (canvasTool === "hand") return;
+              handleULOMouseDown(e, uloBox.id);
+            };
 
             return (
             <div key={uloBox.id} style={getNodeStateStyle(isRelated)}>
@@ -1680,7 +1905,7 @@ export const WhiteboardCanvas: React.FC = () => {
               isDragging={draggedULOId === uloBox.id}
               isSelected={selectedULOId === uloBox.id}
               color={uloColor}
-              onMouseDown={(e) => handleULOMouseDown(e, uloBox.id)}
+              onMouseDown={handleULOMouseDownGuarded}
               onClick={() => setSelectedULOId((prev) => (prev === uloBox.id ? null : uloBox.id))}
               onHoverStart={() => {
                 setHoveredAssessmentBoxId(null);
@@ -1807,6 +2032,10 @@ export const WhiteboardCanvas: React.FC = () => {
               focusAssessmentBoxIds.has(assessmentBox.id) ||
               (typeof assessmentBox.assessment.assessmentId === "number" &&
                 hoveredAssessmentIds.has(assessmentBox.assessment.assessmentId));
+            const handleAssessmentMouseDownGuarded = (e: React.MouseEvent) => {
+              if (canvasTool === "hand") return;
+              handleAssessmentMouseDown(e, assessmentBox.id);
+            };
 
             return (
               <div key={assessmentBox.id} style={getNodeStateStyle(isRelated)}>
@@ -1814,11 +2043,11 @@ export const WhiteboardCanvas: React.FC = () => {
                 assessment={assessmentBox.assessment}
                 x={assessmentBox.x}
                 y={assessmentBox.y}
-                width={columnWidth * ASSESSMENT_WIDTH_RATIO}
+                  width={columnWidth * ASSESSMENT_WIDTH_RATIO}
                 isDragging={draggedAssessmentId === assessmentBox.id}
                 isSelected={selectedAssessmentId === assessmentBox.id}
                 color={assessmentColor}
-                onMouseDown={(e) => handleAssessmentMouseDown(e, assessmentBox.id)}
+                onMouseDown={handleAssessmentMouseDownGuarded}
                 onClick={() =>
                   setSelectedAssessmentId((prev) => (prev === assessmentBox.id ? null : assessmentBox.id))
                 }

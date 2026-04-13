@@ -40,7 +40,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   setConnectionSource,
   selectedRelationType,
   setSelectedRelationType,
-  getCLOColor
+  getCLOColor,
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore() as any;
