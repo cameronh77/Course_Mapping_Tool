@@ -11,6 +11,8 @@ interface CLOBoxProps {
   color: string;
   onMouseDown: (e: React.MouseEvent) => void;
   onClick: () => void;
+  onHoverStart?: () => void;
+  onHoverEnd?: () => void;
   onDelete?: () => void;
   onDescriptionUpdate?: (newDescription: string) => void;
 }
@@ -25,6 +27,8 @@ export const CLOBox: React.FC<CLOBoxProps> = ({
   color,
   onMouseDown,
   onClick,
+  onHoverStart,
+  onHoverEnd,
   onDelete,
   onDescriptionUpdate,
 }) => {
@@ -59,6 +63,8 @@ export const CLOBox: React.FC<CLOBoxProps> = ({
       }}
       onMouseDown={onMouseDown}
       onClick={onClick}
+      onMouseEnter={onHoverStart}
+      onMouseLeave={onHoverEnd}
       title={clo.cloDesc}
     >
       <span className="text-2xl leading-none select-none">{clo.cloId ?? "-"}</span>

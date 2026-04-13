@@ -23,6 +23,8 @@ interface ULOBoxProps {
   color: string;
   onMouseDown: (e: React.MouseEvent) => void;
   onClick: () => void;
+  onHoverStart?: () => void;
+  onHoverEnd?: () => void;
   availableUnits: UnitOption[];
   availableCLOs: CourseLearningOutcome[];
   onDelete?: () => void;
@@ -39,6 +41,8 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
   color,
   onMouseDown,
   onClick,
+  onHoverStart,
+  onHoverEnd,
   availableUnits,
   availableCLOs,
   onDelete,
@@ -118,6 +122,8 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
       }}
       onMouseDown={onMouseDown}
       onClick={onClick}
+      onMouseEnter={onHoverStart}
+      onMouseLeave={onHoverEnd}
       title={ulo.uloDesc}
     >
       <span className="px-1 text-center text-[11px] leading-tight line-clamp-3 break-words select-none">

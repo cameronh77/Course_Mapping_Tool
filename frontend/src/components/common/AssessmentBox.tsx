@@ -31,6 +31,8 @@ interface AssessmentBoxProps {
   color: string;
   onMouseDown: (e: React.MouseEvent) => void;
   onClick: () => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
   availableUnits: UnitOption[];
   availableULOs: ULOOption[];
   onDelete?: () => void;
@@ -47,6 +49,8 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
   color,
   onMouseDown,
   onClick,
+  onMouseEnter,
+  onMouseLeave,
   availableUnits,
   availableULOs,
   onDelete,
@@ -120,6 +124,8 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
       }}
       onMouseDown={onMouseDown}
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       title={assessment.aDesc || "Assessment"}
     >
       <span className="px-1 text-center text-[11px] leading-tight line-clamp-3 break-words select-none">

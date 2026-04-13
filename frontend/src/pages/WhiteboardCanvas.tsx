@@ -23,7 +23,6 @@ import type {
 
 const NUM_COLUMNS = 9;
 const CLO_BOX_SIZE = 72;
-const CLO_VERTICAL_SPACING = 110;
 const ULO_WIDTH_RATIO = 0.8;
 const ULO_VERTICAL_SPACING = 90;
 const ASSESSMENT_WIDTH_RATIO = 0.8;
@@ -92,6 +91,10 @@ export const WhiteboardCanvas: React.FC = () => {
   const [selectedULOId, setSelectedULOId] = useState<number | null>(null);
   const [draggedAssessmentId, setDraggedAssessmentId] = useState<number | null>(null);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<number | null>(null);
+  const [hoveredUnitId, setHoveredUnitId] = useState<string | null>(null);
+  const [hoveredAssessmentBoxId, setHoveredAssessmentBoxId] = useState<number | null>(null);
+  const [hoveredUloBoxId, setHoveredUloBoxId] = useState<number | null>(null);
+  const [hoveredCloBoxId, setHoveredCloBoxId] = useState<number | null>(null);
 
   const [cloBoxes, setCloBoxes] = useState<CLOBoxItem[]>([]);
   const [uloBoxes, setUloBoxes] = useState<ULOBoxItem[]>([]);
@@ -103,10 +106,11 @@ export const WhiteboardCanvas: React.FC = () => {
         const width = canvasRef.current.offsetWidth;
         const nextColumnWidth = width / NUM_COLUMNS;
         const prevColumnWidth = previousColumnWidthRef.current || nextColumnWidth;
+        const scale = prevColumnWidth > 0 ? nextColumnWidth / prevColumnWidth : 1;
 
         setColumnWidth(nextColumnWidth);
 
-        // Keep each unit in its logical column after resize.
+        // Keep each element aligned to the wider canvas after resize.
         setUnitBoxes((prevUnits) =>
           prevUnits.map((unit) => {
             const columnIndex = Math.max(
@@ -115,7 +119,7 @@ export const WhiteboardCanvas: React.FC = () => {
             );
             return {
               ...unit,
-              x: columnIndex * nextColumnWidth,
+              x: Number.isFinite(unit.x * scale) ? unit.x * scale : columnIndex * nextColumnWidth,
               width: nextColumnWidth,
             };
           })
@@ -125,7 +129,7 @@ export const WhiteboardCanvas: React.FC = () => {
           prevCLOs.map((cloBox) => ({
             ...cloBox,
             x: cloBox.isCustom
-              ? Math.max(0, Math.min(cloBox.x, width - CLO_BOX_SIZE))
+              ? Math.max(0, Math.min(cloBox.x * scale, width - CLO_BOX_SIZE))
               : getCLOAlignedX(width),
           }))
         );
@@ -133,14 +137,17 @@ export const WhiteboardCanvas: React.FC = () => {
         setUloBoxes((prevULOs) =>
           prevULOs.map((uloBox) => ({
             ...uloBox,
-            x: Math.max(0, Math.min(uloBox.x, width - nextColumnWidth * ULO_WIDTH_RATIO)),
+            x: Math.max(0, Math.min(uloBox.x * scale, width - nextColumnWidth * ULO_WIDTH_RATIO)),
           }))
         );
 
         setAssessmentBoxes((prevAssessments) =>
           prevAssessments.map((assessmentBox) => ({
             ...assessmentBox,
-            x: Math.max(0, Math.min(assessmentBox.x, width - nextColumnWidth * ASSESSMENT_WIDTH_RATIO)),
+            x: Math.max(
+              0,
+              Math.min(assessmentBox.x * scale, width - nextColumnWidth * ASSESSMENT_WIDTH_RATIO)
+            ),
           }))
         );
 
@@ -148,8 +155,22 @@ export const WhiteboardCanvas: React.FC = () => {
       }
     };
     updateColumnWidth();
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" && canvasRef.current
+        ? new ResizeObserver(() => {
+            updateColumnWidth();
+          })
+        : null;
+
+    if (resizeObserver && canvasRef.current) {
+      resizeObserver.observe(canvasRef.current);
+    }
+
     window.addEventListener('resize', updateColumnWidth);
-    return () => window.removeEventListener('resize', updateColumnWidth);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateColumnWidth);
+    };
   }, []);
 
   const unitStore = useUnitStore() as any;
@@ -190,6 +211,315 @@ export const WhiteboardCanvas: React.FC = () => {
     y: number;
     unitId?: string;
   }>({ visible: false, x: 0, y: 0 });
+
+  const assessmentRenderWidth = columnWidth * ASSESSMENT_WIDTH_RATIO;
+  const assessmentRenderHeight = 72;
+  const uloRenderHeight = 72;
+
+  const uloBoxById = new Map(
+    uloBoxes
+      .map((box) => [box.ulo.uloId, box] as const)
+      .filter(([uloId]) => typeof uloId === "number")
+  );
+
+  const cloBoxById = new Map(
+    cloBoxes
+      .map((box) => [box.clo.cloId, box] as const)
+      .filter(([cloId]) => typeof cloId === "number")
+  );
+
+  const assessmentConnectorPaths = assessmentBoxes.flatMap((assessmentBox) => {
+    const linkedUloIds = Array.isArray(assessmentBox.assessment.unitLosIds)
+      ? assessmentBox.assessment.unitLosIds
+      : [];
+
+    const linkedUlos = linkedUloIds
+      .map((uloId) => uloBoxById.get(uloId))
+      .filter((box): box is ULOBoxItem => Boolean(box));
+
+    const sourceX = assessmentBox.x + assessmentRenderWidth;
+    const sourceY = assessmentBox.y + assessmentRenderHeight / 2;
+
+    return linkedUlos.map((uloBox) => {
+      const targetX = uloBox.x;
+      const targetY = uloBox.y + uloRenderHeight / 2;
+      const midX = (sourceX + targetX) / 2;
+
+      return {
+        key: `${assessmentBox.id}-${uloBox.id}`,
+        d: `M ${sourceX} ${sourceY} C ${midX} ${sourceY}, ${midX} ${targetY}, ${targetX} ${targetY}`,
+        assessmentBoxId: assessmentBox.id,
+        uloId: typeof uloBox.ulo.uloId === "number" ? uloBox.ulo.uloId : null,
+        unitId: assessmentBox.assessment.unitId || uloBox.ulo.unitId,
+        color: uloBox.ulo.unitId
+          ? (unitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId)?.color || "#94A3B8")
+          : "#94A3B8",
+      };
+    });
+  });
+
+  const uloRenderWidth = columnWidth * ULO_WIDTH_RATIO;
+  const uloToCloConnectorPaths = uloBoxes.flatMap((uloBox) => {
+    const fromUlo = Array.isArray(uloBox.ulo.cloIds)
+      ? uloBox.ulo.cloIds
+      : typeof uloBox.ulo.cloId === "number"
+        ? [uloBox.ulo.cloId]
+        : [];
+
+    const fromUnitMappings = (unitMappings[uloBox.ulo.unitId]?.clos || [])
+      .map((clo) => clo.cloId)
+      .filter((cloId): cloId is number => typeof cloId === "number");
+
+    const linkedCloIds = Array.from(new Set([...fromUlo, ...fromUnitMappings]));
+    const linkedCloBoxes = linkedCloIds
+      .map((cloId) => cloBoxById.get(cloId))
+      .filter((box): box is CLOBoxItem => Boolean(box));
+
+    return linkedCloBoxes.map((cloBox) => {
+      const uloCenterX = uloBox.x + uloRenderWidth / 2;
+      const uloCenterY = uloBox.y + uloRenderHeight / 2;
+      const cloCenterX = cloBox.x + CLO_BOX_SIZE / 2;
+      const cloCenterY = cloBox.y + CLO_BOX_SIZE / 2;
+      const isTowardsRight = cloCenterX >= uloCenterX;
+      const sourceX = uloCenterX + (isTowardsRight ? uloRenderWidth / 2 : -uloRenderWidth / 2);
+      const targetX = cloCenterX + (isTowardsRight ? -CLO_BOX_SIZE / 2 : CLO_BOX_SIZE / 2);
+      const midX = (sourceX + targetX) / 2;
+      const unitColor =
+        unitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId)?.color || "#94A3B8";
+
+      return {
+        key: `ulo-clo-${uloBox.id}-${cloBox.id}`,
+        d: `M ${sourceX} ${uloCenterY} C ${midX} ${uloCenterY}, ${midX} ${cloCenterY}, ${targetX} ${cloCenterY}`,
+        uloId: typeof uloBox.ulo.uloId === "number" ? uloBox.ulo.uloId : null,
+        cloId: typeof cloBox.clo.cloId === "number" ? cloBox.clo.cloId : null,
+        unitId: uloBox.ulo.unitId,
+        color: unitColor,
+      };
+    });
+  });
+
+  const focusUnitIds = new Set<string>();
+  const focusAssessmentBoxIds = new Set<number>();
+  const hoveredAssessmentIds = new Set<number>();
+  const hoveredUloIds = new Set<number>();
+  const hoveredCloIds = new Set<number>();
+  const isAssessmentHoverFocus = hoveredAssessmentBoxId !== null;
+  const isUloHoverFocus = hoveredUloBoxId !== null;
+  const isCloHoverFocus = hoveredCloBoxId !== null;
+  const hasHoverFocus = Boolean(
+    hoveredAssessmentBoxId || hoveredUloBoxId || hoveredCloBoxId || hoveredUnitId
+  );
+
+  if (hoveredAssessmentBoxId !== null) {
+    const hoveredAssessment = assessmentBoxes.find((box) => box.id === hoveredAssessmentBoxId);
+    if (hoveredAssessment) {
+      focusAssessmentBoxIds.add(hoveredAssessment.id);
+
+      if (typeof hoveredAssessment.assessment.assessmentId === "number") {
+        hoveredAssessmentIds.add(hoveredAssessment.assessment.assessmentId);
+      }
+
+      if (hoveredAssessment.assessment.unitId) {
+        focusUnitIds.add(hoveredAssessment.assessment.unitId);
+      }
+
+      const linkedUloIds = Array.isArray(hoveredAssessment.assessment.unitLosIds)
+        ? hoveredAssessment.assessment.unitLosIds
+        : [];
+
+      linkedUloIds.forEach((uloId) => {
+        if (typeof uloId !== "number") return;
+        hoveredUloIds.add(uloId);
+
+        const linkedUlo = uloBoxById.get(uloId);
+        if (!linkedUlo) return;
+
+        const directCloIds = Array.isArray(linkedUlo.ulo.cloIds)
+          ? linkedUlo.ulo.cloIds
+          : typeof linkedUlo.ulo.cloId === "number"
+            ? [linkedUlo.ulo.cloId]
+            : [];
+
+        directCloIds.forEach((cloId) => {
+          if (typeof cloId === "number") hoveredCloIds.add(cloId);
+        });
+
+        (unitMappings[linkedUlo.ulo.unitId]?.clos || []).forEach((clo) => {
+          if (typeof clo.cloId === "number") hoveredCloIds.add(clo.cloId);
+        });
+      });
+    }
+  }
+
+  if (hoveredUloBoxId !== null) {
+    const hoveredUlo = uloBoxes.find((box) => box.id === hoveredUloBoxId);
+    if (hoveredUlo) {
+      if (hoveredUlo.ulo.unitId) {
+        focusUnitIds.add(hoveredUlo.ulo.unitId);
+      }
+
+      if (typeof hoveredUlo.ulo.uloId === "number") {
+        hoveredUloIds.add(hoveredUlo.ulo.uloId);
+      }
+
+      const directCloIds = Array.isArray(hoveredUlo.ulo.cloIds)
+        ? hoveredUlo.ulo.cloIds
+        : typeof hoveredUlo.ulo.cloId === "number"
+          ? [hoveredUlo.ulo.cloId]
+          : [];
+
+      directCloIds.forEach((cloId) => {
+        if (typeof cloId === "number") hoveredCloIds.add(cloId);
+      });
+
+      (unitMappings[hoveredUlo.ulo.unitId]?.clos || []).forEach((clo) => {
+        if (typeof clo.cloId === "number") hoveredCloIds.add(clo.cloId);
+      });
+
+      const linkedAssessmentIds = Array.isArray(hoveredUlo.ulo.assessmentIds)
+        ? hoveredUlo.ulo.assessmentIds
+        : [];
+
+      assessmentBoxes.forEach((assessmentBox) => {
+        const assessmentId =
+          typeof assessmentBox.assessment.assessmentId === "number"
+            ? assessmentBox.assessment.assessmentId
+            : null;
+
+        const linkedByUloId =
+          typeof hoveredUlo.ulo.uloId === "number" &&
+          Array.isArray(assessmentBox.assessment.unitLosIds) &&
+          assessmentBox.assessment.unitLosIds.includes(hoveredUlo.ulo.uloId);
+
+        const linkedByAssessmentId =
+          assessmentId !== null && linkedAssessmentIds.includes(assessmentId);
+
+        if (linkedByUloId || linkedByAssessmentId) {
+          focusAssessmentBoxIds.add(assessmentBox.id);
+          if (assessmentId !== null) hoveredAssessmentIds.add(assessmentId);
+        }
+      });
+    }
+  }
+
+  if (hoveredCloBoxId !== null) {
+    const hoveredClo = cloBoxes.find((box) => box.id === hoveredCloBoxId);
+    const hoveredCloId = hoveredClo?.clo.cloId;
+
+    if (typeof hoveredCloId === "number") {
+      hoveredCloIds.add(hoveredCloId);
+
+      const relatedUloIds = new Set<number>();
+
+      uloBoxes.forEach((uloBox) => {
+        const directCloIds = Array.isArray(uloBox.ulo.cloIds)
+          ? uloBox.ulo.cloIds
+          : typeof uloBox.ulo.cloId === "number"
+            ? [uloBox.ulo.cloId]
+            : [];
+
+        const mappedCloIds = (unitMappings[uloBox.ulo.unitId]?.clos || [])
+          .map((clo) => clo.cloId)
+          .filter((cloId): cloId is number => typeof cloId === "number");
+
+        const isRelatedUlo = [...directCloIds, ...mappedCloIds].includes(hoveredCloId);
+        if (!isRelatedUlo) return;
+
+        if (typeof uloBox.ulo.uloId === "number") {
+          hoveredUloIds.add(uloBox.ulo.uloId);
+          relatedUloIds.add(uloBox.ulo.uloId);
+        }
+
+        if (uloBox.ulo.unitId) {
+          focusUnitIds.add(uloBox.ulo.unitId);
+        }
+      });
+
+      const relatedAssessmentIds = new Set<number>();
+      uloBoxes.forEach((uloBox) => {
+        if (!Array.isArray(uloBox.ulo.assessmentIds)) return;
+        if (typeof uloBox.ulo.uloId !== "number" || !relatedUloIds.has(uloBox.ulo.uloId)) return;
+
+        uloBox.ulo.assessmentIds.forEach((assessmentId) => {
+          if (typeof assessmentId === "number") {
+            relatedAssessmentIds.add(assessmentId);
+          }
+        });
+      });
+
+      assessmentBoxes.forEach((assessmentBox) => {
+        const assessmentId =
+          typeof assessmentBox.assessment.assessmentId === "number"
+            ? assessmentBox.assessment.assessmentId
+            : null;
+
+        const linkedByUlo = Array.isArray(assessmentBox.assessment.unitLosIds)
+          ? assessmentBox.assessment.unitLosIds.some((uloId) => relatedUloIds.has(uloId))
+          : false;
+
+        const linkedByAssessmentId = assessmentId !== null && relatedAssessmentIds.has(assessmentId);
+
+        if (linkedByUlo || linkedByAssessmentId) {
+          focusAssessmentBoxIds.add(assessmentBox.id);
+          if (assessmentId !== null) hoveredAssessmentIds.add(assessmentId);
+          if (assessmentBox.assessment.unitId) {
+            focusUnitIds.add(assessmentBox.assessment.unitId);
+          }
+        }
+      });
+    }
+  }
+
+  if (hoveredUnitId) {
+    focusUnitIds.add(hoveredUnitId);
+    assessmentBoxes.forEach((assessmentBox) => {
+      if (
+        assessmentBox.assessment.unitId === hoveredUnitId &&
+        typeof assessmentBox.assessment.assessmentId === "number"
+      ) {
+        hoveredAssessmentIds.add(assessmentBox.assessment.assessmentId);
+      }
+    });
+
+    uloBoxes.forEach((uloBox) => {
+      if (uloBox.ulo.unitId !== hoveredUnitId) return;
+
+      if (typeof uloBox.ulo.uloId === "number") {
+        hoveredUloIds.add(uloBox.ulo.uloId);
+      }
+
+      const directCloIds = Array.isArray(uloBox.ulo.cloIds)
+        ? uloBox.ulo.cloIds
+        : typeof uloBox.ulo.cloId === "number"
+          ? [uloBox.ulo.cloId]
+          : [];
+
+      directCloIds.forEach((cloId) => {
+        if (typeof cloId === "number") hoveredCloIds.add(cloId);
+      });
+    });
+
+    (unitMappings[hoveredUnitId]?.clos || []).forEach((clo) => {
+      if (typeof clo.cloId === "number") {
+        hoveredCloIds.add(clo.cloId);
+      }
+    });
+  }
+
+  const getNodeStateStyle = (isRelated: boolean) => {
+    if (!hasHoverFocus) return undefined;
+    if (isRelated) {
+      return {
+        opacity: 1,
+        filter: "drop-shadow(0 0 6px rgba(0,0,0,0.22))",
+      };
+    }
+
+    return {
+      opacity: 0.2,
+      filter: "grayscale(1) saturate(0.15)",
+    };
+  };
 
 
   // Load saved canvas units and their CLO/Tag mappings when course is loaded
@@ -337,6 +667,21 @@ export const WhiteboardCanvas: React.FC = () => {
           console.error("Error loading unit learning outcomes:", error);
         }
 
+        const allULOsWithAssessmentIds = allULOs.map((ulo: any) => ({
+          ...ulo,
+          assessmentIds: Array.isArray(ulo.assessments)
+            ? Array.from(
+                new Set(
+                  ulo.assessments
+                    .map((assessment: any) => Number(assessment.assessmentId))
+                    .filter((id: number) => Number.isInteger(id) && id > 0)
+                )
+              )
+            : Array.isArray(ulo.assessmentIds)
+              ? ulo.assessmentIds
+              : [],
+        }));
+
         let allAssessments: any[] = [];
         try {
           const assessmentResponse = await axiosInstance.get(`/assessment/view`);
@@ -376,7 +721,7 @@ export const WhiteboardCanvas: React.FC = () => {
             const semesterUnits = yearUnits.filter((cu: any) => toSemester(cu.semester) === semester);
 
             for (const cu of semesterUnits) {
-            const ulosForUnit = allULOs
+            const ulosForUnit = allULOsWithAssessmentIds
               .filter((ulo: any) => courseUnitIds.has(ulo.unitId) && ulo.unitId === cu.unitId)
               .sort((a: any, b: any) => {
                 const aId = typeof a.uloId === "number" ? a.uloId : Number.MAX_SAFE_INTEGER;
@@ -482,7 +827,7 @@ export const WhiteboardCanvas: React.FC = () => {
           const unitId = cu.unitId;
           mappingsData[unitId] = { clos: [], tags: [] };
 
-          const unitCLOMappings = allULOs.filter(
+          const unitCLOMappings = allULOsWithAssessmentIds.filter(
             (ulo: any) => ulo.unitId === unitId && ulo.cloId
           );
           mappingsData[unitId].clos = unitCLOMappings
@@ -523,24 +868,46 @@ export const WhiteboardCanvas: React.FC = () => {
     if (!currentCourse?.courseId) return;
 
     setCloBoxes((prev) => {
-      const isNewCourse = cloCourseRef.current !== currentCourse.courseId;
       const middleX = getCLOAlignedX(columnWidth * NUM_COLUMNS);
       const courseCLOs = (currentCLOs || []) as CourseLearningOutcome[];
       const customBoxes = prev.filter((box) => box.isCustom);
 
-      const existingById = new Map(prev.map((box) => [box.id, box]));
+      const nonCloTops: number[] = [];
+      const nonCloBottoms: number[] = [];
+
+      for (const unit of unitBoxes) {
+        nonCloTops.push(unit.y);
+        nonCloBottoms.push(unit.y + 80);
+      }
+
+      for (const ulo of uloBoxes) {
+        nonCloTops.push(ulo.y);
+        nonCloBottoms.push(ulo.y + 72);
+      }
+
+      for (const assessment of assessmentBoxes) {
+        nonCloTops.push(assessment.y);
+        nonCloBottoms.push(assessment.y + 72);
+      }
+
+      const minY = nonCloTops.length > 0 ? Math.min(...nonCloTops) : 40;
+      const maxY = nonCloBottoms.length > 0 ? Math.max(...nonCloBottoms) : minY;
+      const range = Math.max(0, maxY - minY);
+
       const syncedCourseBoxes = courseCLOs
         .filter((clo): clo is CourseLearningOutcome & { cloId: number } => typeof clo.cloId === "number")
         .map((clo, index) => {
-          const existing = !isNewCourse ? existingById.get(clo.cloId) : undefined;
-          if (existing) {
-            return { ...existing, clo, x: middleX, isCustom: false };
-          }
+          const total = courseCLOs.filter((c): c is CourseLearningOutcome & { cloId: number } => typeof c.cloId === "number").length;
+          const y =
+            total <= 1
+              ? minY + range / 2
+              : minY + (range * index) / (total - 1);
+
           return {
             id: clo.cloId,
             clo,
             x: middleX,
-            y: 40 + index * CLO_VERTICAL_SPACING,
+            y,
             isCustom: false,
           };
         });
@@ -548,7 +915,7 @@ export const WhiteboardCanvas: React.FC = () => {
       cloCourseRef.current = currentCourse.courseId;
       return [...syncedCourseBoxes, ...customBoxes];
     });
-  }, [currentCourse?.courseId, currentCLOs, columnWidth]);
+  }, [currentCourse?.courseId, currentCLOs, columnWidth, unitBoxes, uloBoxes, assessmentBoxes]);
 
   const getMouseCoords = (e: MouseEvent | React.MouseEvent, container: HTMLDivElement) => {
     const rect = container.getBoundingClientRect();
@@ -1089,7 +1456,7 @@ export const WhiteboardCanvas: React.FC = () => {
         <div
           className="relative"
           style={{
-            width: `100%`,
+            width: `120%`,
             height: `${innerHeight}px`,
             backgroundColor: '#fff',
             backgroundImage:
@@ -1113,93 +1480,199 @@ export const WhiteboardCanvas: React.FC = () => {
               }}
             />
           ))}
-          {unitBoxes.map((unit) => (
-            <UnitBox
-              key={unit.id}
-              unit={{ ...unit, width: columnWidth }}
-              draggedUnit={draggedUnit}
-              selectedUnits={selectedUnits}
-              connectionMode={connectionMode}
-              connectionSource={connectionSource}
-              isExpanded={expandedUnits.has(unit.id)}
-              activeTab={activeTabs[unit.id] || "info"}
-              unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
-              currentCLOs={currentCLOs || []}
-              onMouseDown={handleMouseDown}
-              onDoubleClick={(unitId) => {
-                if (isDragging) return;
-                startEdit(unitId);
-              }}
-              onClick={() => undefined}
-              onMouseEnter={() => undefined}
-              onMouseLeave={() => undefined}
-              onContextMenu={handleUnitRightClick}
-              onDrop={handleUnitBoxDrop}
-              toggleExpand={toggleExpand}
-              setActiveTab={(id, tab) => setActiveTabs((prev) => ({ ...prev, [id]: tab }))}
-              deleteUnit={(unitId) => {
-                const targetUnit = unitBoxes.find((u) => u.id === unitId);
-                setUnitBoxes(unitBoxes.filter((u) => u.id !== unitId));
-                if (targetUnit?.unitId) {
-                  setUnitMappings((prev) => {
-                    const next = { ...prev };
-                    delete next[targetUnit.unitId!];
-                    return next;
-                  });
-                }
-              }}
-              getCLOColor={getCLOColor}
-            />
-          ))}
 
-          {cloBoxes.map((cloBox) => (
-            <CLOBox
-              key={cloBox.id}
-              clo={cloBox.clo}
-              x={cloBox.x}
-              y={cloBox.y}
-              width={CLO_BOX_SIZE}
-              isDragging={draggedCLOId === cloBox.id}
-              isSelected={selectedCLOId === cloBox.id}
-              color={getCLOColor(cloBox.clo.cloId || 0)}
-              onMouseDown={(e) => handleCLOMouseDown(e, cloBox.id)}
-              onClick={() => setSelectedCLOId((prev) => (prev === cloBox.id ? null : cloBox.id))}
-              onDescriptionUpdate={(newDescription) => {
-                // Update local state
-                setCloBoxes((prev) =>
-                  prev.map((box) =>
-                    box.id === cloBox.id
-                      ? {
-                          ...box,
-                          clo: { ...box.clo, cloDesc: newDescription },
-                        }
-                      : box
-                  )
-                );
-                
-                // Update via API if not custom CLO
-                if (!cloBox.isCustom && cloBox.clo.cloId && cloBox.clo.courseId) {
-                  cloStore.updateCLO({
-                    cloId: cloBox.clo.cloId,
-                    cloDesc: newDescription,
-                    courseId: cloBox.clo.courseId,
-                  });
+          <svg
+            className="absolute inset-0"
+            width="100%"
+            height="100%"
+            style={{ zIndex: 25, pointerEvents: "none", overflow: "visible" }}
+          >
+            {assessmentConnectorPaths.map((path) => (
+              <path
+                key={path.key}
+                d={path.d}
+                fill="none"
+                stroke={path.color}
+                strokeWidth={
+                  hasHoverFocus &&
+                  (isAssessmentHoverFocus
+                    ? path.assessmentBoxId !== null && focusAssessmentBoxIds.has(path.assessmentBoxId)
+                    : isUloHoverFocus
+                      ? path.uloId !== null && hoveredUloIds.has(path.uloId)
+                    : isCloHoverFocus
+                      ? path.uloId !== null && hoveredUloIds.has(path.uloId)
+                    : (path.assessmentBoxId !== null && focusAssessmentBoxIds.has(path.assessmentBoxId)) ||
+                      (path.uloId !== null && hoveredUloIds.has(path.uloId)) ||
+                      (path.unitId ? focusUnitIds.has(path.unitId) : false))
+                    ? "2.25"
+                    : "1.25"
                 }
-              }}
-              onDelete={() => {
-                setCloBoxes((prev) => prev.filter((box) => box.id !== cloBox.id));
-                setSelectedCLOId((prev) => (prev === cloBox.id ? null : prev));
-              }}
-            />
-          ))}
+                strokeDasharray="2 4"
+                strokeLinecap="round"
+                opacity={
+                  hasHoverFocus
+                    ? (isAssessmentHoverFocus
+                        ? path.assessmentBoxId !== null && focusAssessmentBoxIds.has(path.assessmentBoxId)
+                        : isUloHoverFocus
+                          ? path.uloId !== null && hoveredUloIds.has(path.uloId)
+                        : isCloHoverFocus
+                          ? path.uloId !== null && hoveredUloIds.has(path.uloId)
+                        : (path.assessmentBoxId !== null && focusAssessmentBoxIds.has(path.assessmentBoxId)) ||
+                          (path.uloId !== null && hoveredUloIds.has(path.uloId)) ||
+                          (path.unitId ? focusUnitIds.has(path.unitId) : false))
+                      ? "0.9"
+                      : "0.12"
+                    : "0.45"
+                }
+              />
+            ))}
+
+            {uloToCloConnectorPaths.map((path) => (
+              <path
+                key={path.key}
+                d={path.d}
+                fill="none"
+                stroke={path.color}
+                strokeWidth={
+                  hasHoverFocus &&
+                  path.uloId !== null &&
+                  path.cloId !== null &&
+                  hoveredUloIds.has(path.uloId) &&
+                  hoveredCloIds.has(path.cloId)
+                    ? "2"
+                    : "1"
+                }
+                strokeDasharray="2 4"
+                strokeLinecap="round"
+                opacity={
+                  hasHoverFocus
+                    ? path.uloId !== null &&
+                      path.cloId !== null &&
+                      hoveredUloIds.has(path.uloId) &&
+                      hoveredCloIds.has(path.cloId)
+                      ? "0.85"
+                      : "0.1"
+                    : "0.35"
+                }
+              />
+            ))}
+          </svg>
+
+          {unitBoxes.map((unit) => {
+            const unitId = unit.unitId || null;
+            const isRelated = !hasHoverFocus || (unitId !== null && focusUnitIds.has(unitId));
+
+            return (
+              <div key={unit.id} style={getNodeStateStyle(isRelated)}>
+                <UnitBox
+                  unit={{ ...unit, width: columnWidth }}
+                  draggedUnit={draggedUnit}
+                  selectedUnits={selectedUnits}
+                  connectionMode={connectionMode}
+                  connectionSource={connectionSource}
+                  isExpanded={expandedUnits.has(unit.id)}
+                  activeTab={activeTabs[unit.id] || "info"}
+                  unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
+                  currentCLOs={currentCLOs || []}
+                  onMouseDown={handleMouseDown}
+                  onDoubleClick={(unitId) => {
+                    if (isDragging) return;
+                    startEdit(unitId);
+                  }}
+                  onClick={() => undefined}
+                  onMouseEnter={(unitId) => {
+                    setHoveredAssessmentBoxId(null);
+                    setHoveredUloBoxId(null);
+                    setHoveredCloBoxId(null);
+                    setHoveredUnitId(unitId);
+                  }}
+                  onMouseLeave={() => setHoveredUnitId(null)}
+                  onContextMenu={handleUnitRightClick}
+                  onDrop={handleUnitBoxDrop}
+                  toggleExpand={toggleExpand}
+                  setActiveTab={(id, tab) => setActiveTabs((prev) => ({ ...prev, [id]: tab }))}
+                  deleteUnit={(unitId) => {
+                    const targetUnit = unitBoxes.find((u) => u.id === unitId);
+                    setUnitBoxes(unitBoxes.filter((u) => u.id !== unitId));
+                    if (targetUnit?.unitId) {
+                      setUnitMappings((prev) => {
+                        const next = { ...prev };
+                        delete next[targetUnit.unitId!];
+                        return next;
+                      });
+                    }
+                  }}
+                  getCLOColor={getCLOColor}
+                />
+              </div>
+            );
+          })}
+
+          {cloBoxes.map((cloBox) => {
+            const cloId = cloBox.clo.cloId;
+            const isRelated = !hasHoverFocus || (typeof cloId === "number" && hoveredCloIds.has(cloId));
+
+            return (
+              <div
+                key={cloBox.id}
+                style={getNodeStateStyle(isRelated)}
+                onMouseEnter={() => {
+                  setHoveredAssessmentBoxId(null);
+                  setHoveredUloBoxId(null);
+                  setHoveredUnitId(null);
+                  setHoveredCloBoxId(cloBox.id);
+                }}
+                onMouseLeave={() => setHoveredCloBoxId(null)}
+              >
+                <CLOBox
+                  clo={cloBox.clo}
+                  x={cloBox.x}
+                  y={cloBox.y}
+                  width={CLO_BOX_SIZE}
+                  isDragging={draggedCLOId === cloBox.id}
+                  isSelected={selectedCLOId === cloBox.id}
+                  color={getCLOColor(cloBox.clo.cloId || 0)}
+                  onMouseDown={(e) => handleCLOMouseDown(e, cloBox.id)}
+                  onClick={() => setSelectedCLOId((prev) => (prev === cloBox.id ? null : cloBox.id))}
+                  onDescriptionUpdate={(newDescription) => {
+                    // Update local state
+                    setCloBoxes((prev) =>
+                      prev.map((box) =>
+                        box.id === cloBox.id
+                          ? {
+                              ...box,
+                              clo: { ...box.clo, cloDesc: newDescription },
+                            }
+                          : box
+                      )
+                    );
+
+                    // Update via API if not custom CLO
+                    if (!cloBox.isCustom && cloBox.clo.cloId && cloBox.clo.courseId) {
+                      cloStore.updateCLO({
+                        cloId: cloBox.clo.cloId,
+                        cloDesc: newDescription,
+                        courseId: cloBox.clo.courseId,
+                      });
+                    }
+                  }}
+                  onDelete={() => {
+                    setCloBoxes((prev) => prev.filter((box) => box.id !== cloBox.id));
+                    setSelectedCLOId((prev) => (prev === cloBox.id ? null : prev));
+                  }}
+                />
+              </div>
+            );
+          })}
 
           {uloBoxes.map((uloBox) => {
             const linkedUnit = unitBoxes.find((unit) => unit.unitId === uloBox.ulo.unitId);
             const uloColor = linkedUnit?.color || "#06B6D4";
+            const isRelated = !hasHoverFocus || (typeof uloBox.ulo.uloId === "number" && hoveredUloIds.has(uloBox.ulo.uloId));
 
             return (
+            <div key={uloBox.id} style={getNodeStateStyle(isRelated)}>
             <ULOBox
-              key={uloBox.id}
               ulo={uloBox.ulo}
               x={uloBox.x}
               y={uloBox.y}
@@ -1209,6 +1682,13 @@ export const WhiteboardCanvas: React.FC = () => {
               color={uloColor}
               onMouseDown={(e) => handleULOMouseDown(e, uloBox.id)}
               onClick={() => setSelectedULOId((prev) => (prev === uloBox.id ? null : uloBox.id))}
+              onHoverStart={() => {
+                setHoveredAssessmentBoxId(null);
+                setHoveredUnitId(null);
+                setHoveredCloBoxId(null);
+                setHoveredUloBoxId(uloBox.id);
+              }}
+              onHoverEnd={() => setHoveredUloBoxId(null)}
               availableUnits={savedCourseUnits}
               availableCLOs={((currentCLOs || []) as CourseLearningOutcome[]).filter(
                 (clo): clo is CourseLearningOutcome & { cloId: number } => typeof clo.cloId === "number"
@@ -1315,16 +1795,22 @@ export const WhiteboardCanvas: React.FC = () => {
                 setSelectedULOId((prev) => (prev === uloBox.id ? null : prev));
               }}
             />
+            </div>
             );
           })}
 
           {assessmentBoxes.map((assessmentBox) => {
             const linkedUnit = unitBoxes.find((unit) => unit.unitId === assessmentBox.assessment.unitId);
             const assessmentColor = linkedUnit?.color || "#D97706";
+            const isRelated =
+              !hasHoverFocus ||
+              focusAssessmentBoxIds.has(assessmentBox.id) ||
+              (typeof assessmentBox.assessment.assessmentId === "number" &&
+                hoveredAssessmentIds.has(assessmentBox.assessment.assessmentId));
 
             return (
+              <div key={assessmentBox.id} style={getNodeStateStyle(isRelated)}>
               <AssessmentBox
-                key={assessmentBox.id}
                 assessment={assessmentBox.assessment}
                 x={assessmentBox.x}
                 y={assessmentBox.y}
@@ -1336,6 +1822,13 @@ export const WhiteboardCanvas: React.FC = () => {
                 onClick={() =>
                   setSelectedAssessmentId((prev) => (prev === assessmentBox.id ? null : assessmentBox.id))
                 }
+                onMouseEnter={() => {
+                  setHoveredUloBoxId(null);
+                  setHoveredCloBoxId(null);
+                  setHoveredUnitId(null);
+                  setHoveredAssessmentBoxId(assessmentBox.id);
+                }}
+                onMouseLeave={() => setHoveredAssessmentBoxId(null)}
                 availableUnits={savedCourseUnits}
                 availableULOs={uloBoxes
                   .map((box) => ({
@@ -1348,6 +1841,9 @@ export const WhiteboardCanvas: React.FC = () => {
                       typeof ulo.uloId === "number" && !!ulo.unitId
                   )}
                 onUpdate={(updated) => {
+                  const previousAssessmentIds = assessmentBox.assessment.unitLosIds || [];
+                  const nextAssessmentIds = updated.unitLosIds || [];
+
                   setAssessmentBoxes((prev) =>
                     prev.map((box) =>
                       box.id === assessmentBox.id
@@ -1366,6 +1862,41 @@ export const WhiteboardCanvas: React.FC = () => {
                         : box
                     )
                   );
+
+                  const assessmentIdForLinks =
+                    typeof assessmentBox.assessment.assessmentId === "number"
+                      ? assessmentBox.assessment.assessmentId
+                      : null;
+
+                  if (assessmentIdForLinks !== null) {
+                    setUloBoxes((prev) =>
+                      prev.map((box) => {
+                        const currentIds = Array.isArray(box.ulo.assessmentIds) ? box.ulo.assessmentIds : [];
+                        const shouldKeep = nextAssessmentIds.includes(box.ulo.uloId || -1);
+                        const wasLinked = previousAssessmentIds.includes(box.ulo.uloId || -1);
+
+                        if (!shouldKeep && !wasLinked) {
+                          return box;
+                        }
+
+                        const nextIds = new Set(currentIds);
+
+                        if (shouldKeep) {
+                          nextIds.add(assessmentIdForLinks);
+                        } else {
+                          nextIds.delete(assessmentIdForLinks);
+                        }
+
+                        return {
+                          ...box,
+                          ulo: {
+                            ...box.ulo,
+                            assessmentIds: Array.from(nextIds),
+                          },
+                        };
+                      })
+                    );
+                  }
 
                   if (!updated.unitId) {
                     return;
@@ -1430,6 +1961,29 @@ export const WhiteboardCanvas: React.FC = () => {
                         setDraggedAssessmentId((prevDragged) =>
                           prevDragged === assessmentBox.id ? backendAssessmentId : prevDragged
                         );
+
+                        setUloBoxes((prev) =>
+                          prev.map((box) => {
+                            const currentIds = Array.isArray(box.ulo.assessmentIds) ? box.ulo.assessmentIds : [];
+                            const nextIds = new Set(currentIds);
+                            const linkedUloIds = Array.isArray(created.unitLos)
+                              ? created.unitLos.map((link) => link.uloId)
+                              : updated.unitLosIds;
+
+                            if (linkedUloIds.includes(box.ulo.uloId || -1)) {
+                              nextIds.add(backendAssessmentId);
+                              return {
+                                ...box,
+                                ulo: {
+                                  ...box.ulo,
+                                  assessmentIds: Array.from(nextIds),
+                                },
+                              };
+                            }
+
+                            return box;
+                          })
+                        );
                       })
                       .catch((error) => {
                         console.error("Error creating assessment:", error);
@@ -1442,6 +1996,7 @@ export const WhiteboardCanvas: React.FC = () => {
                   setSelectedAssessmentId((prev) => (prev === assessmentBox.id ? null : prev));
                 }}
               />
+              </div>
             );
           })}
         </div>

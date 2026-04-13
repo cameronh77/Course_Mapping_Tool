@@ -112,7 +112,9 @@ export const viewAssessments = async (_req: Request, res: Response) => {
   try {
     const assessments = await prisma.assessment.findMany({
       orderBy: { assessmentId: "asc" },
-      include: { unitLos: true },
+      include: {
+        unitLos: true,
+      },
     });
 
     return res.status(200).json(assessments);
