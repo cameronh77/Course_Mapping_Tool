@@ -83,7 +83,6 @@ export const UnitInternalCanvas: React.FC = () => {
 
   // State for editing
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [showForm, setShowForm] = useState<boolean>(false);
 
   // State for dragging existing Assessments
   const [draggedAssessment, setDraggedAssessment] = useState<number | null>(
@@ -117,7 +116,9 @@ export const UnitInternalCanvas: React.FC = () => {
   );
 
   // Assessment-ULO link state
-  const [assessmentULOLinks, setAssessmentULOLinks] = useState<AssessmentULOLink[]>([]);
+  const [assessmentULOLinks, setAssessmentULOLinks] = useState<
+    AssessmentULOLink[]
+  >([]);
   const [uloConnectionMode, setUloConnectionMode] = useState<boolean>(false);
   const [uloConnectionSource, setUloConnectionSource] = useState<{
     type: "assessment" | "ulo";
@@ -182,15 +183,12 @@ export const UnitInternalCanvas: React.FC = () => {
   const [showAssessmentForm, setShowAssessmentForm] = useState<Boolean>(false);
 
   useEffect(() => {
-    const loadUnits = async () => {
-      await viewUnits();
-      if (currentCourse?.courseId) {
-        await viewCourseTags(currentCourse.courseId);
-        await viewUnitTagsByCourse(currentCourse.courseId);
-      }
+    const loadAssessments = async () => {
+      console.log(currentUnit.unitId);
+      await viewAssessments(currentUnit.unitId);
     };
-    loadUnits();
-  }, [currentCourse?.courseId]);
+    loadAssessments();
+  }, [currentUnit.unitId]);
 
   useEffect(() => {
     const loadRelationships = async () => {
@@ -210,6 +208,7 @@ export const UnitInternalCanvas: React.FC = () => {
 
   useEffect(() => {
     const loadCanvasState = async () => {
+      //console.log(currentUnit?.unitId);
       if (currentUnit?.unitId) {
         try {
           // Load assessments
@@ -466,6 +465,7 @@ export const UnitInternalCanvas: React.FC = () => {
       dueWeek: [],
       conditions: "",
     };
+    setEditingId(newAssessment?.id);
 
     setDraggedNewAssessment({
       assessment: newAssessment,
@@ -526,7 +526,7 @@ export const UnitInternalCanvas: React.FC = () => {
   ) => {
     const newAssessment = {
       id: selectedAssessment.id,
-
+      name: selectedAssessment.name,
       description: selectedAssessment.description,
       type: selectedAssessment.type,
       x: x,
@@ -541,11 +541,14 @@ export const UnitInternalCanvas: React.FC = () => {
 
   function handleAssessmentFormSave(formData: AssessmentFormData) {
     if (editingId) {
+      console.log(editingId);
       const editedAssessment = assessmentBoxes.find(
         (assessment) => assessment.id === editingId
       );
+      console.log(editedAssessment);
+      console.log(editedAssessment?.dbId);
       if (editedAssessment) {
-        updateAssessment(editedAssessment.id!, {
+        updateAssessment(editedAssessment.dbId, {
           description: formData.description || editedAssessment.description,
           type: formData.type || editedAssessment.type,
           name: formData.name || editedAssessment.name,
@@ -556,6 +559,10 @@ export const UnitInternalCanvas: React.FC = () => {
           feedbackWeek: formData.feedbackWeek || editedAssessment.feedbackWeek,
           feedbackDetails:
             formData.feedbackDetails || editedAssessment.feedbackDetails,
+          position: {
+            x: formData.x || editedAssessment.x,
+            y: formData.y || editedAssessment.y,
+          },
         })
           .then(() => {
             setAssessmentBoxes(
@@ -578,6 +585,8 @@ export const UnitInternalCanvas: React.FC = () => {
                       feedbackDetails:
                         formData.feedbackDetails ||
                         editedAssessment.feedbackDetails,
+                      x: formData.x || editedAssessment.x,
+                      y: formData.y || editedAssessment.y,
                     }
                   : assessment
               )
@@ -720,9 +729,7 @@ export const UnitInternalCanvas: React.FC = () => {
     }
     setULOBoxes(uloBoxes.filter((ulo) => ulo.id !== uloId));
     // Also remove any links for this ULO
-    setAssessmentULOLinks((prev) =>
-      prev.filter((l) => l.uloId !== dbId)
-    );
+    setAssessmentULOLinks((prev) => prev.filter((l) => l.uloId !== dbId));
   }
 
   const handleCreateAssessment = async (data: AssessmentFormData) => {
@@ -770,6 +777,7 @@ export const UnitInternalCanvas: React.FC = () => {
         );
       }
       setShowCreateAssessmentForm(false);
+      setEditingId(null);
     } catch (err) {
       console.error(err);
       alert("Failed to create Assessment.");
@@ -937,8 +945,7 @@ export const UnitInternalCanvas: React.FC = () => {
         setUloConnectionSource({ type, id });
         return;
       }
-      const assessmentId =
-        type === "assessment" ? id : uloConnectionSource.id;
+      const assessmentId = type === "assessment" ? id : uloConnectionSource.id;
       const uloId = type === "ulo" ? id : uloConnectionSource.id;
 
       createAssessmentULOLink(assessmentId, uloId);
@@ -1052,9 +1059,7 @@ export const UnitInternalCanvas: React.FC = () => {
           {uloBoxes.map((ulo) => (
             <div
               key={ulo.id}
-              onMouseEnter={() =>
-                setHoveredItem(`ulo-${ulo.uloId ?? ulo.id}`)
-              }
+              onMouseEnter={() => setHoveredItem(`ulo-${ulo.uloId ?? ulo.id}`)}
               onMouseLeave={() => setHoveredItem(null)}
               onClick={
                 uloConnectionMode
@@ -1149,6 +1154,12 @@ export const UnitInternalCanvas: React.FC = () => {
                   feedbackDetails:
                     assessmentBoxes.find((a) => a.id === editingId)
                       ?.feedbackDetails || undefined,
+                  x:
+                    assessmentBoxes.find((a) => a.id === editingId)?.x ||
+                    undefined,
+                  y:
+                    assessmentBoxes.find((a) => a.id === editingId)?.y ||
+                    undefined,
                 }}
                 onView={() => navigate("/")}
               />
@@ -1175,7 +1186,13 @@ export const UnitInternalCanvas: React.FC = () => {
                 onSave={handleCreateAssessment}
                 initialData={{
                   description: undefined,
-                  type: "Project",
+                  type: "Artefact",
+                  x:
+                    assessmentBoxes.find((a) => a.id === editingId)?.x ||
+                    undefined,
+                  y:
+                    assessmentBoxes.find((a) => a.id === editingId)?.y ||
+                    undefined,
                 }}
                 onView={() => console.log("nothing")}
               />
@@ -1214,7 +1231,10 @@ export const UnitInternalCanvas: React.FC = () => {
                   Edit Unit Learning Outcome
                 </h2>
                 <button
-                  onClick={() => { setShowULOForm(false); setEditingId(null); }}
+                  onClick={() => {
+                    setShowULOForm(false);
+                    setEditingId(null);
+                  }}
                   className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors"
                 >
                   &times;
@@ -1240,7 +1260,10 @@ export const UnitInternalCanvas: React.FC = () => {
                   setShowULOForm(false);
                   setEditingId(null);
                 }}
-                onCancel={() => { setShowULOForm(false); setEditingId(null); }}
+                onCancel={() => {
+                  setShowULOForm(false);
+                  setEditingId(null);
+                }}
                 initialData={uloBoxes.find((u) => u.id === editingId)?.uloDesc}
               />
             </div>

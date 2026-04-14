@@ -63,13 +63,27 @@ export interface UnitBox {
   color?: string;
 }
 
+export type AssessmentType =
+  | "Artefact"
+  | "Demonstration"
+  | "Examination"
+  | "Exercise"
+  | "Performance"
+  | "Portfolio"
+  | "Presentation"
+  | "Project"
+  | "Quiz / Test"
+  | "Work integrated"
+  | "Written"
+  | null;
+
 export interface Assessment {
   //Frontend ID
   id: number;
   dbID: number | null;
   description: string;
   unitId: string;
-  type: "Project" | "Test" | null;
+  type: AssessmentType;
   name: string;
   value: number | null;
   hurdleReq: number | null;
@@ -86,7 +100,7 @@ export interface AssessmentBox {
   dbID: number | null;
   description: string;
   unitId: string;
-  type: "Project" | "Test" | null;
+  type: AssessmentType;
   name: string;
   value: number | null;
   hurdleReq: number | null;

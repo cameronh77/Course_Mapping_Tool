@@ -43,14 +43,7 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
 
   const [newTag, setNewTag] = useState("");
 
-  // 🔹 Assessment templates
-  const assessmentTemplates: AssessmentTemplate[] = [
-    { type: "ASSIGNMENT", label: "📝 Assignment" },
-    { type: "QUIZ", label: "❓ Quiz" },
-    { type: "EXAM", label: "📘 Exam" },
-    { type: "PROJECT", label: "🛠 Project" },
-    { type: "PRESENTATION", label: "🎤 Presentation" },
-  ];
+  const assessmentTemplate: AssessmentTemplate = { type: "ASSESSMENT", label: "📋 Assessment" };
 
   return (
     <div className="bg-white p-4 w-full h-full flex flex-col">
@@ -95,16 +88,13 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
           </p>
 
           <div className="flex flex-col gap-2">
-            {assessmentTemplates.map((template) => (
-              <div
-                key={template.type}
-                draggable
-                onMouseDown={(e) => handleNewAssessmentMouseDown(e, template)}
-                className="p-3 rounded border bg-blue-50 hover:bg-blue-100 cursor-grab active:cursor-grabbing shadow-sm text-sm font-medium text-blue-800 transition"
-              >
-                {template.label}
-              </div>
-            ))}
+            <div
+              draggable
+              onMouseDown={(e) => handleNewAssessmentMouseDown(e, assessmentTemplate)}
+              className="p-3 rounded border bg-blue-50 hover:bg-blue-100 cursor-grab active:cursor-grabbing shadow-sm text-sm font-medium text-blue-800 transition"
+            >
+              {assessmentTemplate.label}
+            </div>
           </div>
         </div>
 

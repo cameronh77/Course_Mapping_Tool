@@ -1,5 +1,19 @@
 import React, { useState } from "react";
-import type { Assessment } from "../../types";
+import type { Assessment, AssessmentType } from "../../types";
+
+const ASSESSMENT_TYPES: AssessmentType[] = [
+  "Artefact",
+  "Demonstration",
+  "Examination",
+  "Exercise",
+  "Performance",
+  "Portfolio",
+  "Presentation",
+  "Project",
+  "Quiz / Test",
+  "Work integrated",
+  "Written",
+];
 
 interface AssessmentFormProps {
   onSave: (data: Assessment) => void;
@@ -10,7 +24,7 @@ interface AssessmentFormProps {
 interface AssessmentFormData {
   description: string;
   unitId: string;
-  type: "Project" | "Test" | null;
+  type: AssessmentType;
   name: string;
   value: number;
   hurdleReq: number;
@@ -104,16 +118,15 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
             onChange={(e) =>
               setForm((prev) => ({
                 ...prev,
-                type:
-                  e.target.value === ""
-                    ? null
-                    : (e.target.value as "Project" | "Test"),
+                type: e.target.value === "" ? null : (e.target.value as AssessmentType),
               }))
             }
             className={inputClass}
           >
-            <option value="Project">Project</option>
-            <option value="Test">Test</option>
+            <option value="">Select type...</option>
+            {ASSESSMENT_TYPES.map((t) => (
+              <option key={t} value={t ?? ""}>{t}</option>
+            ))}
           </select>
         </div>
 
