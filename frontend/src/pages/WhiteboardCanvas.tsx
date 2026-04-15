@@ -4,7 +4,7 @@ import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
 import { CLOBox } from "../components/common/CLOBox";
-import { ULOBox } from "../components/common/ULOBox";
+import { ULOBox } from "../components/common/ULOBox.tsx";
 import { AssessmentBox } from "../components/common/AssessmentBox";
 import { registerWhiteboardHandlers, clearWhiteboardHandlers } from "../lib/whiteboardHandlers";
 import { useUnitStore } from "../stores/useUnitStore";
@@ -51,6 +51,13 @@ type ULOBoxItem = {
   ulo: UnitLearningOutcome;
   x: number;
   y: number;
+};
+
+type ULOUpdatePayload = {
+  uloDesc: string;
+  unitId: string;
+  cloIds: number[];
+  assessmentIds: number[];
 };
 
 type AssessmentBoxItem = {
@@ -2137,9 +2144,9 @@ export const WhiteboardCanvas: React.FC = () => {
               availableCLOs={((currentCLOs || []) as CourseLearningOutcome[]).filter(
                 (clo): clo is CourseLearningOutcome & { cloId: number } => typeof clo.cloId === "number"
               )}
-              onUpdate={(updated) => {
+              onUpdate={(updated: ULOUpdatePayload) => {
                 const nextCloIds = Array.from(new Set(updated.cloIds));
-                const primaryCloId = nextCloIds.length > 0 ? nextCloIds[0] : null;
+                const primaryCloId: number | null = nextCloIds.length > 0 ? nextCloIds[0] : null;
 
                 setUloBoxes((prev) =>
                   prev.map((box) =>

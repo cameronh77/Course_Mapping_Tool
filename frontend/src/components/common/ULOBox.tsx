@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import type { CourseLearningOutcome, UnitLearningOutcome } from "../../types";
+import type { CourseLearningOutcome, UnitLearningOutcome, unitLearningOutcomeBox } from "../../types";
 
 type UnitOption = {
   unitId: string;
@@ -13,7 +13,7 @@ type ULOUpdatePayload = {
   assessmentIds: number[];
 };
 
-interface ULOBoxProps {
+interface WhiteboardULOBoxProps {
   ulo: UnitLearningOutcome;
   x: number;
   y: number;
@@ -29,46 +29,81 @@ interface ULOBoxProps {
   availableCLOs: CourseLearningOutcome[];
   onDelete?: () => void;
   onUpdate?: (updated: ULOUpdatePayload) => void;
-import React from "react";
-import type { unitLearningOutcomeBox } from "../../types";
+}
 
-interface ULOBoxProps {
+interface LegacyULOBoxProps {
   ulo: unitLearningOutcomeBox;
   onMouseDown: (e: React.MouseEvent, id: number) => void;
   onDoubleClick: (id: number) => void;
   onDelete?: (id: number) => void;
 }
 
-export const ULOBox: React.FC<ULOBoxProps> = ({
-  ulo,
-  x,
-  y,
-  width,
-  isDragging,
-  isSelected,
-  color,
-  onMouseDown,
-  onClick,
-  onHoverStart,
-  onHoverEnd,
-  availableUnits,
-  availableCLOs,
-  onDelete,
-  onUpdate,
-}) => {
+type ULOBoxProps = WhiteboardULOBoxProps | LegacyULOBoxProps;
+
+const isLegacyProps = (props: ULOBoxProps): props is LegacyULOBoxProps => {
+  return "onDoubleClick" in props;
+};
+
+export const ULOBox: React.FC<ULOBoxProps> = (props) => {
+  if (isLegacyProps(props)) {
+    const { ulo, onMouseDown, onDoubleClick, onDelete } = props;
+
+    return (
+      <div
+        className="absolute group bg-orange-100 border border-orange-300 rounded-lg shadow-md p-3 cursor-move hover:shadow-lg transition w-64"
+        style={{
+          left: ulo.x,
+          top: ulo.y,
+        }}
+        onMouseDown={(e) => onMouseDown(e, ulo.id!)}
+        onDoubleClick={() => onDoubleClick(ulo.id!)}
+      >
+        {onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(ulo.id!);
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 border-2 border-white shadow-sm text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+            title="Remove ULO"
+          >
+            x
+          </button>
+        )}
+
+        <h3 className="text-sm font-bold text-orange-700 mb-2">Unit Learning Outcome</h3>
+
+        <p className="text-xs text-gray-800 whitespace-pre-wrap break-words">{ulo.uloDesc || "No description"}</p>
+      </div>
+    );
+  }
+
+  const {
+    ulo,
+    x,
+    y,
+    width,
+    isDragging,
+    isSelected,
+    color,
+    onMouseDown,
+    onClick,
+    onHoverStart,
+    onHoverEnd,
+    availableUnits,
+    availableCLOs,
+    onDelete,
+    onUpdate,
+  } = props;
+
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(ulo.uloDesc);
   const [selectedUnitId, setSelectedUnitId] = useState(ulo.unitId || "");
   const [selectedCloIds, setSelectedCloIds] = useState<number[]>(
-    ulo.cloIds && ulo.cloIds.length > 0
-      ? ulo.cloIds
-      : typeof ulo.cloId === "number"
-      ? [ulo.cloId]
-      : []
+    ulo.cloIds && ulo.cloIds.length > 0 ? ulo.cloIds : typeof ulo.cloId === "number" ? [ulo.cloId] : []
   );
-  const [assessmentInput, setAssessmentInput] = useState(
-    (ulo.assessmentIds || []).join(",")
-  );
+  const [assessmentInput, setAssessmentInput] = useState((ulo.assessmentIds || []).join(","));
   const [unitSearch, setUnitSearch] = useState(() => {
     const selected = availableUnits.find((u) => u.unitId === (ulo.unitId || ""));
     return selected?.label || ulo.unitId || "";
@@ -103,17 +138,12 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
     const selected = availableUnits.find((u) => u.unitId === (ulo.unitId || ""));
     setUnitSearch(selected?.label || ulo.unitId || "");
     setSelectedCloIds(
-      ulo.cloIds && ulo.cloIds.length > 0
-        ? ulo.cloIds
-        : typeof ulo.cloId === "number"
-        ? [ulo.cloId]
-        : []
+      ulo.cloIds && ulo.cloIds.length > 0 ? ulo.cloIds : typeof ulo.cloId === "number" ? [ulo.cloId] : []
     );
     setAssessmentInput((ulo.assessmentIds || []).join(","));
     setIsEditing(false);
   };
 
-  const boxWidth = width;
   const boxHeight = 72;
 
   return (
@@ -124,7 +154,7 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
       style={{
         left: `${x}px`,
         top: `${y}px`,
-        width: `${boxWidth}px`,
+        width: `${width}px`,
         height: `${boxHeight}px`,
         backgroundColor: color,
       }}
@@ -139,7 +169,11 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
       </span>
 
       {isSelected && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 min-w-[220px] max-w-[320px] p-2 rounded border border-gray-200 bg-white text-gray-700 text-xs leading-relaxed shadow-xl z-[60]">
+        <div
+          className="absolute top-full left-1/2 -translate-x-1/2 mt-2 min-w-[220px] max-w-[320px] p-2 rounded border border-gray-200 bg-white text-gray-700 text-xs leading-relaxed shadow-xl z-[60]"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
           {isEditing ? (
             <>
               <textarea
@@ -148,6 +182,7 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
                 onChange={(e) => setEditText(e.target.value)}
                 className="w-full p-1 mb-2 border border-gray-300 rounded text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
                 rows={3}
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               />
               <div className="mb-2">
@@ -158,10 +193,12 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
                   onChange={(e) => setUnitSearch(e.target.value)}
                   placeholder="Search saved course units..."
                   className="w-full rounded border border-gray-300 p-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                 />
                 <div
                   className="mt-1 max-h-24 overflow-y-auto rounded border border-gray-300 p-1"
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
@@ -191,9 +228,7 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
                       {unit.label}
                     </button>
                   ))}
-                  {!filteredUnits.length && (
-                    <div className="text-[11px] text-gray-400">No matching units</div>
-                  )}
+                  {!filteredUnits.length && <div className="text-[11px] text-gray-400">No matching units</div>}
                 </div>
               </div>
 
@@ -204,6 +239,7 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
                     const cloId = clo.cloId;
                     if (typeof cloId !== "number") return null;
                     const checked = selectedCloIds.includes(cloId);
+
                     return (
                       <label key={cloId} className="mb-1 flex items-start gap-1 text-[11px] text-gray-700">
                         <input
@@ -233,6 +269,7 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
                   onChange={(e) => setAssessmentInput(e.target.value)}
                   placeholder="e.g. 1,2,5"
                   className="w-full rounded border border-gray-300 p-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -263,15 +300,11 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
           ) : (
             <>
               <div className="mb-2">{ulo.uloDesc}</div>
-              <div className="mb-2 text-[11px] text-gray-500">
-                Unit: {ulo.unitId || "None"}
-              </div>
+              <div className="mb-2 text-[11px] text-gray-500">Unit: {ulo.unitId || "None"}</div>
               <div className="mb-2 text-[11px] text-gray-500">
                 CLO(s): {(ulo.cloIds && ulo.cloIds.length > 0 ? ulo.cloIds : ulo.cloId ? [ulo.cloId] : []).join(", ") || "None"}
               </div>
-              <div className="mb-2 text-[11px] text-gray-500">
-                Assessments: {(ulo.assessmentIds || []).join(", ") || "None"}
-              </div>
+              <div className="mb-2 text-[11px] text-gray-500">Assessments: {(ulo.assessmentIds || []).join(", ") || "None"}</div>
               <div className="flex gap-1">
                 <button
                   type="button"
@@ -300,38 +333,6 @@ export const ULOBox: React.FC<ULOBoxProps> = ({
           )}
         </div>
       )}
-  onMouseDown,
-  onDoubleClick,
-  onDelete,
-}) => {
-  return (
-    <div
-      className="absolute group bg-orange-100 border border-orange-300 rounded-lg shadow-md p-3 cursor-move hover:shadow-lg transition w-64"
-      style={{
-        left: ulo.x,
-        top: ulo.y,
-      }}
-      onMouseDown={(e) => onMouseDown(e, ulo.id!)}
-      onDoubleClick={() => onDoubleClick(ulo.id!)}
-    >
-      {onDelete && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(ulo.id!); }}
-          onMouseDown={(e) => e.stopPropagation()}
-          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 border-2 border-white shadow-sm text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-          title="Remove ULO"
-        >
-          ×
-        </button>
-      )}
-
-      <h3 className="text-sm font-bold text-orange-700 mb-2">
-        Unit Learning Outcome
-      </h3>
-
-      <p className="text-xs text-gray-800 whitespace-pre-wrap break-words">
-        {ulo.uloDesc || "No description"}
-      </p>
     </div>
   );
 };

@@ -22,14 +22,6 @@ export interface UnitLearningOutcome {
   assessmentIds?: number[];
 }
 
-export interface Assessment {
-  assessmentId?: number | null;
-  aDesc: string;
-  unitId?: string;
-  assessmentType?: string;
-  assessmentConditions?: string;
-  hurdleReq?: number | null;
-  unitLosIds?: number[];
 export interface unitLearningOutcome {
   id?: number;
   uloId?: number | null;
@@ -97,39 +89,51 @@ export type AssessmentType =
   | "Written"
   | null;
 
+// Shared assessment type used across both whiteboard and legacy canvases.
 export interface Assessment {
-  //Frontend ID
-  id: number;
-  dbID: number | null;
-  description: string;
-  unitId: string;
-  type: AssessmentType;
-  name: string;
-  value: number | null;
-  hurdleReq: number | null;
-  dueWeek: number[];
-  conditions: string;
-  feedbackWeek: number[];
-  feedbackDetails: string[];
-  x: number;
-  y: number;
+  // Whiteboard fields
+  assessmentId?: number | null;
+  aDesc?: string;
+  unitId?: string;
+  assessmentType?: string;
+  assessmentConditions?: string;
+  hurdleReq?: number | null;
+  unitLosIds?: number[];
+
+  // Legacy/internal-canvas fields
+  id?: number;
+  dbID?: number | null;
+  description?: string;
+  type?: AssessmentType;
+  name?: string;
+  value?: number | null;
+  dueWeek?: number[];
+  conditions?: string;
+  feedbackWeek?: number[];
+  feedbackDetails?: string[];
+  x?: number;
+  y?: number;
 }
 
+// Box type consumed by line-rendering components.
 export interface AssessmentBox {
   id: number;
-  dbID: number | null;
-  description: string;
-  unitId: string;
-  type: AssessmentType;
-  name: string;
-  value: number | null;
-  hurdleReq: number | null;
-  dueWeek: number[];
-  conditions: string;
-  feedbackWeek: number[];
-  feedbackDetails: string[];
+  dbID?: number | null;
   x: number;
   y: number;
+  unitId?: string;
+  assessment?: Assessment;
+
+  // Legacy flattened fields (optional)
+  description?: string;
+  type?: AssessmentType;
+  name?: string;
+  value?: number | null;
+  hurdleReq?: number | null;
+  dueWeek?: number[];
+  conditions?: string;
+  feedbackWeek?: number[];
+  feedbackDetails?: string[];
 }
 
 export interface UnitMapping {
