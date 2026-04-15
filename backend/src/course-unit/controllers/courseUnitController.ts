@@ -102,6 +102,14 @@ export const saveCanvasState = async (req, res) => {
       }
 
       if (allUnitIds.length > 0) {
+        const ulosToDelete = await tx.unitLearningOutcome.findMany({
+          where: { unitId: { in: allUnitIds } },
+          select: { uloId: true },
+        });
+        const uloIds = ulosToDelete.map((u) => u.uloId);
+        if (uloIds.length > 0) {
+          await tx.assessmentULO.deleteMany({ where: { uloId: { in: uloIds } } });
+        }
         await tx.unitLearningOutcome.deleteMany({ where: { unitId: { in: allUnitIds } } });
         await tx.courseUnitTags.deleteMany({ where: { courseId, unitId: { in: allUnitIds } } });
       }
