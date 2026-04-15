@@ -54,6 +54,19 @@ export const viewUnitLearningOutcomes = async (req, res) => {
   }
 };
 
+export const viewUnitLearningOutcomesByUnit = async (req, res) => {
+  const { unitId } = req.params;
+  try {
+    const unitLearningOutcomes = await prisma.unitLearningOutcome.findMany({
+      where: { unitId },
+    });
+    res.status(200).json(unitLearningOutcomes);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 export const updateUnitLearningOutcome = async (req, res) => {
     const { uloId } = req.params;
     const { uloDesc, unitId, cloId, position } = req.body;

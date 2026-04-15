@@ -44,10 +44,11 @@ model Unit {
   learningOutcomes UnitLearningOutcome[]  
   relationships    UnitRelationship[]     @relation("UnitRelations")
   relatedTo        UnitRelationship[]     @relation("RelatedUnits")
-  AssessmentULO    AssessmentULO[]     
-  Assessments      Assessment[]  
+  AssessmentULO    AssessmentULO[]
+  Assessments      Assessment[]
+  teachingActivities TeachingActivity[]
 
-  existingTags      CourseUnitTags[]      
+  existingTags      CourseUnitTags[]
 }
 
 model CourseUnit {
@@ -141,6 +142,7 @@ model UnitLearningOutcome {
   courseLO CourseLearningOutcome? @relation(fields: [cloId], references: [cloId])
 
   assessments AssessmentULO[]
+  teachingActivityLinks TeachingActivityULO[]
 }
 
 model Assessment {
@@ -158,6 +160,7 @@ model Assessment {
   unitId              String
 
   unitLos AssessmentULO[]
+  teachingActivityLinks TeachingActivityAssessment[]
 
   position            Json?
   outgoingRelationships AssessmentRelationship[] @relation("AssessmentRelations")
@@ -220,4 +223,37 @@ model UnitRelationship {
   related        Unit            @relation("RelatedUnits", fields: [relatedId], references: [unitId])
   course         Course?         @relation(fields: [courseId], references: [courseId])
   specialisation Specialisation? @relation(fields: [sId], references: [sId])
+}
+
+model TeachingActivity {
+  activityId   Int    @id @default(autoincrement())
+  activityName String
+  activityDesc String
+  activityType String
+  unitId       String
+  position     Json?
+
+  unit            Unit                         @relation(fields: [unitId], references: [unitId], onDelete: Cascade)
+  assessmentLinks TeachingActivityAssessment[]
+  uloLinks        TeachingActivityULO[]
+}
+
+model TeachingActivityAssessment {
+  activity     TeachingActivity @relation(fields: [activityId], references: [activityId], onDelete: Cascade)
+  activityId   Int
+  assessment   Assessment       @relation(fields: [assessmentId], references: [assessmentId], onDelete: Cascade)
+  assessmentId Int
+  unitId       String
+
+  @@id([activityId, assessmentId])
+}
+
+model TeachingActivityULO {
+  activity   TeachingActivity    @relation(fields: [activityId], references: [activityId], onDelete: Cascade)
+  activityId Int
+  unitLO     UnitLearningOutcome @relation(fields: [uloId], references: [uloId], onDelete: Cascade)
+  uloId      Int
+  unitId     String
+
+  @@id([activityId, uloId])
 }
