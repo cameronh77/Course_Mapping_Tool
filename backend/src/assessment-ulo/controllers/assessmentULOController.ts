@@ -1,7 +1,7 @@
 import prisma from "../../../database/prismaClient.js";
 
-export const addAssessmentULO = async (req, res) => {
-  const { assessmentId, uloId, unitId } = req.body;
+export const addAssessmentULO = async (req: any, res: any) => {
+  const { assessmentId, uloId, unitId, reversed } = req.body;
 
   try {
     if (!assessmentId || !uloId || !unitId) {
@@ -27,6 +27,7 @@ export const addAssessmentULO = async (req, res) => {
         assessmentId: parseInt(assessmentId),
         uloId: parseInt(uloId),
         unitId,
+        reversed: reversed ?? false,
       },
     });
 
@@ -37,7 +38,7 @@ export const addAssessmentULO = async (req, res) => {
   }
 };
 
-export const deleteAssessmentULO = async (req, res) => {
+export const deleteAssessmentULO = async (req: any, res: any) => {
   const { assessmentId, uloId, unitId } = req.body;
 
   try {
@@ -58,7 +59,7 @@ export const deleteAssessmentULO = async (req, res) => {
   }
 };
 
-export const viewAssessmentULOsByUnit = async (req, res) => {
+export const viewAssessmentULOsByUnit = async (req: any, res: any) => {
   const { unitId } = req.query;
 
   try {

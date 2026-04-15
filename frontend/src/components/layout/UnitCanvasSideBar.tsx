@@ -28,13 +28,9 @@ interface UnitSidebarProps {
 
   getCLOColor: (cloId: number) => string;
 
-  uloConnectionMode: boolean;
-  setUloConnectionMode: (mode: boolean) => void;
-  setUloConnectionSource: (source: null) => void;
-
-  taConnectionMode: boolean;
-  setTaConnectionMode: (mode: boolean) => void;
-  setTaConnectionSource: (source: null) => void;
+  linkMode: boolean;
+  setLinkMode: (mode: boolean) => void;
+  setLinkSource: (source: null) => void;
 }
 
 export const UnitSidebar: React.FC<UnitSidebarProps> = ({
@@ -43,12 +39,9 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
   handleNewULOMouseDown,
   handleNewTAMouseDown,
   getCLOColor,
-  uloConnectionMode,
-  setUloConnectionMode,
-  setUloConnectionSource,
-  taConnectionMode,
-  setTaConnectionMode,
-  setTaConnectionSource,
+  linkMode,
+  setLinkMode,
+  setLinkSource,
 }) => {
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
@@ -68,45 +61,23 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
         Save Assessments
       </button>
 
-      {/* Assessment ↔ ULO Link Mode */}
+      {/* Unified Link Mode */}
       <button
         className={`font-bold py-2 px-4 rounded w-full mb-2 shadow-sm transition-colors text-sm ${
-          uloConnectionMode
-            ? "bg-purple-600 hover:bg-purple-700 text-white"
+          linkMode
+            ? "bg-indigo-600 hover:bg-indigo-700 text-white"
             : "bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300"
         }`}
         onClick={() => {
-          setUloConnectionMode(!uloConnectionMode);
-          setUloConnectionSource(null);
-          if (!uloConnectionMode) { setTaConnectionMode(false); setTaConnectionSource(null); }
+          setLinkMode(!linkMode);
+          setLinkSource(null);
         }}
       >
-        {uloConnectionMode ? "Exit Link Mode" : "Link Assessment ↔ ULO"}
+        {linkMode ? "Exit Link Mode" : "Link Items"}
       </button>
-      {uloConnectionMode && (
-        <p className="text-xs text-purple-600 mb-2 px-1">
-          Click an assessment, then a ULO to link. Click a line to remove.
-        </p>
-      )}
-
-      {/* Teaching Activity link mode */}
-      <button
-        className={`font-bold py-2 px-4 rounded w-full mb-4 shadow-sm transition-colors text-sm ${
-          taConnectionMode
-            ? "bg-teal-600 hover:bg-teal-700 text-white"
-            : "bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300"
-        }`}
-        onClick={() => {
-          setTaConnectionMode(!taConnectionMode);
-          setTaConnectionSource(null);
-          if (!taConnectionMode) { setUloConnectionMode(false); setUloConnectionSource(null); }
-        }}
-      >
-        {taConnectionMode ? "Exit Link Mode" : "Link Activity ↔ Assessment / ULO"}
-      </button>
-      {taConnectionMode && (
-        <p className="text-xs text-teal-600 mb-4 px-1">
-          Click an activity, then an assessment or ULO to link. Click a line to remove.
+      {linkMode && (
+        <p className="text-xs text-indigo-600 mb-4 px-1">
+          Click any two items to link them. Click a line to remove it.
         </p>
       )}
 

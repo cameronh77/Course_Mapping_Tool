@@ -135,10 +135,24 @@ export interface TAAssessmentLink {
   activityId: number;
   assessmentId: number;
   unitId: string;
+  reversed: boolean;
 }
 
 export interface TAULOLink {
   activityId: number;
   uloId: number;
+  unitId: string;
+  reversed: boolean;
+}
+
+export interface AssessmentRelationshipLink {
+  assessmentId: number;
+  relatedId: number;
+  unitId: string;
+}
+
+export interface TARelationship {
+  sourceId: number;
+  targetId: number;
   unitId: string;
 }

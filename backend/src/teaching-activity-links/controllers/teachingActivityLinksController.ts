@@ -2,8 +2,8 @@ import prisma from "../../../database/prismaClient.js";
 
 // ---- TA-Assessment Links ----
 
-export const addTAAssessmentLink = async (req, res) => {
-  const { activityId, assessmentId, unitId } = req.body;
+export const addTAAssessmentLink = async (req: any, res: any) => {
+  const { activityId, assessmentId, unitId, reversed } = req.body;
 
   try {
     if (!activityId || !assessmentId || !unitId) {
@@ -28,6 +28,7 @@ export const addTAAssessmentLink = async (req, res) => {
         activityId: parseInt(activityId),
         assessmentId: parseInt(assessmentId),
         unitId,
+        reversed: reversed ?? false,
       },
     });
 
@@ -38,7 +39,7 @@ export const addTAAssessmentLink = async (req, res) => {
   }
 };
 
-export const deleteTAAssessmentLink = async (req, res) => {
+export const deleteTAAssessmentLink = async (req: any, res: any) => {
   const { activityId, assessmentId } = req.body;
 
   try {
@@ -58,7 +59,7 @@ export const deleteTAAssessmentLink = async (req, res) => {
   }
 };
 
-export const viewTAAssessmentLinksByUnit = async (req, res) => {
+export const viewTAAssessmentLinksByUnit = async (req: any, res: any) => {
   const { unitId } = req.query;
 
   try {
@@ -79,8 +80,8 @@ export const viewTAAssessmentLinksByUnit = async (req, res) => {
 
 // ---- TA-ULO Links ----
 
-export const addTAULOLink = async (req, res) => {
-  const { activityId, uloId, unitId } = req.body;
+export const addTAULOLink = async (req: any, res: any) => {
+  const { activityId, uloId, unitId, reversed } = req.body;
 
   try {
     if (!activityId || !uloId || !unitId) {
@@ -105,6 +106,7 @@ export const addTAULOLink = async (req, res) => {
         activityId: parseInt(activityId),
         uloId: parseInt(uloId),
         unitId,
+        reversed: reversed ?? false,
       },
     });
 
@@ -115,7 +117,7 @@ export const addTAULOLink = async (req, res) => {
   }
 };
 
-export const deleteTAULOLink = async (req, res) => {
+export const deleteTAULOLink = async (req: any, res: any) => {
   const { activityId, uloId } = req.body;
 
   try {
@@ -135,7 +137,7 @@ export const deleteTAULOLink = async (req, res) => {
   }
 };
 
-export const viewTAULOLinksByUnit = async (req, res) => {
+export const viewTAULOLinksByUnit = async (req: any, res: any) => {
   const { unitId } = req.query;
 
   try {
@@ -144,6 +146,83 @@ export const viewTAULOLinksByUnit = async (req, res) => {
     }
 
     const links = await prisma.teachingActivityULO.findMany({
+      where: { unitId: unitId as string },
+    });
+
+    return res.status(200).json(links);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ---- TA-TA Relationships ----
+
+export const addTATALink = async (req: any, res: any) => {
+  const { sourceId, targetId, unitId } = req.body;
+
+  try {
+    if (!sourceId || !targetId || !unitId) {
+      return res.status(400).json({ message: "sourceId, targetId, and unitId are required" });
+    }
+
+    const existing = await prisma.teachingActivityRelationship.findFirst({
+      where: {
+        OR: [
+          { sourceId: parseInt(sourceId), targetId: parseInt(targetId) },
+          { sourceId: parseInt(targetId), targetId: parseInt(sourceId) },
+        ],
+      },
+    });
+
+    if (existing) {
+      return res.status(400).json({ message: "This teaching activity link already exists" });
+    }
+
+    const newLink = await prisma.teachingActivityRelationship.create({
+      data: {
+        sourceId: parseInt(sourceId),
+        targetId: parseInt(targetId),
+        unitId,
+      },
+    });
+
+    return res.status(201).json(newLink);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const deleteTATALink = async (req: any, res: any) => {
+  const { sourceId, targetId } = req.body;
+
+  try {
+    await prisma.teachingActivityRelationship.delete({
+      where: {
+        sourceId_targetId: {
+          sourceId: parseInt(sourceId),
+          targetId: parseInt(targetId),
+        },
+      },
+    });
+
+    return res.status(200).json({ message: "Deleted" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const viewTATALinksByUnit = async (req: any, res: any) => {
+  const { unitId } = req.query;
+
+  try {
+    if (!unitId) {
+      return res.status(400).json({ message: "unitId query param is required" });
+    }
+
+    const links = await prisma.teachingActivityRelationship.findMany({
       where: { unitId: unitId as string },
     });
 

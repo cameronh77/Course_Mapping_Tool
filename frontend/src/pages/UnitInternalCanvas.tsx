@@ -18,11 +18,14 @@ import type {
   AssessmentBox as AssessmentBoxType,
   unitLearningOutcomeBox as unitLearningOutcomeBoxType,
   UnitMappings,
+  UnitRelationship,
   Assessment,
   unitLearningOutcome,
   TeachingActivity,
   TAAssessmentLink,
   TAULOLink,
+  AssessmentRelationshipLink,
+  TARelationship,
 } from "../types";
 import { useAssessmentStore } from "../stores/useAssessmentStore";
 import { AssessmentBox } from "../components/common/AssessmentBox";
@@ -122,14 +125,8 @@ export const UnitInternalCanvas: React.FC = () => {
   );
 
   // Assessment-ULO link state
-  const [assessmentULOLinks, setAssessmentULOLinks] = useState<
-    AssessmentULOLink[]
-  >([]);
-  const [uloConnectionMode, setUloConnectionMode] = useState<boolean>(false);
-  const [uloConnectionSource, setUloConnectionSource] = useState<{
-    type: "assessment" | "ulo";
-    id: number;
-  } | null>(null);
+  const [assessmentULOLinks, setAssessmentULOLinks] = useState<AssessmentULOLink[]>([]);
+  const [assessmentRelationships, setAssessmentRelationships] = useState<AssessmentRelationshipLink[]>([]);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
   // Teaching Activity state
@@ -140,11 +137,12 @@ export const UnitInternalCanvas: React.FC = () => {
   const [showTAForm, setShowTAForm] = useState<boolean>(false);
   const [taAssessmentLinks, setTAAssessmentLinks] = useState<TAAssessmentLink[]>([]);
   const [taULOLinks, setTAULOLinks] = useState<TAULOLink[]>([]);
-  const [taConnectionMode, setTaConnectionMode] = useState<boolean>(false);
-  const [taConnectionSource, setTaConnectionSource] = useState<{
-    type: "activity" | "assessment" | "ulo";
-    id: number;
-  } | null>(null);
+  const [taRelationships, setTARelationships] = useState<TARelationship[]>([]);
+
+  // Unified link mode
+  type CanvasNodeType = "assessment" | "ulo" | "activity";
+  const [linkMode, setLinkMode] = useState<boolean>(false);
+  const [linkSource, setLinkSource] = useState<{ type: CanvasNodeType; id: number } | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const { currentUnit } = useUnitStore();
@@ -303,6 +301,18 @@ export const UnitInternalCanvas: React.FC = () => {
             `/teaching-activity-links/ulo/view?unitId=${currentUnit.unitId}`
           );
           setTAULOLinks(taULORes.data || []);
+
+          // Load Assessment-Assessment relationships
+          const assessmentRelRes = await axiosInstance.get(
+            `/assessment-relationship/view?unitId=${currentUnit.unitId}`
+          );
+          setAssessmentRelationships(assessmentRelRes.data || []);
+
+          // Load TA-TA relationships
+          const taTARes = await axiosInstance.get(
+            `/teaching-activity-links/ta/view?unitId=${currentUnit.unitId}`
+          );
+          setTARelationships(taTARes.data || []);
         } catch (error) {
           console.error("Error loading canvas state:", error);
         }
@@ -987,32 +997,66 @@ export const UnitInternalCanvas: React.FC = () => {
     });
   };
 
-  // Assessment-ULO link handlers
-  const handleItemClickForULOConnection = (
-    type: "assessment" | "ulo",
-    id: number
-  ) => {
-    if (!uloConnectionMode) return;
+  // Unified link handler
+  const handleItemClickForConnection = (type: CanvasNodeType, id: number) => {
+    if (!linkMode) return;
+    // Block unsaved items (temp Date.now() ids are > 2^31)
+    if (id > 2_147_483_647) return;
 
-    if (!uloConnectionSource) {
-      setUloConnectionSource({ type, id });
-    } else {
-      // Must connect an assessment to a ULO (not same type)
-      if (uloConnectionSource.type === type) {
-        setUloConnectionSource({ type, id });
-        return;
-      }
-      const assessmentId = type === "assessment" ? id : uloConnectionSource.id;
-      const uloId = type === "ulo" ? id : uloConnectionSource.id;
-
-      createAssessmentULOLink(assessmentId, uloId);
-      setUloConnectionSource(null);
+    if (!linkSource) {
+      setLinkSource({ type, id });
+      return;
     }
+
+    // Clicked the same item — deselect
+    if (linkSource.type === type && linkSource.id === id) {
+      setLinkSource(null);
+      return;
+    }
+
+    const srcType = linkSource.type;
+    const srcId = linkSource.id;
+
+    if (srcType === "assessment" && type === "assessment") {
+      createAssessmentRelationship(srcId, id);
+    } else if (srcType === "activity" && type === "activity") {
+      createTATALink(srcId, id);
+    } else if (
+      (srcType === "assessment" && type === "ulo") ||
+      (srcType === "ulo" && type === "assessment")
+    ) {
+      const aId = srcType === "assessment" ? srcId : id;
+      const uId = srcType === "ulo" ? srcId : id;
+      // reversed = ULO was clicked first (arrow should point to assessment)
+      createAssessmentULOLink(aId, uId, srcType === "ulo");
+    } else if (
+      (srcType === "activity" && type === "assessment") ||
+      (srcType === "assessment" && type === "activity")
+    ) {
+      const actId = srcType === "activity" ? srcId : id;
+      const assId = srcType === "assessment" ? srcId : id;
+      // reversed = assessment was clicked first (arrow should point to activity)
+      createTAAssessmentLink(actId, assId, srcType === "assessment");
+    } else if (
+      (srcType === "activity" && type === "ulo") ||
+      (srcType === "ulo" && type === "activity")
+    ) {
+      const actId = srcType === "activity" ? srcId : id;
+      const uId = srcType === "ulo" ? srcId : id;
+      // reversed = ULO was clicked first (arrow should point to activity)
+      createTAULOLink(actId, uId, srcType === "ulo");
+    } else {
+      // Unsupported pair (e.g. ulo-ulo) — update source
+      setLinkSource({ type, id });
+      return;
+    }
+    setLinkSource(null);
   };
 
   const createAssessmentULOLink = async (
     assessmentId: number,
-    uloId: number
+    uloId: number,
+    reversed = false
   ) => {
     if (!currentUnit?.unitId) return;
     try {
@@ -1020,6 +1064,7 @@ export const UnitInternalCanvas: React.FC = () => {
         assessmentId,
         uloId,
         unitId: currentUnit.unitId,
+        reversed,
       });
       setAssessmentULOLinks((prev) => [...prev, response.data]);
     } catch (error: any) {
@@ -1193,37 +1238,61 @@ export const UnitInternalCanvas: React.FC = () => {
     setTAULOLinks((prev) => prev.filter((l) => l.activityId !== dbId));
   };
 
-  // ── Teaching Activity connections ─────────────────────────────────────────
-  const handleTAClickForConnection = (type: "activity" | "assessment" | "ulo", id: number) => {
-    if (!taConnectionMode) return;
-    if (!taConnectionSource) {
-      setTaConnectionSource({ type, id });
-      return;
+  const createAssessmentRelationship = async (assessmentId: number, relatedId: number) => {
+    if (!currentUnit?.unitId) return;
+    try {
+      const res = await axiosInstance.post("/assessment-relationship/create", {
+        assessmentId, relatedId, unitId: currentUnit.unitId,
+      });
+      setAssessmentRelationships((prev) => [...prev, res.data]);
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Failed to link assessments");
     }
-    const srcType = taConnectionSource.type;
-    const srcId   = taConnectionSource.id;
-
-    if ((srcType === "activity" && type === "assessment") || (srcType === "assessment" && type === "activity")) {
-      const activityId   = srcType === "activity" ? srcId : id;
-      const assessmentId = srcType === "assessment" ? srcId : id;
-      createTAAssessmentLink(activityId, assessmentId);
-    } else if ((srcType === "activity" && type === "ulo") || (srcType === "ulo" && type === "activity")) {
-      const activityId = srcType === "activity" ? srcId : id;
-      const uloId      = srcType === "ulo"      ? srcId : id;
-      createTAULOLink(activityId, uloId);
-    } else {
-      // Same type or invalid pair — update source
-      setTaConnectionSource({ type, id });
-      return;
-    }
-    setTaConnectionSource(null);
   };
 
-  const createTAAssessmentLink = async (activityId: number, assessmentId: number) => {
+  const handleDeleteAssessmentRelationship = async (assessmentId: number, relatedId: number) => {
+    try {
+      await axiosInstance.delete("/assessment-relationship/delete", {
+        data: { assessmentId, relatedId },
+      });
+      setAssessmentRelationships((prev) =>
+        prev.filter((r) => !(r.assessmentId === assessmentId && r.relatedId === relatedId))
+      );
+    } catch (error) {
+      console.error("Failed to delete assessment relationship:", error);
+    }
+  };
+
+  const createTATALink = async (sourceId: number, targetId: number) => {
+    if (!currentUnit?.unitId) return;
+    try {
+      const res = await axiosInstance.post("/teaching-activity-links/ta/create", {
+        sourceId, targetId, unitId: currentUnit.unitId,
+      });
+      setTARelationships((prev) => [...prev, res.data]);
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Failed to link teaching activities");
+    }
+  };
+
+  const handleDeleteTATALink = async (sourceId: number, targetId: number) => {
+    try {
+      await axiosInstance.delete("/teaching-activity-links/ta/delete", {
+        data: { sourceId, targetId },
+      });
+      setTARelationships((prev) =>
+        prev.filter((r) => !(r.sourceId === sourceId && r.targetId === targetId))
+      );
+    } catch (error) {
+      console.error("Failed to delete TA-TA link:", error);
+    }
+  };
+
+  const createTAAssessmentLink = async (activityId: number, assessmentId: number, reversed = false) => {
     if (!currentUnit?.unitId) return;
     try {
       const res = await axiosInstance.post("/teaching-activity-links/assessment/create", {
-        activityId, assessmentId, unitId: currentUnit.unitId,
+        activityId, assessmentId, unitId: currentUnit.unitId, reversed,
       });
       setTAAssessmentLinks((prev) => [...prev, res.data]);
     } catch (error: any) {
@@ -1231,11 +1300,11 @@ export const UnitInternalCanvas: React.FC = () => {
     }
   };
 
-  const createTAULOLink = async (activityId: number, uloId: number) => {
+  const createTAULOLink = async (activityId: number, uloId: number, reversed = false) => {
     if (!currentUnit?.unitId) return;
     try {
       const res = await axiosInstance.post("/teaching-activity-links/ulo/create", {
-        activityId, uloId, unitId: currentUnit.unitId,
+        activityId, uloId, unitId: currentUnit.unitId, reversed,
       });
       setTAULOLinks((prev) => [...prev, res.data]);
     } catch (error: any) {
@@ -1281,12 +1350,9 @@ export const UnitInternalCanvas: React.FC = () => {
           handleNewULOMouseDown={handleNewULOMouseDown}
           handleNewTAMouseDown={handleNewTAMouseDown}
           getCLOColor={getCLOColor}
-          uloConnectionMode={uloConnectionMode}
-          setUloConnectionMode={setUloConnectionMode}
-          setUloConnectionSource={setUloConnectionSource}
-          taConnectionMode={taConnectionMode}
-          setTaConnectionMode={setTaConnectionMode}
-          setTaConnectionSource={setTaConnectionSource}
+          linkMode={linkMode}
+          setLinkMode={setLinkMode}
+          setLinkSource={setLinkSource}
         />
       </div>
 
@@ -1300,103 +1366,79 @@ export const UnitInternalCanvas: React.FC = () => {
           className="relative bg-white"
           style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}
         >
-          {assessmentBoxes.map((assessment) => (
-            <div
-              key={assessment.id}
-              onMouseEnter={() =>
-                setHoveredItem(`assessment-${assessment.dbID ?? assessment.id}`)
-              }
-              onMouseLeave={() => setHoveredItem(null)}
-              onClick={
-                uloConnectionMode
-                  ? () => handleItemClickForULOConnection("assessment", assessment.dbID ?? assessment.id)
-                  : taConnectionMode
-                  ? () => handleTAClickForConnection("assessment", assessment.dbID ?? assessment.id)
-                  : undefined
-              }
-              className={
-                (uloConnectionMode &&
-                  uloConnectionSource?.type === "assessment" &&
-                  uloConnectionSource?.id === (assessment.dbID ?? assessment.id))
-                  ? "ring-4 ring-purple-400 rounded"
-                  : (taConnectionMode &&
-                    taConnectionSource?.type === "assessment" &&
-                    taConnectionSource?.id === (assessment.dbID ?? assessment.id))
-                  ? "ring-4 ring-teal-400 rounded"
-                  : ""
-              }
-            >
-              <AssessmentBox
-                assessment={assessment}
-                onClick={handleAssessmentClickForConnection}
-                onDoubleClick={handleEditAssessment}
-                deleteAssessment={deleteAssessment}
-                onMouseDown={handleMouseDown}
-              />
-            </div>
-          ))}
-          {uloBoxes.map((ulo) => (
-            <div
-              key={ulo.id}
-              onMouseEnter={() => setHoveredItem(`ulo-${ulo.uloId ?? ulo.id}`)}
-              onMouseLeave={() => setHoveredItem(null)}
-              onClick={
-                uloConnectionMode
-                  ? () => handleItemClickForULOConnection("ulo", ulo.uloId ?? ulo.id!)
-                  : taConnectionMode
-                  ? () => handleTAClickForConnection("ulo", ulo.uloId ?? ulo.id!)
-                  : undefined
-              }
-              className={
-                (uloConnectionMode &&
-                  uloConnectionSource?.type === "ulo" &&
-                  uloConnectionSource?.id === (ulo.uloId ?? ulo.id))
-                  ? "ring-4 ring-orange-400 rounded"
-                  : (taConnectionMode &&
-                    taConnectionSource?.type === "ulo" &&
-                    taConnectionSource?.id === (ulo.uloId ?? ulo.id))
-                  ? "ring-4 ring-teal-400 rounded"
-                  : ""
-              }
-            >
-              <ULOBox
-                ulo={ulo}
-                onMouseDown={handleULOBoxMouseDown}
-                onDoubleClick={handleEditULO}
-                onDelete={deleteULO}
-              />
-            </div>
-          ))}
+          {assessmentBoxes.map((assessment) => {
+            const aId = assessment.dbID ?? assessment.id;
+            return (
+              <div
+                key={assessment.id}
+                onMouseEnter={() => setHoveredItem(`assessment-${aId}`)}
+                onMouseLeave={() => setHoveredItem(null)}
+                onClick={linkMode ? () => handleItemClickForConnection("assessment", aId) : undefined}
+                className={
+                  linkMode && linkSource?.type === "assessment" && linkSource?.id === aId
+                    ? "ring-4 ring-indigo-400 rounded"
+                    : ""
+                }
+              >
+                <AssessmentBox
+                  assessment={assessment}
+                  onClick={handleAssessmentClickForConnection}
+                  onDoubleClick={handleEditAssessment}
+                  deleteAssessment={deleteAssessment}
+                  onMouseDown={handleMouseDown}
+                />
+              </div>
+            );
+          })}
+          {uloBoxes.map((ulo) => {
+            const uId = ulo.uloId ?? ulo.id!;
+            return (
+              <div
+                key={ulo.id}
+                onMouseEnter={() => setHoveredItem(`ulo-${uId}`)}
+                onMouseLeave={() => setHoveredItem(null)}
+                onClick={linkMode ? () => handleItemClickForConnection("ulo", uId) : undefined}
+                className={
+                  linkMode && linkSource?.type === "ulo" && linkSource?.id === uId
+                    ? "ring-4 ring-indigo-400 rounded"
+                    : ""
+                }
+              >
+                <ULOBox
+                  ulo={ulo}
+                  onMouseDown={handleULOBoxMouseDown}
+                  onDoubleClick={handleEditULO}
+                  onDelete={deleteULO}
+                />
+              </div>
+            );
+          })}
 
           {/* Teaching Activity boxes */}
-          {teachingActivityBoxes.map((activity) => (
-            <div
-              key={activity.id}
-              onMouseEnter={() => setHoveredItem(`activity-${activity.activityId ?? activity.id}`)}
-              onMouseLeave={() => setHoveredItem(null)}
-              onClick={
-                taConnectionMode
-                  ? () => handleTAClickForConnection("activity", activity.activityId ?? activity.id)
-                  : undefined
-              }
-              className={
-                taConnectionMode &&
-                taConnectionSource?.type === "activity" &&
-                taConnectionSource?.id === (activity.activityId ?? activity.id)
-                  ? "ring-4 ring-teal-400 rounded"
-                  : ""
-              }
-            >
-              <TeachingActivityBox
-                activity={activity}
-                draggedActivity={draggedTeachingActivity}
-                onMouseDown={handleTAMouseDown}
-                onDoubleClick={handleEditTA}
-                onClick={(id) => handleTAClickForConnection("activity", id)}
-                deleteActivity={deleteTA}
-              />
-            </div>
-          ))}
+          {teachingActivityBoxes.map((activity) => {
+            const taId = activity.activityId ?? activity.id;
+            return (
+              <div
+                key={activity.id}
+                onMouseEnter={() => setHoveredItem(`activity-${taId}`)}
+                onMouseLeave={() => setHoveredItem(null)}
+                className={
+                  linkMode && linkSource?.type === "activity" && linkSource?.id === taId
+                    ? "ring-4 ring-indigo-400 rounded"
+                    : ""
+                }
+              >
+                <TeachingActivityBox
+                  activity={activity}
+                  draggedActivity={draggedTeachingActivity}
+                  onMouseDown={handleTAMouseDown}
+                  onDoubleClick={handleEditTA}
+                  onClick={() => handleItemClickForConnection("activity", taId)}
+                  deleteActivity={deleteTA}
+                />
+              </div>
+            );
+          })}
 
           {/* Assessment-ULO connection lines */}
           <svg
@@ -1405,20 +1447,24 @@ export const UnitInternalCanvas: React.FC = () => {
           >
             <AssessmentULOLines
               links={assessmentULOLinks}
+              assessmentRelationships={assessmentRelationships}
               assessmentBoxes={assessmentBoxes}
               uloBoxes={uloBoxes}
               hoveredItem={hoveredItem}
               onDeleteLink={handleDeleteAssessmentULOLink}
+              onDeleteAssessmentRelationship={handleDeleteAssessmentRelationship}
             />
             <TeachingActivityLines
               taAssessmentLinks={taAssessmentLinks}
               taULOLinks={taULOLinks}
+              taRelationships={taRelationships}
               teachingActivityBoxes={teachingActivityBoxes}
               assessmentBoxes={assessmentBoxes}
               uloBoxes={uloBoxes}
               hoveredItem={hoveredItem}
               onDeleteTAAssessmentLink={handleDeleteTAAssessmentLink}
               onDeleteTAULOLink={handleDeleteTAULOLink}
+              onDeleteTATALink={handleDeleteTATALink}
             />
           </svg>
 

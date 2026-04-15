@@ -1,5 +1,5 @@
 import React from "react";
-import type { TeachingActivity, AssessmentBox, unitLearningOutcomeBox, TAAssessmentLink, TAULOLink } from "../../types";
+import type { TeachingActivity, AssessmentBox, unitLearningOutcomeBox, TAAssessmentLink, TAULOLink, TARelationship } from "../../types";
 
 const BOX_WIDTH = 256;
 const BOX_HEIGHT = 80;
@@ -58,12 +58,14 @@ const getConnectionPath = (
 interface TeachingActivityLinesProps {
   taAssessmentLinks: TAAssessmentLink[];
   taULOLinks: TAULOLink[];
+  taRelationships: TARelationship[];
   teachingActivityBoxes: TeachingActivity[];
   assessmentBoxes: AssessmentBox[];
   uloBoxes: unitLearningOutcomeBox[];
   hoveredItem: string | null;
   onDeleteTAAssessmentLink: (activityId: number, assessmentId: number) => void;
   onDeleteTAULOLink: (activityId: number, uloId: number) => void;
+  onDeleteTATALink: (sourceId: number, targetId: number) => void;
 }
 
 const arrowLength = 12;
@@ -72,15 +74,53 @@ const arrowAngle = Math.PI / 6;
 export const TeachingActivityLines: React.FC<TeachingActivityLinesProps> = ({
   taAssessmentLinks,
   taULOLinks,
+  taRelationships,
   teachingActivityBoxes,
   assessmentBoxes,
   uloBoxes,
   hoveredItem,
   onDeleteTAAssessmentLink,
   onDeleteTAULOLink,
+  onDeleteTATALink,
 }) => {
   return (
     <>
+      {/* TA ↔ TA links — lime */}
+      {taRelationships.map((rel, index) => {
+        const source = teachingActivityBoxes.find(
+          (a) => a.activityId === rel.sourceId || a.id === rel.sourceId
+        );
+        const target = teachingActivityBoxes.find(
+          (a) => a.activityId === rel.targetId || a.id === rel.targetId
+        );
+        if (!source || !target) return null;
+
+        const { d, endX, endY, angle } = getConnectionPath(source, target, index);
+        const linkKey = `ta-ta-${rel.sourceId}-${rel.targetId}`;
+        const isRelated =
+          hoveredItem &&
+          (hoveredItem === `activity-${rel.sourceId}` ||
+            hoveredItem === `activity-${rel.targetId}`);
+
+        return (
+          <g
+            key={linkKey}
+            className="cursor-pointer pointer-events-auto transition-all duration-200"
+            style={{
+              opacity: hoveredItem ? (isRelated ? 1 : 0.15) : 0.5,
+              filter: isRelated ? "drop-shadow(0 0 4px rgba(132,204,22,0.5))" : "drop-shadow(0 0 1px rgba(0,0,0,0.1))",
+            }}
+            onClick={() => onDeleteTATALink(rel.sourceId, rel.targetId)}
+          >
+            <path d={d} stroke="#84CC16" strokeWidth={isRelated ? "4.5" : "3"} fill="none" strokeDasharray="6 3" className="transition-all duration-200" />
+            <polygon
+              points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`}
+              fill="#84CC16"
+            />
+            <path d={d} stroke="transparent" strokeWidth="16" fill="none" />
+          </g>
+        );
+      })}
       {/* TA ↔ Assessment links — teal */}
       {taAssessmentLinks.map((link, index) => {
         const activity = teachingActivityBoxes.find(
@@ -91,7 +131,9 @@ export const TeachingActivityLines: React.FC<TeachingActivityLinesProps> = ({
         );
         if (!activity || !assessment) return null;
 
-        const { d, endX, endY, angle } = getConnectionPath(activity, assessment, index);
+        const src = link.reversed ? assessment : activity;
+        const tgt = link.reversed ? activity : assessment;
+        const { d, endX, endY, angle } = getConnectionPath(src, tgt, index);
         const linkKey = `ta-assessment-${link.activityId}-${link.assessmentId}`;
         const isRelated =
           hoveredItem &&
@@ -128,7 +170,9 @@ export const TeachingActivityLines: React.FC<TeachingActivityLinesProps> = ({
         );
         if (!activity || !ulo) return null;
 
-        const { d, endX, endY, angle } = getConnectionPath(activity, ulo, index);
+        const src = link.reversed ? ulo : activity;
+        const tgt = link.reversed ? activity : ulo;
+        const { d, endX, endY, angle } = getConnectionPath(src, tgt, index);
         const linkKey = `ta-ulo-${link.activityId}-${link.uloId}`;
         const isRelated =
           hoveredItem &&

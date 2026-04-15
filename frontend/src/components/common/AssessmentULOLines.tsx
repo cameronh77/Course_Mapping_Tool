@@ -1,5 +1,5 @@
 import React from "react";
-import type { AssessmentBox, unitLearningOutcomeBox } from "../../types";
+import type { AssessmentBox, unitLearningOutcomeBox, AssessmentRelationshipLink } from "../../types";
 
 const BOX_WIDTH = 256;
 const BOX_HEIGHT = 100;
@@ -8,14 +8,17 @@ export interface AssessmentULOLink {
   assessmentId: number;
   uloId: number;
   unitId: string;
+  reversed?: boolean;
 }
 
 interface AssessmentULOLinesProps {
   links: AssessmentULOLink[];
+  assessmentRelationships: AssessmentRelationshipLink[];
   assessmentBoxes: AssessmentBox[];
   uloBoxes: unitLearningOutcomeBox[];
   hoveredItem: string | null;
   onDeleteLink: (assessmentId: number, uloId: number) => void;
+  onDeleteAssessmentRelationship: (assessmentId: number, relatedId: number) => void;
 }
 
 // For each box, compute the 4 edge midpoints
@@ -85,13 +88,58 @@ const getConnectionPath = (
 
 export const AssessmentULOLines: React.FC<AssessmentULOLinesProps> = ({
   links,
+  assessmentRelationships,
   assessmentBoxes,
   uloBoxes,
   hoveredItem,
   onDeleteLink,
+  onDeleteAssessmentRelationship,
 }) => {
+  const arrowLength = 12;
+  const arrowAngle = Math.PI / 6;
+
   return (
     <>
+      {/* Assessment ↔ Assessment links — amber */}
+      {assessmentRelationships.map((rel, index) => {
+        const source = assessmentBoxes.find(
+          (a) => a.dbID === rel.assessmentId || a.id === rel.assessmentId
+        );
+        const target = assessmentBoxes.find(
+          (a) => a.dbID === rel.relatedId || a.id === rel.relatedId
+        );
+        if (!source || !target) return null;
+
+        const { d, endX, endY, angle } = getConnectionPath(source, target, index);
+        const linkKey = `assess-assess-${rel.assessmentId}-${rel.relatedId}`;
+        const isRelated =
+          hoveredItem &&
+          (hoveredItem === `assessment-${rel.assessmentId}` ||
+            hoveredItem === `assessment-${rel.relatedId}`);
+
+        return (
+          <g
+            key={linkKey}
+            className="cursor-pointer pointer-events-auto transition-all duration-200"
+            style={{
+              opacity: hoveredItem ? (isRelated ? 1 : 0.15) : 0.5,
+              filter: isRelated
+                ? "drop-shadow(0 0 4px rgba(245,158,11,0.5))"
+                : "drop-shadow(0 0 1px rgba(0,0,0,0.1))",
+            }}
+            onClick={() => onDeleteAssessmentRelationship(rel.assessmentId, rel.relatedId)}
+          >
+            <path d={d} stroke="#F59E0B" strokeWidth={isRelated ? "4.5" : "3"} fill="none" strokeDasharray="6 3" className="transition-all duration-200" />
+            <polygon
+              points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`}
+              fill="#F59E0B"
+            />
+            <path d={d} stroke="transparent" strokeWidth="16" fill="none" />
+          </g>
+        );
+      })}
+
+      {/* Assessment ↔ ULO links — purple */}
       {links.map((link, index) => {
         const assessment = assessmentBoxes.find(
           (a) => a.dbID === link.assessmentId || a.id === link.assessmentId
@@ -101,20 +149,15 @@ export const AssessmentULOLines: React.FC<AssessmentULOLinesProps> = ({
         );
         if (!assessment || !ulo) return null;
 
-        const { d, endX, endY, angle } = getConnectionPath(
-          assessment,
-          ulo,
-          index
-        );
+        const src = link.reversed ? ulo : assessment;
+        const tgt = link.reversed ? assessment : ulo;
+        const { d, endX, endY, angle } = getConnectionPath(src, tgt, index);
         const linkKey = `${link.assessmentId}-${link.uloId}`;
 
         const isRelated =
           hoveredItem &&
           (hoveredItem === `assessment-${link.assessmentId}` ||
             hoveredItem === `ulo-${link.uloId}`);
-
-        const arrowLength = 12;
-        const arrowAngle = Math.PI / 6;
 
         return (
           <g
