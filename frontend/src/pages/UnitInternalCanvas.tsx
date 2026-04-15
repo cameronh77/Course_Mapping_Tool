@@ -20,6 +20,9 @@ import type {
   UnitMappings,
   Assessment,
   unitLearningOutcome,
+  TeachingActivity,
+  TAAssessmentLink,
+  TAULOLink,
 } from "../types";
 import { useAssessmentStore } from "../stores/useAssessmentStore";
 import { AssessmentBox } from "../components/common/AssessmentBox";
@@ -37,6 +40,9 @@ import {
   OrphanWarnings,
   type AssessmentULOLink,
 } from "../components/common/AssessmentULOLines";
+import { TeachingActivityBox } from "../components/common/TeachingActivityBox";
+import TeachingActivityForm from "../components/common/TeachingActivityForm";
+import { TeachingActivityLines } from "../components/common/TeachingActivityLines";
 
 // Grid Layout Constants
 const COL_WIDTH = 600;
@@ -125,6 +131,20 @@ export const UnitInternalCanvas: React.FC = () => {
     id: number;
   } | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+
+  // Teaching Activity state
+  const [teachingActivityBoxes, setTeachingActivityBoxes] = useState<TeachingActivity[]>([]);
+  const [draggedTeachingActivity, setDraggedTeachingActivity] = useState<number | null>(null);
+  const [draggedNewTA, setDraggedNewTA] = useState<{ activity: TeachingActivity; x: number; y: number } | null>(null);
+  const [showCreateTAForm, setShowCreateTAForm] = useState<boolean>(false);
+  const [showTAForm, setShowTAForm] = useState<boolean>(false);
+  const [taAssessmentLinks, setTAAssessmentLinks] = useState<TAAssessmentLink[]>([]);
+  const [taULOLinks, setTAULOLinks] = useState<TAULOLink[]>([]);
+  const [taConnectionMode, setTaConnectionMode] = useState<boolean>(false);
+  const [taConnectionSource, setTaConnectionSource] = useState<{
+    type: "activity" | "assessment" | "ulo";
+    id: number;
+  } | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const { currentUnit } = useUnitStore();
@@ -255,6 +275,34 @@ export const UnitInternalCanvas: React.FC = () => {
             `/assessment-ulo/view?unitId=${currentUnit.unitId}`
           );
           setAssessmentULOLinks(linksResponse.data || []);
+
+          // Load teaching activities
+          const taResponse = await axiosInstance.get(
+            `/teaching-activity/viewAll/${currentUnit.unitId}`
+          );
+          const loadedTABoxes = (taResponse.data || []).map((ta: any) => ({
+            id: ta.activityId,
+            activityId: ta.activityId,
+            name: ta.activityName,
+            description: ta.activityDesc,
+            type: ta.activityType,
+            unitId: ta.unitId,
+            x: ta.position?.x ?? 800,
+            y: ta.position?.y ?? 100,
+          }));
+          setTeachingActivityBoxes(loadedTABoxes);
+
+          // Load TA-Assessment links
+          const taAssessmentRes = await axiosInstance.get(
+            `/teaching-activity-links/assessment/view?unitId=${currentUnit.unitId}`
+          );
+          setTAAssessmentLinks(taAssessmentRes.data || []);
+
+          // Load TA-ULO links
+          const taULORes = await axiosInstance.get(
+            `/teaching-activity-links/ulo/view?unitId=${currentUnit.unitId}`
+          );
+          setTAULOLinks(taULORes.data || []);
         } catch (error) {
           console.error("Error loading canvas state:", error);
         }
@@ -299,6 +347,15 @@ export const UnitInternalCanvas: React.FC = () => {
         if (id) {
           await axiosInstance.put(`/ULO/update/${id}`, {
             position: { x: u.x, y: u.y },
+          });
+        }
+      }
+      // Save each Teaching Activity's position
+      for (const ta of teachingActivityBoxes) {
+        const id = ta.activityId ?? ta.id;
+        if (id) {
+          await axiosInstance.put(`/teaching-activity/update/${id}`, {
+            position: { x: ta.x, y: ta.y },
           });
         }
       }
@@ -996,6 +1053,222 @@ export const UnitInternalCanvas: React.FC = () => {
     }
   };
 
+  // ── Teaching Activity drag (existing boxes) ──────────────────────────────
+  function handleTAMouseDown(e: React.MouseEvent, id: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    const activity = teachingActivityBoxes.find((a) => a.id === id);
+    if (!activity || !canvasRef.current) return;
+    const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
+    const offset = { x: mouseX - activity.x, y: mouseY - activity.y };
+    setDraggedTeachingActivity(id);
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      if (!canvasRef.current) return;
+      const { x: newX, y: newY } = getMouseCoords(moveEvent, canvasRef.current);
+      setTeachingActivityBoxes((prev) =>
+        prev.map((a) =>
+          a.id === id
+            ? {
+                ...a,
+                x: Math.max(0, Math.min(newX - offset.x, canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH)),
+                y: Math.max(0, Math.min(newY - offset.y, canvasRef.current!.scrollHeight - 100)),
+              }
+            : a
+        )
+      );
+    };
+    const handleUp = () => {
+      setDraggedTeachingActivity(null);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  }
+
+  // ── Teaching Activity drag (new from sidebar) ─────────────────────────────
+  const handleNewTAMouseDown = (e: React.MouseEvent, template: { type: string; label: string }) => {
+    e.preventDefault();
+    if (!currentUnit) return;
+    const newActivity: TeachingActivity = {
+      id: Date.now(),
+      activityId: null,
+      name: "",
+      description: "",
+      type: template.type,
+      unitId: currentUnit.unitId,
+      x: e.clientX,
+      y: e.clientY,
+    };
+    setDraggedNewTA({ activity: newActivity, x: e.clientX, y: e.clientY });
+
+    const handleGlobalMove = (moveEvent: MouseEvent) => {
+      setDraggedNewTA((prev) => prev ? { ...prev, x: moveEvent.clientX, y: moveEvent.clientY } : null);
+    };
+    const handleGlobalUp = (upEvent: MouseEvent) => {
+      document.removeEventListener("mousemove", handleGlobalMove);
+      document.removeEventListener("mouseup", handleGlobalUp);
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        if (
+          upEvent.clientX >= rect.left && upEvent.clientX <= rect.right &&
+          upEvent.clientY >= rect.top  && upEvent.clientY <= rect.bottom
+        ) {
+          const coords = getMouseCoords(upEvent as unknown as React.MouseEvent, canvasRef.current);
+          addTAToCanvasAtPos(newActivity, coords.x - UNIT_BOX_WIDTH / 2, coords.y - 40);
+        }
+      }
+      setDraggedNewTA(null);
+    };
+    document.addEventListener("mousemove", handleGlobalMove);
+    document.addEventListener("mouseup", handleGlobalUp);
+  };
+
+  const addTAToCanvasAtPos = (activity: TeachingActivity, x: number, y: number) => {
+    setTeachingActivityBoxes((prev) => [...prev, { ...activity, x, y }]);
+    setShowCreateTAForm(true);
+  };
+
+  // ── Teaching Activity CRUD ────────────────────────────────────────────────
+  const handleCreateTA = async (data: { name: string; description: string; type: string }) => {
+    if (!currentUnit?.unitId) return;
+    const pendingBox = teachingActivityBoxes.find((a) => a.activityId === null);
+    try {
+      const res = await axiosInstance.post("/teaching-activity/create", {
+        name: data.name,
+        description: data.description,
+        type: data.type,
+        unitId: currentUnit.unitId,
+        position: { x: pendingBox?.x ?? 800, y: pendingBox?.y ?? 100 },
+      });
+      if (res.data && pendingBox) {
+        setTeachingActivityBoxes((prev) =>
+          prev.map((a) =>
+            a.id === pendingBox.id
+              ? { ...a, activityId: res.data.activityId, id: res.data.activityId, name: data.name, description: data.description, type: data.type }
+              : a
+          )
+        );
+      }
+      setShowCreateTAForm(false);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to create Teaching Activity.");
+    }
+  };
+
+  const handleEditTA = (id: number) => {
+    setEditingId(id);
+    setShowTAForm(true);
+  };
+
+  const handleUpdateTA = async (data: { name: string; description: string; type: string }) => {
+    if (!editingId) return;
+    const box = teachingActivityBoxes.find((a) => a.id === editingId);
+    const dbId = box?.activityId ?? editingId;
+    try {
+      await axiosInstance.put(`/teaching-activity/update/${dbId}`, data);
+      setTeachingActivityBoxes((prev) =>
+        prev.map((a) => a.id === editingId ? { ...a, ...data } : a)
+      );
+      setEditingId(null);
+      setShowTAForm(false);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update Teaching Activity.");
+    }
+  };
+
+  const deleteTA = async (id: number) => {
+    const box = teachingActivityBoxes.find((a) => a.id === id);
+    const dbId = box?.activityId ?? id;
+    try {
+      await axiosInstance.delete("/teaching-activity/delete", { data: { activityId: dbId } });
+    } catch (error) {
+      console.error("Failed to delete TA from DB:", error);
+    }
+    setTeachingActivityBoxes((prev) => prev.filter((a) => a.id !== id));
+    setTAAssessmentLinks((prev) => prev.filter((l) => l.activityId !== dbId));
+    setTAULOLinks((prev) => prev.filter((l) => l.activityId !== dbId));
+  };
+
+  // ── Teaching Activity connections ─────────────────────────────────────────
+  const handleTAClickForConnection = (type: "activity" | "assessment" | "ulo", id: number) => {
+    if (!taConnectionMode) return;
+    if (!taConnectionSource) {
+      setTaConnectionSource({ type, id });
+      return;
+    }
+    const srcType = taConnectionSource.type;
+    const srcId   = taConnectionSource.id;
+
+    if ((srcType === "activity" && type === "assessment") || (srcType === "assessment" && type === "activity")) {
+      const activityId   = srcType === "activity" ? srcId : id;
+      const assessmentId = srcType === "assessment" ? srcId : id;
+      createTAAssessmentLink(activityId, assessmentId);
+    } else if ((srcType === "activity" && type === "ulo") || (srcType === "ulo" && type === "activity")) {
+      const activityId = srcType === "activity" ? srcId : id;
+      const uloId      = srcType === "ulo"      ? srcId : id;
+      createTAULOLink(activityId, uloId);
+    } else {
+      // Same type or invalid pair — update source
+      setTaConnectionSource({ type, id });
+      return;
+    }
+    setTaConnectionSource(null);
+  };
+
+  const createTAAssessmentLink = async (activityId: number, assessmentId: number) => {
+    if (!currentUnit?.unitId) return;
+    try {
+      const res = await axiosInstance.post("/teaching-activity-links/assessment/create", {
+        activityId, assessmentId, unitId: currentUnit.unitId,
+      });
+      setTAAssessmentLinks((prev) => [...prev, res.data]);
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Failed to link activity to assessment");
+    }
+  };
+
+  const createTAULOLink = async (activityId: number, uloId: number) => {
+    if (!currentUnit?.unitId) return;
+    try {
+      const res = await axiosInstance.post("/teaching-activity-links/ulo/create", {
+        activityId, uloId, unitId: currentUnit.unitId,
+      });
+      setTAULOLinks((prev) => [...prev, res.data]);
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Failed to link activity to ULO");
+    }
+  };
+
+  const handleDeleteTAAssessmentLink = async (activityId: number, assessmentId: number) => {
+    try {
+      await axiosInstance.delete("/teaching-activity-links/assessment/delete", {
+        data: { activityId, assessmentId },
+      });
+      setTAAssessmentLinks((prev) =>
+        prev.filter((l) => !(l.activityId === activityId && l.assessmentId === assessmentId))
+      );
+    } catch (error) {
+      console.error("Failed to delete TA-assessment link:", error);
+    }
+  };
+
+  const handleDeleteTAULOLink = async (activityId: number, uloId: number) => {
+    try {
+      await axiosInstance.delete("/teaching-activity-links/ulo/delete", {
+        data: { activityId, uloId },
+      });
+      setTAULOLinks((prev) =>
+        prev.filter((l) => !(l.activityId === activityId && l.uloId === uloId))
+      );
+    } catch (error) {
+      console.error("Failed to delete TA-ULO link:", error);
+    }
+  };
+
   return (
     <div
       className="flex h-screen relative overflow-hidden pt-16"
@@ -1006,10 +1279,14 @@ export const UnitInternalCanvas: React.FC = () => {
           handleSaveCanvas={handleSaveCanvas}
           handleNewAssessmentMouseDown={handleNewAssessmentMouseDown}
           handleNewULOMouseDown={handleNewULOMouseDown}
+          handleNewTAMouseDown={handleNewTAMouseDown}
           getCLOColor={getCLOColor}
           uloConnectionMode={uloConnectionMode}
           setUloConnectionMode={setUloConnectionMode}
           setUloConnectionSource={setUloConnectionSource}
+          taConnectionMode={taConnectionMode}
+          setTaConnectionMode={setTaConnectionMode}
+          setTaConnectionSource={setTaConnectionSource}
         />
       </div>
 
@@ -1032,18 +1309,20 @@ export const UnitInternalCanvas: React.FC = () => {
               onMouseLeave={() => setHoveredItem(null)}
               onClick={
                 uloConnectionMode
-                  ? () =>
-                      handleItemClickForULOConnection(
-                        "assessment",
-                        assessment.dbID ?? assessment.id
-                      )
+                  ? () => handleItemClickForULOConnection("assessment", assessment.dbID ?? assessment.id)
+                  : taConnectionMode
+                  ? () => handleTAClickForConnection("assessment", assessment.dbID ?? assessment.id)
                   : undefined
               }
               className={
-                uloConnectionMode &&
-                uloConnectionSource?.type === "assessment" &&
-                uloConnectionSource?.id === (assessment.dbID ?? assessment.id)
+                (uloConnectionMode &&
+                  uloConnectionSource?.type === "assessment" &&
+                  uloConnectionSource?.id === (assessment.dbID ?? assessment.id))
                   ? "ring-4 ring-purple-400 rounded"
+                  : (taConnectionMode &&
+                    taConnectionSource?.type === "assessment" &&
+                    taConnectionSource?.id === (assessment.dbID ?? assessment.id))
+                  ? "ring-4 ring-teal-400 rounded"
                   : ""
               }
             >
@@ -1063,18 +1342,20 @@ export const UnitInternalCanvas: React.FC = () => {
               onMouseLeave={() => setHoveredItem(null)}
               onClick={
                 uloConnectionMode
-                  ? () =>
-                      handleItemClickForULOConnection(
-                        "ulo",
-                        ulo.uloId ?? ulo.id!
-                      )
+                  ? () => handleItemClickForULOConnection("ulo", ulo.uloId ?? ulo.id!)
+                  : taConnectionMode
+                  ? () => handleTAClickForConnection("ulo", ulo.uloId ?? ulo.id!)
                   : undefined
               }
               className={
-                uloConnectionMode &&
-                uloConnectionSource?.type === "ulo" &&
-                uloConnectionSource?.id === (ulo.uloId ?? ulo.id)
+                (uloConnectionMode &&
+                  uloConnectionSource?.type === "ulo" &&
+                  uloConnectionSource?.id === (ulo.uloId ?? ulo.id))
                   ? "ring-4 ring-orange-400 rounded"
+                  : (taConnectionMode &&
+                    taConnectionSource?.type === "ulo" &&
+                    taConnectionSource?.id === (ulo.uloId ?? ulo.id))
+                  ? "ring-4 ring-teal-400 rounded"
                   : ""
               }
             >
@@ -1083,6 +1364,36 @@ export const UnitInternalCanvas: React.FC = () => {
                 onMouseDown={handleULOBoxMouseDown}
                 onDoubleClick={handleEditULO}
                 onDelete={deleteULO}
+              />
+            </div>
+          ))}
+
+          {/* Teaching Activity boxes */}
+          {teachingActivityBoxes.map((activity) => (
+            <div
+              key={activity.id}
+              onMouseEnter={() => setHoveredItem(`activity-${activity.activityId ?? activity.id}`)}
+              onMouseLeave={() => setHoveredItem(null)}
+              onClick={
+                taConnectionMode
+                  ? () => handleTAClickForConnection("activity", activity.activityId ?? activity.id)
+                  : undefined
+              }
+              className={
+                taConnectionMode &&
+                taConnectionSource?.type === "activity" &&
+                taConnectionSource?.id === (activity.activityId ?? activity.id)
+                  ? "ring-4 ring-teal-400 rounded"
+                  : ""
+              }
+            >
+              <TeachingActivityBox
+                activity={activity}
+                draggedActivity={draggedTeachingActivity}
+                onMouseDown={handleTAMouseDown}
+                onDoubleClick={handleEditTA}
+                onClick={(id) => handleTAClickForConnection("activity", id)}
+                deleteActivity={deleteTA}
               />
             </div>
           ))}
@@ -1098,6 +1409,16 @@ export const UnitInternalCanvas: React.FC = () => {
               uloBoxes={uloBoxes}
               hoveredItem={hoveredItem}
               onDeleteLink={handleDeleteAssessmentULOLink}
+            />
+            <TeachingActivityLines
+              taAssessmentLinks={taAssessmentLinks}
+              taULOLinks={taULOLinks}
+              teachingActivityBoxes={teachingActivityBoxes}
+              assessmentBoxes={assessmentBoxes}
+              uloBoxes={uloBoxes}
+              hoveredItem={hoveredItem}
+              onDeleteTAAssessmentLink={handleDeleteTAAssessmentLink}
+              onDeleteTAULOLink={handleDeleteTAULOLink}
             />
           </svg>
 
@@ -1222,6 +1543,53 @@ export const UnitInternalCanvas: React.FC = () => {
           </div>
         )}
 
+        {/* Modal: Create Teaching Activity */}
+        {showCreateTAForm && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-black text-xl font-bold">Create Teaching Activity</h2>
+                <button
+                  onClick={() => setShowCreateTAForm(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors"
+                >
+                  &times;
+                </button>
+              </div>
+              <TeachingActivityForm
+                onSave={handleCreateTA}
+                onCancel={() => setShowCreateTAForm(false)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Edit Teaching Activity */}
+        {showTAForm && editingId && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-black text-xl font-bold">Edit Teaching Activity</h2>
+                <button
+                  onClick={() => { setShowTAForm(false); setEditingId(null); }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors"
+                >
+                  &times;
+                </button>
+              </div>
+              <TeachingActivityForm
+                onSave={handleUpdateTA}
+                onCancel={() => { setShowTAForm(false); setEditingId(null); }}
+                initialData={{
+                  name: teachingActivityBoxes.find((a) => a.id === editingId)?.name,
+                  description: teachingActivityBoxes.find((a) => a.id === editingId)?.description,
+                  type: teachingActivityBoxes.find((a) => a.id === editingId)?.type,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Modal: Edit ULO */}
         {showULOForm && editingId && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
@@ -1298,10 +1666,23 @@ export const UnitInternalCanvas: React.FC = () => {
             width: UNIT_BOX_WIDTH,
           }}
         >
-          <div className="bg-blue-600 p-4 rounded shadow-2xl border-2 border-white text-white">
-            <h2 className="text-lg font-bold text-center">
-              {"Unit Learning Outcome"}
-            </h2>
+          <div className="bg-orange-500 p-4 rounded shadow-2xl border-2 border-white text-white">
+            <h2 className="text-lg font-bold text-center">Unit Learning Outcome</h2>
+          </div>
+        </div>
+      )}
+
+      {draggedNewTA && (
+        <div
+          className="fixed pointer-events-none z-[200] opacity-80"
+          style={{
+            left: draggedNewTA.x - UNIT_BOX_WIDTH / 2,
+            top: draggedNewTA.y - 40,
+            width: UNIT_BOX_WIDTH,
+          }}
+        >
+          <div className="bg-green-600 p-4 rounded shadow-2xl border-2 border-white text-white">
+            <h2 className="text-lg font-bold text-center">Teaching Activity</h2>
           </div>
         </div>
       )}

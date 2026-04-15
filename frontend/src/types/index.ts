@@ -119,3 +119,26 @@ export interface UnitMapping {
 
 // Record type for unit mappings keyed by unitId
 export type UnitMappings = Record<string, UnitMapping>;
+
+export interface TeachingActivity {
+  id: number;
+  activityId: number | null;
+  name: string;
+  description: string;
+  type: string;
+  unitId: string;
+  x: number;
+  y: number;
+}
+
+export interface TAAssessmentLink {
+  activityId: number;
+  assessmentId: number;
+  unitId: string;
+}
+
+export interface TAULOLink {
+  activityId: number;
+  uloId: number;
+  unitId: string;
+}

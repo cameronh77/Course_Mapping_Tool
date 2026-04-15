@@ -11,7 +11,7 @@ export const useULOStore = create((set) => ({
       const res = await axiosInstance.post("/ULO/create", data);
       console.log(res.data);
       set((state) => ({
-        currentULOs: [...state.currentCLOs, res.data].sort(
+        currentULOs: [...state.currentULOs, res.data].sort(
           (a, b) => a.uloId - b.uloId
         ),
       }));
@@ -37,7 +37,7 @@ export const useULOStore = create((set) => ({
         uloDesc: data.uloDesc,
         unitId: data.unitId,
       };
-      const res = await axiosInstance.put(`/CLO/update/${data.uloId}`, input);
+      const res = await axiosInstance.put(`/ULO/update/${data.uloId}`, input);
       set((state) => ({
         currentULOs: state.currentULOs
           .map((ulo) => (ulo.uloId === data.uloId ? res.data : ulo))

@@ -21,21 +21,34 @@ interface UnitSidebarProps {
     template: { type: string; label: string }
   ) => void;
 
+  handleNewTAMouseDown: (
+    e: React.MouseEvent,
+    template: { type: string; label: string }
+  ) => void;
+
   getCLOColor: (cloId: number) => string;
 
   uloConnectionMode: boolean;
   setUloConnectionMode: (mode: boolean) => void;
   setUloConnectionSource: (source: null) => void;
+
+  taConnectionMode: boolean;
+  setTaConnectionMode: (mode: boolean) => void;
+  setTaConnectionSource: (source: null) => void;
 }
 
 export const UnitSidebar: React.FC<UnitSidebarProps> = ({
   handleSaveCanvas,
   handleNewAssessmentMouseDown,
   handleNewULOMouseDown,
+  handleNewTAMouseDown,
   getCLOColor,
   uloConnectionMode,
   setUloConnectionMode,
   setUloConnectionSource,
+  taConnectionMode,
+  setTaConnectionMode,
+  setTaConnectionSource,
 }) => {
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
@@ -55,9 +68,9 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
         Save Assessments
       </button>
 
-      {/* Link Mode Toggle */}
+      {/* Assessment ↔ ULO Link Mode */}
       <button
-        className={`font-bold py-2 px-4 rounded w-full mb-4 shadow-sm transition-colors ${
+        className={`font-bold py-2 px-4 rounded w-full mb-2 shadow-sm transition-colors text-sm ${
           uloConnectionMode
             ? "bg-purple-600 hover:bg-purple-700 text-white"
             : "bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300"
@@ -65,13 +78,35 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
         onClick={() => {
           setUloConnectionMode(!uloConnectionMode);
           setUloConnectionSource(null);
+          if (!uloConnectionMode) { setTaConnectionMode(false); setTaConnectionSource(null); }
         }}
       >
         {uloConnectionMode ? "Exit Link Mode" : "Link Assessment ↔ ULO"}
       </button>
       {uloConnectionMode && (
-        <p className="text-xs text-purple-600 mb-4 px-1">
-          Click an assessment, then click a ULO to link them. Click a line to remove it.
+        <p className="text-xs text-purple-600 mb-2 px-1">
+          Click an assessment, then a ULO to link. Click a line to remove.
+        </p>
+      )}
+
+      {/* Teaching Activity link mode */}
+      <button
+        className={`font-bold py-2 px-4 rounded w-full mb-4 shadow-sm transition-colors text-sm ${
+          taConnectionMode
+            ? "bg-teal-600 hover:bg-teal-700 text-white"
+            : "bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300"
+        }`}
+        onClick={() => {
+          setTaConnectionMode(!taConnectionMode);
+          setTaConnectionSource(null);
+          if (!taConnectionMode) { setUloConnectionMode(false); setUloConnectionSource(null); }
+        }}
+      >
+        {taConnectionMode ? "Exit Link Mode" : "Link Activity ↔ Assessment / ULO"}
+      </button>
+      {taConnectionMode && (
+        <p className="text-xs text-teal-600 mb-4 px-1">
+          Click an activity, then an assessment or ULO to link. Click a line to remove.
         </p>
       )}
 
@@ -94,6 +129,27 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
               className="p-3 rounded border bg-blue-50 hover:bg-blue-100 cursor-grab active:cursor-grabbing shadow-sm text-sm font-medium text-blue-800 transition"
             >
               {assessmentTemplate.label}
+            </div>
+          </div>
+        </div>
+
+        {/* ========================= */}
+        {/* CREATE TEACHING ACTIVITY */}
+        {/* ========================= */}
+        <div>
+          <h2 className="text-sm font-bold mb-2 text-green-800 border-b pb-1">
+            Create Teaching Activity
+          </h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Drag onto canvas to create a new teaching activity.
+          </p>
+          <div className="flex flex-col gap-2">
+            <div
+              draggable
+              onMouseDown={(e) => handleNewTAMouseDown(e, { type: "TEACHING_ACTIVITY", label: "Teaching Activity" })}
+              className="p-3 rounded border bg-green-50 hover:bg-green-100 cursor-grab active:cursor-grabbing shadow-sm text-sm font-medium text-green-800 transition"
+            >
+              📗 Teaching Activity
             </div>
           </div>
         </div>
