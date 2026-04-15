@@ -2,8 +2,7 @@ import React, { useState } from "react";
 import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
-import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
-import type { Tag, Unit } from "../../types";
+import type { Unit } from "../../types";
 
 interface CanvasSidebarProps {
   sidebarTab: 'units' | 'connections' | 'mapping';
@@ -22,9 +21,6 @@ interface CanvasSidebarProps {
   selectedRelationType: string;
   setSelectedRelationType: (type: any) => void;
   getCLOColor: (cloId: number) => string;
-  selectedTagFilters: number[];
-  onToggleTagFilter: (tagId: number) => void;
-  onClearTagFilters: () => void;
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
@@ -43,116 +39,21 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   setConnectionSource,
   selectedRelationType,
   setSelectedRelationType,
-  getCLOColor,
-  selectedTagFilters,
-  onToggleTagFilter,
-  onClearTagFilters,
+  getCLOColor
 }) => {
   // Connect directly to stores
-  const { currentCourse } = useCourseStore() as any;
-  const { currentCLOs } = useCLOStore() as any;
-  const { existingTags, createTag } = useTagStore() as any;
+  const { currentCourse } = useCourseStore();
+  const { currentCLOs } = useCLOStore();
+  const { existingTags, createTag } = useTagStore();
 
   // Local state purely for the sidebar
   const [newTag, setNewTag] = useState<string>("");
-  const [addDropdownOpen, setAddDropdownOpen] = useState(false);
-  const handlers = getWhiteboardHandlers();
 
   return (
     <div className="bg-white p-4 w-full h-full flex flex-col">
       <button className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4 shadow-sm transition-colors" onClick={handleSaveCanvas}>
         Save Canvas
       </button>
-
-      <div className="relative mb-4">
-        <button
-          onClick={() => setAddDropdownOpen((prev) => !prev)}
-          className="btn btn-sm w-full gap-2 transition-colors bg-green-600 text-white hover:bg-green-700"
-        >
-          <span>Add</span>
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          </svg>
-        </button>
-        {addDropdownOpen && (
-          <div className="absolute top-full left-0 right-0 mt-1 flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-xl z-50">
-            <button
-              onClick={() => {
-                handlers.addUnit?.();
-                setAddDropdownOpen(false);
-              }}
-              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-blue-50 text-blue-600"
-            >
-              + Unit
-            </button>
-            <button
-              onClick={() => {
-                handlers.addCLO?.();
-                setAddDropdownOpen(false);
-              }}
-              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-pink-50 text-pink-600"
-            >
-              + CLO Box
-            </button>
-            <button
-              onClick={() => {
-                handlers.addULO?.();
-                setAddDropdownOpen(false);
-              }}
-              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-cyan-50 text-cyan-600"
-            >
-              + ULO Box
-            </button>
-            <button
-              onClick={() => {
-                handlers.addAssessment?.();
-                setAddDropdownOpen(false);
-              }}
-              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-amber-50 text-amber-700"
-            >
-              + Assessment Box
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Tag Filter</span>
-          {!!selectedTagFilters.length && (
-            <button
-              type="button"
-              className="text-[10px] font-bold text-blue-600 hover:text-blue-700"
-              onClick={onClearTagFilters}
-            >
-              Clear
-            </button>
-          )}
-        </div>
-        <p className="mb-2 text-[11px] text-gray-500">
-          Select tags to show only matching units and their connections.
-        </p>
-        <div className="max-h-28 space-y-1 overflow-y-auto pr-1">
-          {existingTags && existingTags.length > 0 ? (
-            existingTags.map((tag: Tag) => {
-              const checked = selectedTagFilters.includes(tag.tagId);
-              return (
-                <label key={tag.tagId} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-gray-700 hover:bg-white">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
-                    checked={checked}
-                    onChange={() => onToggleTagFilter(tag.tagId)}
-                  />
-                  <span className="truncate">{tag.tagName}</span>
-                </label>
-              );
-            })
-          ) : (
-            <p className="text-xs italic text-gray-400">No tags available.</p>
-          )}
-        </div>
-      </div>
 
       {/* Phase Navigation Tabs */}
       <div className="flex w-full mb-5 bg-gray-100 rounded-lg p-1 border border-gray-200 shadow-inner">

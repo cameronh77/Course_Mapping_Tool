@@ -67,116 +67,6 @@ export const saveCanvasState = async (req, res) => {
   const { units, unitMappings } = req.body;
 
   try {
-    const unitsPayload = Array.isArray(units) ? units : [];
-    const mappedUnitIds = new Set(
-      unitsPayload
-        .map((unit: any) => unit?.unitId)
-        .filter((unitId: unknown): unitId is string => typeof unitId === "string" && unitId.length > 0)
-    );
-
-    await prisma.$transaction(async (tx) => {
-      // First, clear existing units for this course to handle deletions
-      await tx.courseUnit.deleteMany({
-        where: { courseId: courseId },
-      });
-
-      if (unitsPayload.length > 0) {
-        // Then, create or update units with their new positions
-        const courseUnitsData = unitsPayload.map((unit: any) => ({
-          courseId: courseId,
-          unitId: unit.unitId,
-          semester: unit.semester || 0,
-          year: unit.year || 0,
-          elective: false,
-          position: { x: unit.x, y: unit.y },
-          color: unit.color || null,
-        }));
-
-        await tx.courseUnit.createMany({
-          data: courseUnitsData,
-          skipDuplicates: true,
-        });
-      }
-
-      // Save CLO mappings (UnitLearningOutcomes)
-      if (unitMappings) {
-        for (const [unitId, mappings] of Object.entries(unitMappings)) {
-          if (!mappedUnitIds.has(unitId)) continue;
-          const mappingsData = mappings as any;
-
-          const existingUlos = await tx.unitLearningOutcome.findMany({
-            where: { unitId: unitId },
-            select: { uloId: true },
-          });
-
-          const existingUloIds = existingUlos.map((ulo) => ulo.uloId);
-          if (existingUloIds.length > 0) {
-            await tx.assessmentULO.deleteMany({
-              where: {
-                uloId: { in: existingUloIds },
-              },
-            });
-          }
-          
-          // Clear existing CLO mappings for this unit
-          await tx.unitLearningOutcome.deleteMany({
-            where: { unitId: unitId },
-          });
-
-          // Create new CLO mappings
-          if (mappingsData.clos && mappingsData.clos.length > 0) {
-            const cloMappingsData = mappingsData.clos.map((clo: any) => ({
-              uloDesc: `CLO: ${clo.cloDesc}`,
-              unitId: unitId,
-              cloId: parseInt(clo.cloId),
-            }));
-
-            try {
-              await tx.unitLearningOutcome.createMany({
-                data: cloMappingsData,
-                skipDuplicates: false,
-              });
-            } catch (cloError) {
-              console.error(`Error creating CLO mappings for unit ${unitId}:`, cloError);
-              throw cloError;
-            }
-          }
-        }
-      }
-
-      // Save Tag mappings (CourseUnitTags)
-      if (unitMappings) {
-        for (const [unitId, mappings] of Object.entries(unitMappings)) {
-          if (!mappedUnitIds.has(unitId)) continue;
-          const mappingsData = mappings as any;
-          
-          // Clear existing tag mappings for this unit in this course
-          await tx.courseUnitTags.deleteMany({
-            where: {
-              courseId: courseId,
-              unitId: unitId,
-            },
-          });
-
-          // Create new tag mappings
-          if (mappingsData.tags && mappingsData.tags.length > 0) {
-            const tagMappingsData = mappingsData.tags.map((tag: any) => ({
-              courseId: courseId,
-              unitId: unitId,
-              tagId: parseInt(tag.tagId),
-            }));
-
-            try {
-              await tx.courseUnitTags.createMany({
-                data: tagMappingsData,
-                skipDuplicates: false,
-              });
-            } catch (tagError) {
-              console.error(`Error creating tag mappings for unit ${unitId}:`, tagError);
-              throw tagError;
-            }
-          }
-        }
     // Build all insert data upfront before entering the transaction
     const courseUnitsData = (units ?? []).map((unit) => ({
       courseId,
@@ -223,7 +113,7 @@ export const saveCanvasState = async (req, res) => {
       if (allTagData.length > 0) {
         await tx.courseUnitTags.createMany({ data: allTagData, skipDuplicates: true });
       }
-    }, { maxWait: 10000, timeout: 15000 });
+    });
 
     return res.status(200).json({ message: "Canvas state saved successfully" });
   } catch (error) {
