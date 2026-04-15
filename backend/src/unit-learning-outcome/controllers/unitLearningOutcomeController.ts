@@ -46,7 +46,11 @@ export const deleteUnitLearningOutcome = async (req, res) => {
 
 export const viewUnitLearningOutcomes = async (req, res) => {
   try {
-    const unitLearningOutcomes = await prisma.unitLearningOutcome.findMany({});
+    const unitLearningOutcomes = await prisma.unitLearningOutcome.findMany({
+      include: {
+        assessments: true,
+      },
+    });
     res.status(200).json(unitLearningOutcomes);
   } catch (error) {
     console.error(error);

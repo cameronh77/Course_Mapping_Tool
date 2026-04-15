@@ -1,9 +1,9 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 //import { useAuthStore } from "./store/useAuthStore"
-import { useEffect } from "react";
 //import { Loader } from "lucide-react"
 import { HomePage } from "./pages/HomePage";
 import { CanvasPage } from "./pages/UnitCanvas";
+import { WhiteboardCanvas } from "./pages/WhiteboardCanvas";
 import Navbar from "./components/navbar";
 import { useCourseStore } from "./stores/useCourseStore";
 import { CourseEdit } from "./pages/CourseEdit";
@@ -18,6 +18,7 @@ const App = () => {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/UnitCanvas" element={<CanvasPage />} />
+        <Route path="/WhiteboardCanvas" element={<WhiteboardCanvas />} />
         <Route path="/CourseEdit" element={<CourseEdit />} />
         <Route path="/UnitInternalCanvas" element={<UnitInternalCanvas />} />
       </Routes>

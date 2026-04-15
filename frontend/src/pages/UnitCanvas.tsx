@@ -186,10 +186,15 @@ export const CanvasPage: React.FC = () => {
           // Load existing CLO and Tag mappings for each unit
           const mappingsData: UnitMappings = {};
 
-          // Get all CLOs for this course - fetch fresh data
-          await useCLOStore.getState().viewCLOsByCourse(currentCourse);
-          const allCLOs = useCLOStore.getState().currentCLOs;
-
+          // Fetch CLOs directly for this course to avoid stale store timing
+          let allCLOs: CourseLearningOutcome[] = [];
+          try {
+            const cloResponse = await axiosInstance.get(`/CLO/viewAll/${currentCourse.courseId}`);
+            allCLOs = cloResponse.data || [];
+          } catch (error) {
+            console.error("Error loading CLOs for course:", error);
+          }
+          
           // Load all ULOs once instead of per unit
           let allULOs: any[] = [];
           try {
@@ -221,11 +226,9 @@ export const CanvasPage: React.FC = () => {
             );
 
             const mappedCLOs = unitCLOMappings
-              .map((ulo: any) =>
-                allCLOs?.find((clo: any) => clo.cloId === ulo.cloId)
-              )
-              .filter(Boolean);
-
+              .map((ulo: any) => allCLOs.find((clo: CourseLearningOutcome) => clo.cloId === ulo.cloId))
+              .filter((clo): clo is CourseLearningOutcome => Boolean(clo));
+            
             mappingsData[unitId].clos = mappedCLOs;
 
             // Find Tag mappings for this unit
@@ -300,11 +303,40 @@ export const CanvasPage: React.FC = () => {
   const handleSaveCanvas = async () => {
     if (currentCourse?.courseId) {
       try {
+        const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
+
+        const unitsWithSemester = unitBoxes.map((u) => {
+          const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
+          const semester = u.y < middleSemesterDividerY ? 1 : 2;
+          const year = col + 1;
+          return { ...u, semester, year };
+        });
+
+        const unitIdsOnCanvas = new Set(
+          unitsWithSemester
+            .map((u) => u.unitId)
+            .filter((id): id is string => typeof id === "string" && id.length > 0)
+        );
+
+        const cleanedUnitMappings: UnitMappings = Object.fromEntries(
+          Object.entries(unitMappings)
+            .filter(([unitId]) => unitIdsOnCanvas.has(unitId))
+            .map(([unitId, mapping]) => {
+              const dedupClos = Array.from(
+                new Map((mapping?.clos || []).map((clo) => [clo.cloId, clo])).values()
+              );
+              const dedupTags = Array.from(
+                new Map((mapping?.tags || []).map((tag) => [tag.tagId, tag])).values()
+              );
+              return [unitId, { clos: dedupClos, tags: dedupTags }];
+            })
+        ) as UnitMappings;
+
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
           {
-            units: unitBoxes,
-            unitMappings: unitMappings,
+            units: unitsWithSemester,
+            unitMappings: cleanedUnitMappings
           }
         );
 
@@ -316,7 +348,11 @@ export const CanvasPage: React.FC = () => {
         alert("Canvas saved successfully!");
       } catch (error) {
         console.error("Error saving canvas:", error);
-        alert("Failed to save canvas.");
+        const errorMessage =
+          (error as any)?.response?.data?.error ||
+          (error as any)?.response?.data?.message ||
+          "Failed to save canvas.";
+        alert(errorMessage);
       }
     }
   };
@@ -589,7 +625,15 @@ export const CanvasPage: React.FC = () => {
   }
 
   function deleteUnit(unitId: number) {
+    const targetUnit = unitBoxes.find((unit) => unit.id === unitId);
     setUnitBoxes(unitBoxes.filter((unit) => unit.id !== unitId));
+    if (targetUnit?.unitId) {
+      setUnitMappings((prev) => {
+        const next = { ...prev };
+        delete next[targetUnit.unitId!];
+        return next;
+      });
+    }
   }
 
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -696,10 +740,8 @@ export const CanvasPage: React.FC = () => {
     setUnitMappings((prev) => {
       const unitData = prev[unitKey] || { clos: [], tags: [] };
       if (add) {
-        return {
-          ...prev,
-          [unitKey]: { ...unitData, clos: [...unitData.clos, clo] },
-        };
+        if (unitData.clos.some((c) => c.cloId === clo.cloId)) return prev;
+        return { ...prev, [unitKey]: { ...unitData, clos: [...unitData.clos, clo] } };
       } else {
         return {
           ...prev,
@@ -716,6 +758,7 @@ export const CanvasPage: React.FC = () => {
     setUnitMappings((prev) => {
       const unitData = prev[unitKey] || { clos: [], tags: [] };
       if (add) {
+        if (unitData.tags.some((t) => t.tagId === tag.tagId)) return prev;
         if (currentCourse?.courseId) {
           addUnitTags([
             {
@@ -1043,44 +1086,40 @@ export const CanvasPage: React.FC = () => {
               </div>
 
               <div className="overflow-y-auto max-h-[300px] p-2 flex flex-col gap-3">
-                {/* CLOs Checklist */}
                 <div>
-                  <span className="text-[10px] font-bold text-purple-600 mb-1 block uppercase tracking-wider">
-                    Course Outcomes
-                  </span>
-                  {currentCLOs && currentCLOs.length > 0 ? (
-                    currentCLOs.map((clo) => {
-                      const isMapped = unitMappings[
-                        contextMenu.unitId!
-                      ]?.clos?.some((c) => c.cloId === clo.cloId);
-                      return (
-                        <label
-                          key={clo.cloId}
-                          className="flex items-start gap-2 p-1.5 hover:bg-purple-50 rounded cursor-pointer transition-colors group"
-                        >
-                          <input
-                            type="checkbox"
-                            className="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                            checked={!!isMapped}
-                            onChange={(e) =>
-                              handleToggleCLO(
-                                contextMenu.unitId!,
-                                clo,
-                                e.target.checked
-                              )
-                            }
-                          />
-                          <span className="text-gray-700 text-xs leading-tight group-hover:text-purple-900">
-                            {clo.cloDesc}
-                          </span>
-                        </label>
-                      );
-                    })
+                  <span className="text-[10px] font-bold text-blue-600 mb-1 block uppercase tracking-wider">Mapped To This Unit</span>
+                  {unitMappings[contextMenu.unitId!]?.clos?.length ? (
+                    unitMappings[contextMenu.unitId!].clos.map((clo) => (
+                      <div key={clo.cloId} className="p-1.5 rounded bg-blue-50 border border-blue-100 mb-1">
+                        <div className="text-gray-700 text-xs leading-tight">{clo.cloDesc}</div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">CLO ID: {clo.cloId}</div>
+                      </div>
+                    ))
                   ) : (
-                    <span className="text-xs text-gray-400 italic px-1">
-                      No CLOs to map.
-                    </span>
+                    <span className="text-xs text-gray-400 italic px-1">No CLO currently mapped to this unit.</span>
                   )}
+                </div>
+                
+                {/* CLOs Checklist */}
+                <div className="border-t border-gray-100 pt-2">
+                  <span className="text-[10px] font-bold text-purple-600 mb-1 block uppercase tracking-wider">Course Outcomes</span>
+                  {currentCLOs && currentCLOs.length > 0 ? currentCLOs.map(clo => {
+                    const isMapped = unitMappings[contextMenu.unitId!]?.clos?.some(c => c.cloId === clo.cloId);
+                    return (
+                      <label key={clo.cloId} className="flex items-start gap-2 p-1.5 hover:bg-purple-50 rounded cursor-pointer transition-colors group">
+                        <input 
+                          type="checkbox" 
+                          className="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer" 
+                          checked={!!isMapped} 
+                          onChange={(e) => handleToggleCLO(contextMenu.unitId!, clo, e.target.checked)} 
+                        />
+                        <div className="leading-tight">
+                          <div className="text-gray-700 text-xs group-hover:text-purple-900">{clo.cloDesc}</div>
+                          <div className="text-[10px] text-gray-500 mt-0.5">CLO ID: {clo.cloId}</div>
+                        </div>
+                      </label>
+                    );
+                  }) : <span className="text-xs text-gray-400 italic px-1">No CLOs to map.</span>}
                 </div>
 
                 {/* Tags Checklist */}

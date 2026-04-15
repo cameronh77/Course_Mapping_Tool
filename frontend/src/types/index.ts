@@ -13,6 +13,23 @@ export interface CourseLearningOutcome {
   courseId: string | undefined;
 }
 
+export interface UnitLearningOutcome {
+  uloId?: number | null;
+  uloDesc: string;
+  unitId: string;
+  cloId?: number | null;
+  cloIds?: number[];
+  assessmentIds?: number[];
+}
+
+export interface Assessment {
+  assessmentId?: number | null;
+  aDesc: string;
+  unitId?: string;
+  assessmentType?: string;
+  assessmentConditions?: string;
+  hurdleReq?: number | null;
+  unitLosIds?: number[];
 export interface unitLearningOutcome {
   id?: number;
   uloId?: number | null;
@@ -61,6 +78,9 @@ export interface UnitBox {
   x: number;
   y: number;
   color?: string;
+  width?: number;
+  semester?: number;
+  year?: number;
 }
 
 export type AssessmentType =
