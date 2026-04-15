@@ -7,6 +7,7 @@ import { WhiteboardCanvas } from "./pages/WhiteboardCanvas";
 import Navbar from "./components/navbar";
 import { useCourseStore } from "./stores/useCourseStore";
 import { CourseEdit } from "./pages/CourseEdit";
+import UnitInternalCanvas from "./pages/UnitInternalCanvas";
 
 const App = () => {
   const { currentCourse } = useCourseStore();
@@ -19,6 +20,7 @@ const App = () => {
         <Route path="/UnitCanvas" element={<CanvasPage />} />
         <Route path="/WhiteboardCanvas" element={<WhiteboardCanvas />} />
         <Route path="/CourseEdit" element={<CourseEdit />} />
+        <Route path="/UnitInternalCanvas" element={<UnitInternalCanvas />} />
       </Routes>
     </div>
   );

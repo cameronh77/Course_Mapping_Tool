@@ -66,9 +66,18 @@ export const viewUnitTagsByCourse = async (req, res) => {
       where: {
         courseId: courseId,
       },
+      include: {
+        tag: true,
+      },
     });
-    console.log("heyjey", tags);
-    res.status(200).json(tags);
+    // Flatten: return objects shaped as { courseId, unitId, tagId, tagName }
+    const result = tags.map((t) => ({
+      courseId: t.courseId,
+      unitId: t.unitId,
+      tagId: t.tagId,
+      tagName: (t as any).tag?.tagName ?? "",
+    }));
+    res.status(200).json(result);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Server error" });
@@ -119,11 +128,14 @@ export const deleteTag = async (req, res) => {
 
 export const deleteUnitFromTag = async (req, res) => {
   try {
-    const { tagId, unitId } = req.params;
-    const deletedTag = await prisma.courseUnitTag.delete({
+    const { tagId, unitId, courseId } = req.query;
+    const deletedTag = await prisma.courseUnitTags.delete({
       where: {
-        tagId: tagId,
-        unitId: unitId,
+        courseId_unitId_tagId: {
+          courseId: courseId as string,
+          unitId: unitId as string,
+          tagId: Number(tagId),
+        },
       },
     });
 

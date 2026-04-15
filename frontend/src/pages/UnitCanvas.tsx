@@ -4,29 +4,32 @@ import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
 import { GridBackground } from "../components/common/GridBackground";
 import { ConnectionLines } from "../components/common/ConnectionLines";
+import { ThemeView } from "../components/common/ThemeView";
 import { AddTagMenu } from "../components/common/AddTagMenu";
 import { axiosInstance } from "../lib/axios";
+import { saveThemeLayout, type ThemeViewStorage } from "../lib/themeStorage";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
 import { useTagStore } from "../stores/useTagStore";
-import type { 
-  Unit, 
-  CourseLearningOutcome, 
-  Tag, 
+import { useNavigate } from "react-router-dom";
+import type {
+  Unit,
+  CourseLearningOutcome,
+  Tag,
   UnitRelationship,
   UnitBox as UnitBoxType,
-  UnitMappings
+  UnitMappings,
 } from "../types";
 
 // Grid Layout Constants
-const COL_WIDTH = 600; 
-const ROW_HEIGHT = 150; 
-const START_X = 80;  
-const START_Y = 80;  
+const COL_WIDTH = 600;
+const ROW_HEIGHT = 150;
+const START_X = 80;
+const START_Y = 80;
 const DEFAULT_YEARS = 3;
 const DEFAULT_SEMESTERS = 2;
-const MAX_UNITS_PER_SEM = 4; 
+const MAX_UNITS_PER_SEM = 4;
 const UNIT_BOX_WIDTH = 256;
 
 // Color palette for CLOs - vibrant and distinct colors
@@ -53,7 +56,8 @@ const getCLOColor = (cloId: number): string => {
 export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
 
-  // UX State - Sidebar Navigation Tab
+  // UX State - View Mode & Sidebar Navigation Tab
+  const [viewMode, setViewMode] = useState<'grid' | 'theme'>('grid');
   const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
 
   // State for editing
@@ -64,7 +68,7 @@ export const CanvasPage: React.FC = () => {
   const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
-  
+
   // State for dragging NEW units from sidebar
   const [draggedNewUnit, setDraggedNewUnit] = useState<{
     unit: Unit;
@@ -76,6 +80,7 @@ export const CanvasPage: React.FC = () => {
   const [hoveredUnit, setHoveredUnit] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
 
@@ -85,10 +90,18 @@ export const CanvasPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Unit[]>([]);
   const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
-  const { checkUnitExists, viewUnits, createUnit, updateUnit } = useUnitStore();
+  const {
+    currentUnit,
+    checkUnitExists,
+    viewUnits,
+    createUnit,
+    updateUnit,
+    setUnit,
+  } = useUnitStore();
 
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
 
+  const navigate = useNavigate();
   // Context Menu to identify specific units
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -99,7 +112,7 @@ export const CanvasPage: React.FC = () => {
 
   const [viewingTagMenu, setViewingTagMenu] = useState<boolean>(false);
   const [tagData, setTagData] = useState<CourseLearningOutcome[] | null>(null);
-  
+
   const {
     existingTags,
     existingTagConnections,
@@ -112,11 +125,14 @@ export const CanvasPage: React.FC = () => {
   const [connectionMode, setConnectionMode] = useState<boolean>(false);
   const [connectionSource, setConnectionSource] = useState<string | null>(null);
   const [relationships, setRelationships] = useState<UnitRelationship[]>([]);
-  const [selectedRelationType, setSelectedRelationType] = useState<UnitRelationship["relationshipType"]>("PREREQUISITE");
+  const [selectedRelationType, setSelectedRelationType] =
+    useState<UnitRelationship["relationshipType"]>("PREREQUISITE");
 
   // State for expanded units and active tabs
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
-  const [activeTabs, setActiveTabs] = useState<Record<number, 'info' | 'clos' | 'tags'>>({});
+  const [activeTabs, setActiveTabs] = useState<
+    Record<number, "info" | "clos" | "tags">
+  >({});
   const [unitMappings, setUnitMappings] = useState<UnitMappings>({});
 
   useEffect(() => {
@@ -144,7 +160,7 @@ export const CanvasPage: React.FC = () => {
       }
     };
     loadRelationships();
-  }, [currentCourse?.courseId]); 
+  }, [currentCourse?.courseId]);
 
   useEffect(() => {
     const loadCanvasState = async () => {
@@ -191,12 +207,14 @@ export const CanvasPage: React.FC = () => {
           // Load all tags for this course once
           let allTagsForCourse: any[] = [];
           try {
-            const tagResponse = await axiosInstance.get(`/tag/view-unit-course/${currentCourse.courseId}`);
+            const tagResponse = await axiosInstance.get(
+              `/tag/view-unit-course/${currentCourse.courseId}`
+            );
             allTagsForCourse = tagResponse.data || [];
           } catch (error) {
             console.error("Error loading tags for course:", error);
           }
-          
+
           // Process each unit and build mappings
           for (const cu of courseUnits) {
             const unitId = cu.unitId;
@@ -206,7 +224,7 @@ export const CanvasPage: React.FC = () => {
             const unitCLOMappings = allULOs.filter(
               (ulo: any) => ulo.unitId === unitId && ulo.cloId
             );
-            
+
             const mappedCLOs = unitCLOMappings
               .map((ulo: any) => allCLOs.find((clo: CourseLearningOutcome) => clo.cloId === ulo.cloId))
               .filter((clo): clo is CourseLearningOutcome => Boolean(clo));
@@ -217,10 +235,10 @@ export const CanvasPage: React.FC = () => {
             const unitTags = allTagsForCourse.filter(
               (ut: any) => ut.unitId === unitId
             );
-            
+
             mappingsData[unitId].tags = unitTags;
           }
-          
+
           setUnitMappings(mappingsData);
         } catch (error) {
           console.error("Error loading canvas state:", error);
@@ -239,12 +257,34 @@ export const CanvasPage: React.FC = () => {
     loadCLOs();
   }, [currentCourse?.courseId]);
 
-  const getMouseCoords = (e: MouseEvent | React.MouseEvent, container: HTMLDivElement) => {
+  const getMouseCoords = (
+    e: MouseEvent | React.MouseEvent,
+    container: HTMLDivElement
+  ) => {
     const rect = container.getBoundingClientRect();
     return {
       x: e.clientX - rect.left + container.scrollLeft,
       y: e.clientY - rect.top + container.scrollTop,
     };
+  };
+
+  const handleUnitGroupChange = async (
+    unitKey: string,
+    fromTag: import("../types").Tag | null,
+    toTag: import("../types").Tag | null
+  ) => {
+    // Update local unitMappings immediately
+    setUnitMappings((prev) => {
+      const mapping = { ...(prev[unitKey] || { clos: [], tags: [] }) };
+      if (fromTag) {
+        mapping.tags = mapping.tags.filter((t) => t.tagId !== fromTag.tagId);
+      }
+      if (toTag && !mapping.tags.find((t) => t.tagId === toTag.tagId)) {
+        mapping.tags = [...mapping.tags, toTag];
+      }
+      return { ...prev, [unitKey]: mapping };
+    });
+
   };
 
   const handleAddTagToUnits = (tag: number) => {
@@ -299,6 +339,12 @@ export const CanvasPage: React.FC = () => {
             unitMappings: cleanedUnitMappings
           }
         );
+
+        // Persist theme layout
+        if (themeLayoutRef.current) {
+          saveThemeLayout(currentCourse.courseId, themeLayoutRef.current);
+        }
+
         alert("Canvas saved successfully!");
       } catch (error) {
         console.error("Error saving canvas:", error);
@@ -311,14 +357,21 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  const addUnitToCanvasAtPos = (selectedUnit: Unit, x: number, y: number, color?: string) => {
+  const addUnitToCanvasAtPos = (
+    selectedUnit: Unit,
+    x: number,
+    y: number,
+    color?: string
+  ) => {
     const unitExists = unitBoxes.some((u) => u.unitId === selectedUnit.unitId);
     if (unitExists) {
       alert("This unit has already been added.");
       return;
     }
 
-    const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+    const semestersPerYear =
+      Number((currentCourse as any)?.numberTeachingPeriods) ||
+      DEFAULT_SEMESTERS;
     const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
 
     const col = Math.max(0, Math.round((x - START_X) / COL_WIDTH));
@@ -333,7 +386,8 @@ export const CanvasPage: React.FC = () => {
       }
     }
 
-    const snappedX = START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+    const snappedX =
+      START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
     const snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
 
     const newUnit = {
@@ -347,7 +401,7 @@ export const CanvasPage: React.FC = () => {
       y: snappedY,
       color: color || "#3B82F6",
     };
-    
+
     setUnitBoxes((prev) => [...prev, newUnit]);
   };
 
@@ -356,11 +410,13 @@ export const CanvasPage: React.FC = () => {
     setDraggedNewUnit({
       unit,
       x: e.clientX,
-      y: e.clientY
+      y: e.clientY,
     });
 
     const handleGlobalMove = (moveEvent: MouseEvent) => {
-      setDraggedNewUnit(prev => prev ? { ...prev, x: moveEvent.clientX, y: moveEvent.clientY } : null);
+      setDraggedNewUnit((prev) =>
+        prev ? { ...prev, x: moveEvent.clientX, y: moveEvent.clientY } : null
+      );
     };
 
     const handleGlobalUp = (upEvent: MouseEvent) => {
@@ -375,8 +431,15 @@ export const CanvasPage: React.FC = () => {
           upEvent.clientY >= rect.top &&
           upEvent.clientY <= rect.bottom
         ) {
-          const canvasCoords = getMouseCoords(upEvent as unknown as React.MouseEvent, canvasRef.current);
-          addUnitToCanvasAtPos(unit, canvasCoords.x - (UNIT_BOX_WIDTH / 2), canvasCoords.y - 40);
+          const canvasCoords = getMouseCoords(
+            upEvent as unknown as React.MouseEvent,
+            canvasRef.current
+          );
+          addUnitToCanvasAtPos(
+            unit,
+            canvasCoords.x - UNIT_BOX_WIDTH / 2,
+            canvasCoords.y - 40
+          );
         }
       }
       setDraggedNewUnit(null);
@@ -399,20 +462,26 @@ export const CanvasPage: React.FC = () => {
           unitName: formData.unitName || editedUnit.name,
           unitDesc: formData.unitDesc || editedUnit.description,
           credits: formData.credits || editedUnit.credits,
-          semestersOffered: formData.semestersOffered || editedUnit.semestersOffered,
+          semestersOffered:
+            formData.semestersOffered || editedUnit.semestersOffered,
         })
           .then(() => {
-            setUnitBoxes(unitBoxes.map((unit) =>
-                unit.id === editingId ? {
-                  ...unit,
-                  name: formData.unitName || unit.name,
-                  unitId: formData.unitId || unit.unitId,
-                  description: formData.unitDesc || unit.description,
-                  credits: formData.credits || unit.credits,
-                  semestersOffered: formData.semestersOffered || unit.semestersOffered,
-                  color: formData.color || unit.color,
-                } : unit
-            ));
+            setUnitBoxes(
+              unitBoxes.map((unit) =>
+                unit.id === editingId
+                  ? {
+                      ...unit,
+                      name: formData.unitName || unit.name,
+                      unitId: formData.unitId || unit.unitId,
+                      description: formData.unitDesc || unit.description,
+                      credits: formData.credits || unit.credits,
+                      semestersOffered:
+                        formData.semestersOffered || unit.semestersOffered,
+                      color: formData.color || unit.color,
+                    }
+                  : unit
+              )
+            );
             setEditingId(null);
             setShowForm(false);
           })
@@ -439,7 +508,10 @@ export const CanvasPage: React.FC = () => {
     const start = { initialX: mouseX, initialY: mouseY };
 
     const handleCanvasUp = (mouseEvent: MouseEvent) => {
-      const { x: endX, y: endY } = getMouseCoords(mouseEvent, canvasRef.current!);
+      const { x: endX, y: endY } = getMouseCoords(
+        mouseEvent,
+        canvasRef.current!
+      );
       const selectedRect = {
         x1: Math.min(start.initialX, endX),
         x2: Math.max(start.initialX, endX),
@@ -447,7 +519,13 @@ export const CanvasPage: React.FC = () => {
         y2: Math.max(start.initialY, endY),
       };
       const selected = unitBoxes
-        .filter((unit) => unit.x > selectedRect.x1 && unit.x < selectedRect.x2 && unit.y > selectedRect.y1 && unit.y < selectedRect.y2)
+        .filter(
+          (unit) =>
+            unit.x > selectedRect.x1 &&
+            unit.x < selectedRect.x2 &&
+            unit.y > selectedRect.y1 &&
+            unit.y < selectedRect.y2
+        )
         .map((unit) => unit.unitId as string);
       setSelectedUnits(selected);
       document.removeEventListener("mouseup", handleCanvasUp);
@@ -472,37 +550,66 @@ export const CanvasPage: React.FC = () => {
     const handleMove = (moveEvent: MouseEvent) => {
       if (!canvasRef.current) return;
       setIsDragging(true);
-      const { x: newMouseX, y: newMouseY } = getMouseCoords(moveEvent, canvasRef.current);
-      setUnitBoxes((prevUnits) => prevUnits.map((u) => u.id === id ? {
-          ...u,
-          x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH)),
-          y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 100)),
-      } : u));
+      const { x: newMouseX, y: newMouseY } = getMouseCoords(
+        moveEvent,
+        canvasRef.current
+      );
+      setUnitBoxes((prevUnits) =>
+        prevUnits.map((u) =>
+          u.id === id
+            ? {
+                ...u,
+                x: Math.max(
+                  0,
+                  Math.min(
+                    newMouseX - offset.x,
+                    canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH
+                  )
+                ),
+                y: Math.max(
+                  0,
+                  Math.min(
+                    newMouseY - offset.y,
+                    canvasRef.current!.scrollHeight - 100
+                  )
+                ),
+              }
+            : u
+        )
+      );
     };
 
     const handleUp = () => {
-      setUnitBoxes((prevUnits) => prevUnits.map((u) => {
-        if (u.id === id) {
-          let snappedX = u.x;
-          let snappedY = u.y;
-          if (u.x >= START_X - 100 && u.y >= START_Y - 50) {
-            const semestersPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
-            const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
-            const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
-            let closestRow = 0;
-            let minDistance = Infinity;
-            for (let r = 0; r < totalRows; r++) {
-              const expectedY = START_Y + r * ROW_HEIGHT + 20;
-              const dist = Math.abs(u.y - expectedY);
-              if (dist < minDistance) { minDistance = dist; closestRow = r; }
+      setUnitBoxes((prevUnits) =>
+        prevUnits.map((u) => {
+          if (u.id === id) {
+            let snappedX = u.x;
+            let snappedY = u.y;
+            if (u.x >= START_X - 100 && u.y >= START_Y - 50) {
+              const semestersPerYear =
+                Number((currentCourse as any)?.numberTeachingPeriods) ||
+                DEFAULT_SEMESTERS;
+              const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+              const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
+              let closestRow = 0;
+              let minDistance = Infinity;
+              for (let r = 0; r < totalRows; r++) {
+                const expectedY = START_Y + r * ROW_HEIGHT + 20;
+                const dist = Math.abs(u.y - expectedY);
+                if (dist < minDistance) {
+                  minDistance = dist;
+                  closestRow = r;
+                }
+              }
+              snappedX =
+                START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+              snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
             }
-            snappedX = START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
-            snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
+            return { ...u, x: snappedX, y: snappedY };
           }
-          return { ...u, x: snappedX, y: snappedY };
-        }
-        return u;
-      }));
+          return u;
+        })
+      );
       setDraggedUnit(null);
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
@@ -558,10 +665,13 @@ export const CanvasPage: React.FC = () => {
       const newUnit = await createUnit(data);
       setShowCreateForm(false);
       if (newUnit && newUnit.unitId) {
-          setSearchTerm(newUnit.unitId);
-          handleSearchChange({ target: { value: newUnit.unitId } } as any);
+        setSearchTerm(newUnit.unitId);
+        handleSearchChange({ target: { value: newUnit.unitId } } as any);
       }
-    } catch(err) { console.error(err); alert("Failed to create unit."); }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to create unit.");
+    }
   };
 
   const handleCreateRelationship = async (targetUnitId: string) => {
@@ -581,14 +691,19 @@ export const CanvasPage: React.FC = () => {
       setRelationships([...relationships, response.data]);
       setConnectionSource(null);
       setConnectionMode(false);
-    } catch (error: any) { alert(error.response?.data?.message || "Failed to create relationship"); setConnectionSource(null); }
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Failed to create relationship");
+      setConnectionSource(null);
+    }
   };
 
   const handleDeleteRelationship = async (relationshipId: number) => {
     try {
       await axiosInstance.delete(`/unit-relationship/delete/${relationshipId}`);
       setRelationships(relationships.filter((r) => r.id !== relationshipId));
-    } catch (err) { alert("Failed to delete relationship"); }
+    } catch (err) {
+      alert("Failed to delete relationship");
+    }
   };
 
   const handleUnitClickForConnection = (unitId: string) => {
@@ -601,7 +716,12 @@ export const CanvasPage: React.FC = () => {
   function handleRightClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, unitId: undefined });
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      unitId: undefined,
+    });
   }
 
   // Restored: Unit Box specific Right-Click (Quick Tick Tool)
@@ -612,29 +732,54 @@ export const CanvasPage: React.FC = () => {
   }
 
   // Restored: Handle Quick-Tick Mappings
-  const handleToggleCLO = (unitKey: string, clo: CourseLearningOutcome, add: boolean) => {
-    setUnitMappings(prev => {
+  const handleToggleCLO = (
+    unitKey: string,
+    clo: CourseLearningOutcome,
+    add: boolean
+  ) => {
+    setUnitMappings((prev) => {
       const unitData = prev[unitKey] || { clos: [], tags: [] };
       if (add) {
         if (unitData.clos.some((c) => c.cloId === clo.cloId)) return prev;
         return { ...prev, [unitKey]: { ...unitData, clos: [...unitData.clos, clo] } };
       } else {
-        return { ...prev, [unitKey]: { ...unitData, clos: unitData.clos.filter(c => c.cloId !== clo.cloId) } };
+        return {
+          ...prev,
+          [unitKey]: {
+            ...unitData,
+            clos: unitData.clos.filter((c) => c.cloId !== clo.cloId),
+          },
+        };
       }
     });
   };
 
   const handleToggleTag = (unitKey: string, tag: Tag, add: boolean) => {
-    setUnitMappings(prev => {
+    setUnitMappings((prev) => {
       const unitData = prev[unitKey] || { clos: [], tags: [] };
       if (add) {
         if (unitData.tags.some((t) => t.tagId === tag.tagId)) return prev;
         if (currentCourse?.courseId) {
-          addUnitTags([{ courseId: currentCourse.courseId, unitId: unitKey, tagId: tag.tagId }]);
+          addUnitTags([
+            {
+              courseId: currentCourse.courseId,
+              unitId: unitKey,
+              tagId: tag.tagId,
+            },
+          ]);
         }
-        return { ...prev, [unitKey]: { ...unitData, tags: [...unitData.tags, tag] } };
+        return {
+          ...prev,
+          [unitKey]: { ...unitData, tags: [...unitData.tags, tag] },
+        };
       } else {
-        return { ...prev, [unitKey]: { ...unitData, tags: unitData.tags.filter(t => t.tagId !== tag.tagId) } };
+        return {
+          ...prev,
+          [unitKey]: {
+            ...unitData,
+            tags: unitData.tags.filter((t) => t.tagId !== tag.tagId),
+          },
+        };
       }
     });
   };
@@ -643,16 +788,34 @@ export const CanvasPage: React.FC = () => {
   const handleDropOnUnit = (unitKey: string, transferItem: any) => {
     setUnitMappings((prev) => {
       const unitData = prev[unitKey] || { clos: [], tags: [] };
-      if (transferItem.type === 'clo') {
+      if (transferItem.type === "clo") {
         if (!unitData.clos.find((c) => c.cloId === transferItem.data.cloId)) {
-          return { ...prev, [unitKey]: { ...unitData, clos: [...unitData.clos, transferItem.data] } };
+          return {
+            ...prev,
+            [unitKey]: {
+              ...unitData,
+              clos: [...unitData.clos, transferItem.data],
+            },
+          };
         }
-      } else if (transferItem.type === 'tag') {
+      } else if (transferItem.type === "tag") {
         if (!unitData.tags.find((t) => t.tagId === transferItem.data.tagId)) {
           if (currentCourse?.courseId) {
-             addUnitTags([{ courseId: currentCourse.courseId, unitId: unitKey, tagId: transferItem.data.tagId }]);
+            addUnitTags([
+              {
+                courseId: currentCourse.courseId,
+                unitId: unitKey,
+                tagId: transferItem.data.tagId,
+              },
+            ]);
           }
-          return { ...prev, [unitKey]: { ...unitData, tags: [...unitData.tags, transferItem.data] } };
+          return {
+            ...prev,
+            [unitKey]: {
+              ...unitData,
+              tags: [...unitData.tags, transferItem.data],
+            },
+          };
         }
       }
       return prev;
@@ -661,7 +824,7 @@ export const CanvasPage: React.FC = () => {
 
   const toggleExpand = (e: React.MouseEvent, unitId: number) => {
     e.stopPropagation();
-    setExpandedUnits(prev => {
+    setExpandedUnits((prev) => {
       const next = new Set(prev);
       if (next.has(unitId)) next.delete(unitId);
       else next.add(unitId);
@@ -669,25 +832,38 @@ export const CanvasPage: React.FC = () => {
     });
   };
 
-  const yearsCount = Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
-  const semPerYear = Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+  const yearsCount =
+    Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
+  const semPerYear =
+    Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
   const innerWidth = Math.max(1200, START_X + yearsCount * COL_WIDTH + 100);
-  const innerHeight = Math.max(800, START_Y + (semPerYear * MAX_UNITS_PER_SEM) * ROW_HEIGHT + 100);
+  const innerHeight = Math.max(
+    800,
+    START_Y + semPerYear * MAX_UNITS_PER_SEM * ROW_HEIGHT + 100
+  );
 
   // Wrapper for the onDrop handler to process logic locally in UnitCanvas
   const handleUnitBoxDrop = (unitKey: string, parsed: any) => {
     handleDropOnUnit(unitKey, parsed);
-    const unit = unitBoxes.find(u => u.unitId === unitKey || u.id.toString() === unitKey);
+    const unit = unitBoxes.find(
+      (u) => u.unitId === unitKey || u.id.toString() === unitKey
+    );
     if (unit && !expandedUnits.has(unit.id)) {
-      setExpandedUnits(prev => new Set(prev).add(unit.id));
+      setExpandedUnits((prev) => new Set(prev).add(unit.id));
     }
     if (unit) {
-      setActiveTabs(prev => ({...prev, [unit.id]: parsed.type === 'clo' ? 'clos' : 'tags'}));
+      setActiveTabs((prev) => ({
+        ...prev,
+        [unit.id]: parsed.type === "clo" ? "clos" : "tags",
+      }));
     }
   };
 
   return (
-    <div className="flex h-screen relative overflow-hidden pt-16" onClick={() => setContextMenu({ ...contextMenu, visible: false })}>
+    <div
+      className="flex h-screen relative overflow-hidden pt-16"
+      onClick={() => setContextMenu({ ...contextMenu, visible: false })}
+    >
       <div className="flex flex-col h-full z-20 w-[300px] border-r shadow-xl">
         <CanvasSidebar
           sidebarTab={sidebarTab}
@@ -709,13 +885,30 @@ export const CanvasPage: React.FC = () => {
         />
       </div>
 
-      <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={handleMouseDownCanvas} onContextMenu={(e) => handleRightClick(e)}>
+      <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+        {/* View Mode Toggle */}
+        <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
+          <button
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+            onClick={() => setViewMode('grid')}
+          >
+            Grid View
+          </button>
+          <button
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'theme' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+            onClick={() => setViewMode('theme')}
+          >
+            Theme View
+          </button>
+        </div>
+
+        {viewMode === 'grid' ? (
         <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
           <GridBackground
             expectedDuration={yearsCount}
             numberTeachingPeriods={semPerYear}
           />
-          
+
           {unitBoxes.map((unit) => (
             <UnitBox
               key={unit.id}
@@ -725,18 +918,27 @@ export const CanvasPage: React.FC = () => {
               connectionMode={connectionMode}
               connectionSource={connectionSource}
               isExpanded={expandedUnits.has(unit.id)}
-              activeTab={activeTabs[unit.id] || 'info'}
-              unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
+              activeTab={activeTabs[unit.id] || "info"}
+              unitMappings={
+                unitMappings[unit.unitId || unit.id.toString()] || {
+                  clos: [],
+                  tags: [],
+                }
+              }
               currentCLOs={currentCLOs || []}
               onMouseDown={handleMouseDown}
               onDoubleClick={handleDoubleClick}
               onClick={handleUnitClickForConnection}
-              onMouseEnter={() => setHoveredUnit(unit.unitId || unit.id.toString())}
+              onMouseEnter={() =>
+                setHoveredUnit(unit.unitId || unit.id.toString())
+              }
               onMouseLeave={() => setHoveredUnit(null)}
               onContextMenu={handleUnitRightClick}
               onDrop={handleUnitBoxDrop}
               toggleExpand={toggleExpand}
-              setActiveTab={(id, tab) => setActiveTabs(prev => ({ ...prev, [id]: tab }))}
+              setActiveTab={(id, tab) =>
+                setActiveTabs((prev) => ({ ...prev, [id]: tab }))
+              }
               deleteUnit={deleteUnit}
               getCLOColor={getCLOColor}
             />
@@ -752,6 +954,17 @@ export const CanvasPage: React.FC = () => {
             />
           </svg>
         </div>
+        ) : (
+          <ThemeView
+            courseId={currentCourse?.courseId ?? ""}
+            unitBoxes={unitBoxes}
+            unitMappings={unitMappings}
+            existingTags={existingTags}
+            getCLOColor={getCLOColor}
+            onUnitGroupChange={handleUnitGroupChange}
+            layoutRef={themeLayoutRef}
+          />
+        )}
 
         {/* Modal: Edit Unit */}
         {showForm && editingId && (
@@ -759,17 +972,34 @@ export const CanvasPage: React.FC = () => {
             <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Edit Unit</h2>
-                <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors">&times;</button>
+                <button
+                  onClick={cancelEdit}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors"
+                >
+                  &times;
+                </button>
               </div>
               <UnitForm
                 onSave={handleFormSave}
                 initialData={{
-                  unitId: unitBoxes.find((u) => u.id === editingId)?.unitId || null,
-                  unitName: unitBoxes.find((u) => u.id === editingId)?.name || null,
-                  unitDesc: unitBoxes.find((u) => u.id === editingId)?.description || null,
-                  credits: unitBoxes.find((u) => u.id === editingId)?.credits || null,
-                  semestersOffered: unitBoxes.find((u) => u.id === editingId)?.semestersOffered || null,
-                  color: unitBoxes.find((u) => u.id === editingId)?.color || null,
+                  unitId:
+                    unitBoxes.find((u) => u.id === editingId)?.unitId || null,
+                  unitName:
+                    unitBoxes.find((u) => u.id === editingId)?.name || null,
+                  unitDesc:
+                    unitBoxes.find((u) => u.id === editingId)?.description ||
+                    null,
+                  credits:
+                    unitBoxes.find((u) => u.id === editingId)?.credits || null,
+                  semestersOffered:
+                    unitBoxes.find((u) => u.id === editingId)
+                      ?.semestersOffered || null,
+                  color:
+                    unitBoxes.find((u) => u.id === editingId)?.color || null,
+                }}
+                onView={() => {
+                  navigate("/UnitInternalCanvas");
+                  setUnit(unitBoxes.find((item) => item.id === editingId));
                 }}
               />
             </div>
@@ -782,9 +1012,24 @@ export const CanvasPage: React.FC = () => {
             <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Create Unit</h2>
-                <button onClick={() => setShowCreateForm(false)} className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors">&times;</button>
+                <button
+                  onClick={() => setShowCreateForm(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors"
+                >
+                  &times;
+                </button>
               </div>
-              <UnitForm onSave={handleCreateUnit} initialData={{ unitId: null, unitName: null, unitDesc: null, credits: null, semestersOffered: null, color: null }} />
+              <UnitForm
+                onSave={handleCreateUnit}
+                initialData={{
+                  unitId: null,
+                  unitName: null,
+                  unitDesc: null,
+                  credits: null,
+                  semestersOffered: null,
+                  color: null,
+                }}
+              />
             </div>
           </div>
         )}
@@ -792,32 +1037,54 @@ export const CanvasPage: React.FC = () => {
 
       {/* Floating Drag Preview for New Units */}
       {draggedNewUnit && (
-        <div 
+        <div
           className="fixed pointer-events-none z-[200] opacity-80"
-          style={{ left: draggedNewUnit.x - (UNIT_BOX_WIDTH/2), top: draggedNewUnit.y - 40, width: UNIT_BOX_WIDTH }}
+          style={{
+            left: draggedNewUnit.x - UNIT_BOX_WIDTH / 2,
+            top: draggedNewUnit.y - 40,
+            width: UNIT_BOX_WIDTH,
+          }}
         >
           <div className="bg-blue-600 p-4 rounded shadow-2xl border-2 border-white text-white">
-            <h2 className="text-lg font-bold text-center">{draggedNewUnit.unit.unitId}</h2>
-            <p className="text-xs text-center opacity-80">{draggedNewUnit.unit.unitName}</p>
+            <h2 className="text-lg font-bold text-center">
+              {draggedNewUnit.unit.unitId}
+            </h2>
+            <p className="text-xs text-center opacity-80">
+              {draggedNewUnit.unit.unitName}
+            </p>
           </div>
         </div>
       )}
 
       {/* Dynamic Context Menu (Quick-Tick Mapping OR Bulk Tools) */}
       {contextMenu.visible && (
-        <div 
-          className="fixed bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col text-left z-[300] overflow-hidden" 
-          style={{ top: contextMenu.y, left: contextMenu.x, minWidth: "220px", maxWidth: "280px" }} 
+        <div
+          className="fixed bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col text-left z-[300] overflow-hidden"
+          style={{
+            top: contextMenu.y,
+            left: contextMenu.x,
+            minWidth: "220px",
+            maxWidth: "280px",
+          }}
           onClick={(e) => e.stopPropagation()}
         >
           {contextMenu.unitId ? (
             // Specific Unit Context Menu (Quick-Tick Checklist)
             <>
               <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex justify-between items-center">
-                <span className="font-bold text-[11px] text-gray-500 uppercase tracking-wider">Quick Mapping - {contextMenu.unitId}</span>
-                <button onClick={() => setContextMenu({...contextMenu, visible: false})} className="text-gray-400 hover:text-gray-700 leading-none">✕</button>
+                <span className="font-bold text-[11px] text-gray-500 uppercase tracking-wider">
+                  Quick Mapping - {contextMenu.unitId}
+                </span>
+                <button
+                  onClick={() =>
+                    setContextMenu({ ...contextMenu, visible: false })
+                  }
+                  className="text-gray-400 hover:text-gray-700 leading-none"
+                >
+                  ✕
+                </button>
               </div>
-              
+
               <div className="overflow-y-auto max-h-[300px] p-2 flex flex-col gap-3">
                 <div>
                   <span className="text-[10px] font-bold text-blue-600 mb-1 block uppercase tracking-wider">Mapped To This Unit</span>
@@ -857,40 +1124,96 @@ export const CanvasPage: React.FC = () => {
 
                 {/* Tags Checklist */}
                 <div className="border-t border-gray-100 pt-2">
-                  <span className="text-[10px] font-bold text-green-600 mb-1 block uppercase tracking-wider">Tags</span>
-                  {existingTags && existingTags.length > 0 ? existingTags.map(tag => {
-                    const isMapped = unitMappings[contextMenu.unitId!]?.tags?.some(t => t.tagId === tag.tagId);
-                    return (
-                      <label key={tag.tagId} className="flex items-center gap-2 p-1.5 hover:bg-green-50 rounded cursor-pointer transition-colors group">
-                        <input 
-                          type="checkbox" 
-                          className="rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer" 
-                          checked={!!isMapped} 
-                          onChange={(e) => handleToggleTag(contextMenu.unitId!, tag, e.target.checked)} 
-                        />
-                        <span className="text-gray-700 text-xs group-hover:text-green-900">{tag.tagName}</span>
-                      </label>
-                    );
-                  }) : <span className="text-xs text-gray-400 italic px-1">No tags available.</span>}
+                  <span className="text-[10px] font-bold text-green-600 mb-1 block uppercase tracking-wider">
+                    Tags
+                  </span>
+                  {existingTags && existingTags.length > 0 ? (
+                    existingTags.map((tag) => {
+                      const isMapped = unitMappings[
+                        contextMenu.unitId!
+                      ]?.tags?.some((t) => t.tagId === tag.tagId);
+                      return (
+                        <label
+                          key={tag.tagId}
+                          className="flex items-center gap-2 p-1.5 hover:bg-green-50 rounded cursor-pointer transition-colors group"
+                        >
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
+                            checked={!!isMapped}
+                            onChange={(e) =>
+                              handleToggleTag(
+                                contextMenu.unitId!,
+                                tag,
+                                e.target.checked
+                              )
+                            }
+                          />
+                          <span className="text-gray-700 text-xs group-hover:text-green-900">
+                            {tag.tagName}
+                          </span>
+                        </label>
+                      );
+                    })
+                  ) : (
+                    <span className="text-xs text-gray-400 italic px-1">
+                      No tags available.
+                    </span>
+                  )}
                 </div>
-
               </div>
             </>
           ) : (
             // General Canvas Context Menu (Bulk Operations)
             <div className="py-1">
               <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-100 mb-1">
-                <span className="text-[10px] font-bold text-gray-500 uppercase">Bulk Tools ({selectedUnits.length} selected)</span>
+                <span className="text-[10px] font-bold text-gray-500 uppercase">
+                  Bulk Tools ({selectedUnits.length} selected)
+                </span>
               </div>
-              <button className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors" onClick={() => { setViewingTagMenu(true); setTagData(currentCLOs.map((clo: CourseLearningOutcome) => ({ name: clo.cloDesc, id: clo.cloId }))); setContextMenu({...contextMenu, visible: false}); }}>Add Learning Outcome</button>
-              <button className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors" onClick={() => { setViewingTagMenu(true); setTagData(existingTags.map((tag: Tag) => ({ name: tag.tagName, id: tag.tagId }))); setContextMenu({...contextMenu, visible: false}); }}>Add Tag</button>
+              <button
+                className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors"
+                onClick={() => {
+                  setViewingTagMenu(true);
+                  setTagData(
+                    currentCLOs.map((clo: CourseLearningOutcome) => ({
+                      name: clo.cloDesc,
+                      id: clo.cloId,
+                    }))
+                  );
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+              >
+                Add Learning Outcome
+              </button>
+              <button
+                className="w-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 px-4 py-2 text-sm font-medium cursor-pointer text-left transition-colors"
+                onClick={() => {
+                  setViewingTagMenu(true);
+                  setTagData(
+                    existingTags.map((tag: Tag) => ({
+                      name: tag.tagName,
+                      id: tag.tagId,
+                    }))
+                  );
+                  setContextMenu({ ...contextMenu, visible: false });
+                }}
+              >
+                Add Tag
+              </button>
             </div>
           )}
         </div>
       )}
 
       {viewingTagMenu && (
-        <AddTagMenu x={contextMenu.x} y={contextMenu.y} data={tagData} onClose={() => setViewingTagMenu(false)} onSave={handleAddTagToUnits} />
+        <AddTagMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          data={tagData}
+          onClose={() => setViewingTagMenu(false)}
+          onSave={handleAddTagToUnits}
+        />
       )}
     </div>
   );

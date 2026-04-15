@@ -177,6 +177,51 @@ export const saveCanvasState = async (req, res) => {
             }
           }
         }
+    // Build all insert data upfront before entering the transaction
+    const courseUnitsData = (units ?? []).map((unit) => ({
+      courseId,
+      unitId: unit.unitId,
+      semester: 0,
+      year: 0,
+      elective: false,
+      position: { x: unit.x, y: unit.y },
+      color: unit.color || null,
+    }));
+
+    const allUnitIds: string[] = Object.keys(unitMappings ?? {});
+
+    const allCloData: { uloDesc: string; unitId: string; cloId: number }[] = [];
+    const allTagData: { courseId: string; unitId: string; tagId: number }[] = [];
+
+    for (const [unitId, mappings] of Object.entries(unitMappings ?? {})) {
+      const m = mappings as any;
+      for (const clo of m.clos ?? []) {
+        allCloData.push({ uloDesc: `CLO: ${clo.cloDesc}`, unitId, cloId: parseInt(clo.cloId) });
+      }
+      for (const tag of m.tags ?? []) {
+        allTagData.push({ courseId, unitId, tagId: parseInt(tag.tagId) });
+      }
+    }
+
+    // Single transaction with bulk operations — O(6) round-trips regardless of unit count
+    await prisma.$transaction(async (tx) => {
+      await tx.courseUnit.deleteMany({ where: { courseId } });
+
+      if (courseUnitsData.length > 0) {
+        await tx.courseUnit.createMany({ data: courseUnitsData, skipDuplicates: true });
+      }
+
+      if (allUnitIds.length > 0) {
+        await tx.unitLearningOutcome.deleteMany({ where: { unitId: { in: allUnitIds } } });
+        await tx.courseUnitTags.deleteMany({ where: { courseId, unitId: { in: allUnitIds } } });
+      }
+
+      if (allCloData.length > 0) {
+        await tx.unitLearningOutcome.createMany({ data: allCloData, skipDuplicates: true });
+      }
+
+      if (allTagData.length > 0) {
+        await tx.courseUnitTags.createMany({ data: allTagData, skipDuplicates: true });
       }
     }, { maxWait: 10000, timeout: 15000 });
 

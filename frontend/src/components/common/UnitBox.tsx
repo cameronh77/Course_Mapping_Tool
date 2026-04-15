@@ -110,7 +110,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
                   </div>
                 )}
 
-                {/* Tags Badge */}
+                {/* Tags */}
                 {unitMappings?.tags?.length > 0 && (
                   <span className="bg-white/90 text-gray-800 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm w-max">
                     {unitMappings.tags.length} TAG{unitMappings.tags.length > 1 ? 'S' : ''}
