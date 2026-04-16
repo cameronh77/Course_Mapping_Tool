@@ -23,48 +23,56 @@ type AssessmentUpdatePayload = {
 
 interface AssessmentBoxProps {
   assessment: Assessment;
-  x: number;
-  y: number;
-  width: number;
-  isDragging: boolean;
-  isSelected: boolean;
-  color: string;
-  onMouseDown: (e: React.MouseEvent) => void;
-  onClick: () => void;
+  x?: number;
+  y?: number;
+  width?: number;
+  isDragging?: boolean;
+  isSelected?: boolean;
+  color?: string;
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onClick?: () => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
-  availableUnits: UnitOption[];
-  availableULOs: ULOOption[];
+  availableUnits?: UnitOption[];
+  availableULOs?: ULOOption[];
   onDelete?: () => void;
   onUpdate?: (updated: AssessmentUpdatePayload) => void;
 }
 
 export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
   assessment,
-  x,
-  y,
-  width,
-  isDragging,
-  isSelected,
-  color,
-  onMouseDown,
-  onClick,
+  x = (assessment as any)?.x ?? 0,
+  y = (assessment as any)?.y ?? 0,
+  width = 256,
+  isDragging = false,
+  isSelected = false,
+  color = "#3B82F6",
+  onMouseDown = () => {},
+  onClick = () => {},
   onMouseEnter,
   onMouseLeave,
-  availableUnits,
-  availableULOs,
+  availableUnits = [],
+  availableULOs = [],
   onDelete,
   onUpdate,
 }) => {
+  const assessmentText =
+    (assessment as any).aDesc || (assessment as any).description || "";
+  const assessmentKind =
+    (assessment as any).assessmentType || (assessment as any).type || "General";
+  const assessmentRules =
+    (assessment as any).assessmentConditions || (assessment as any).conditions || "";
+  const mappedULOIds: number[] = (assessment as any).unitLosIds || [];
+
   const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState(assessment.aDesc || "");
+  const [editText, setEditText] = useState(assessmentText);
   const [selectedUnitId, setSelectedUnitId] = useState(assessment.unitId || "");
-  const [assessmentType, setAssessmentType] = useState(assessment.assessmentType || "General");
-  const [assessmentConditions, setAssessmentConditions] = useState(assessment.assessmentConditions || "");
+  const [assessmentType, setAssessmentType] = useState(assessmentKind);
+  const [assessmentConditions, setAssessmentConditions] = useState(assessmentRules);
   const [hurdleReqInput, setHurdleReqInput] = useState(
     typeof assessment.hurdleReq === "number" ? String(assessment.hurdleReq) : ""
   );
-  const [selectedUloIds, setSelectedUloIds] = useState<number[]>(assessment.unitLosIds || []);
+  const [selectedUloIds, setSelectedUloIds] = useState<number[]>(mappedULOIds);
   const [unitSearch, setUnitSearch] = useState(() => {
     const selected = availableUnits.find((u) => u.unitId === (assessment.unitId || ""));
     return selected?.label || assessment.unitId || "";
@@ -96,14 +104,14 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
   };
 
   const handleCancel = () => {
-    setEditText(assessment.aDesc || "");
+    setEditText(assessmentText);
     setSelectedUnitId(assessment.unitId || "");
     const selected = availableUnits.find((u) => u.unitId === (assessment.unitId || ""));
     setUnitSearch(selected?.label || assessment.unitId || "");
-    setAssessmentType(assessment.assessmentType || "General");
-    setAssessmentConditions(assessment.assessmentConditions || "");
+    setAssessmentType(assessmentKind);
+    setAssessmentConditions(assessmentRules);
     setHurdleReqInput(typeof assessment.hurdleReq === "number" ? String(assessment.hurdleReq) : "");
-    setSelectedUloIds(assessment.unitLosIds || []);
+    setSelectedUloIds(mappedULOIds);
     setIsEditing(false);
   };
 
@@ -125,10 +133,10 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      title={assessment.aDesc || "Assessment"}
+      title={assessmentText || "Assessment"}
     >
       <span className="px-1 text-center text-[11px] leading-tight line-clamp-3 break-words select-none">
-        {assessment.aDesc || "Assessment"}
+        {assessmentText || "Assessment"}
       </span>
 
       {isSelected && (
@@ -288,17 +296,17 @@ export const AssessmentBox: React.FC<AssessmentBoxProps> = ({
             </>
           ) : (
             <>
-              <div className="mb-2">{assessment.aDesc || "Assessment"}</div>
+              <div className="mb-2">{assessmentText || "Assessment"}</div>
               <div className="mb-2 text-[11px] text-gray-500">Unit: {assessment.unitId || "None"}</div>
-              <div className="mb-2 text-[11px] text-gray-500">Type: {assessment.assessmentType || "General"}</div>
+              <div className="mb-2 text-[11px] text-gray-500">Type: {assessmentKind}</div>
               <div className="mb-2 text-[11px] text-gray-500">
-                Conditions: {assessment.assessmentConditions || "None"}
+                Conditions: {assessmentRules || "None"}
               </div>
               <div className="mb-2 text-[11px] text-gray-500">
                 Hurdle Req: {typeof assessment.hurdleReq === "number" ? assessment.hurdleReq : "None"}
               </div>
               <div className="mb-2 text-[11px] text-gray-500">
-                Unit LOs: {(assessment.unitLosIds || []).join(", ") || "None"}
+                Unit LOs: {(mappedULOIds || []).join(", ") || "None"}
               </div>
               <div className="flex gap-1">
                 <button

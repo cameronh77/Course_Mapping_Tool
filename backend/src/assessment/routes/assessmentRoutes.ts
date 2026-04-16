@@ -10,7 +10,7 @@ const router = express.Router();
 
 router.post("/create", addAssessment);
 router.delete("/delete", deleteAssessment);
-router.get("/view", viewAssessments);
 router.put("/update/:assessmentId", updateAssessment);
+router.get("/view", viewAssessments);
 
 export default router;

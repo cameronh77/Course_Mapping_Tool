@@ -22,9 +22,9 @@ interface CanvasSidebarProps {
   selectedRelationType: string;
   setSelectedRelationType: (type: any) => void;
   getCLOColor: (cloId: number) => string;
-  selectedTagFilters: number[];
-  onToggleTagFilter: (tagId: number) => void;
-  onClearTagFilters: () => void;
+  selectedTagFilters?: number[];
+  onToggleTagFilter?: (tagId: number) => void;
+  onClearTagFilters?: () => void;
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
@@ -44,9 +44,9 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   selectedRelationType,
   setSelectedRelationType,
   getCLOColor,
-  selectedTagFilters,
-  onToggleTagFilter,
-  onClearTagFilters,
+  selectedTagFilters = [],
+  onToggleTagFilter = () => {},
+  onClearTagFilters = () => {},
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore() as any;

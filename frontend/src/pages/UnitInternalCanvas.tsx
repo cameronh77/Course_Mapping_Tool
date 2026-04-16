@@ -201,12 +201,16 @@ export const UnitInternalCanvas: React.FC = () => {
   const [showAssessmentForm, setShowAssessmentForm] = useState<Boolean>(false);
 
   useEffect(() => {
+    if (!currentUnit?.unitId) {
+      return;
+    }
+
     const loadAssessments = async () => {
       console.log(currentUnit.unitId);
       await viewAssessments(currentUnit.unitId);
     };
     loadAssessments();
-  }, [currentUnit.unitId]);
+  }, [currentUnit?.unitId, viewAssessments]);
 
   useEffect(() => {
     const loadRelationships = async () => {

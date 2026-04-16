@@ -1,279 +1,210 @@
+import type { Request, Response } from "express";
 import prisma from "../../../database/prismaClient.js";
 
-export const addCourseUnit = async (req, res) => {
-  const { courseId, unitId, semester, year, elective, specialisationSId, color } =
-    req.body;
+type CourseUnitCanvasEntry = {
+  unitId?: string;
+  x?: number;
+  y?: number;
+  color?: string | null;
+  semester?: number;
+  year?: number;
+  elective?: boolean;
+};
+
+type SaveCanvasBody = {
+  units?: CourseUnitCanvasEntry[];
+};
+
+const toFiniteNumber = (value: unknown, fallback: number): number => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const sendServerError = (res: Response, error: unknown) => {
+  console.error(error);
+  return res.status(500).json({
+    message: "Server error",
+    error: error instanceof Error ? error.message : "Unknown error",
+  });
+};
+
+export const addCourseUnit = async (req: Request, res: Response) => {
+  const { courseId, unitId, semester, year, elective, specialisationSId, color } = req.body;
 
   try {
-    if (!courseId || !unitId || !semester || !year || elective === undefined) {
-      return res.status(400).json({ message: "All fields must be filled in" });
+    if (!courseId || !unitId) {
+      return res.status(400).json({ message: "courseId and unitId are required" });
+    }
+
+    if (semester === undefined || year === undefined || elective === undefined) {
+      return res.status(400).json({ message: "semester, year, and elective are required" });
     }
 
     const existingCourseUnit = await prisma.courseUnit.findUnique({
       where: {
         courseId_unitId: {
-          courseId: courseId,
-          unitId: unitId,
+          courseId,
+          unitId,
         },
       },
     });
 
     if (existingCourseUnit) {
-      return res
-        .status(400)
-        .json({ message: "CourseUnit already exists" });
+      return res.status(400).json({ message: "CourseUnit already exists" });
     }
 
     const newCourseUnit = await prisma.courseUnit.create({
       data: {
         courseId,
         unitId,
-        semester: parseInt(semester),
-        year: parseInt(year),
-        elective,
-        specialisationSId: specialisationSId ? parseInt(specialisationSId) : null,
+        semester: toFiniteNumber(semester, 0),
+        year: toFiniteNumber(year, 0),
+        elective: Boolean(elective),
+        specialisationSId:
+          specialisationSId === undefined || specialisationSId === null || specialisationSId === ""
+            ? null
+            : toFiniteNumber(specialisationSId, 0),
         color: color || null,
       },
     });
 
     return res.status(201).json(newCourseUnit);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    return sendServerError(res, error);
   }
 };
 
-export const deleteCourseUnit = async (req, res) => {
+export const deleteCourseUnit = async (req: Request, res: Response) => {
   const { courseId, unitId } = req.body;
+
   try {
+    if (!courseId || !unitId) {
+      return res.status(400).json({ message: "courseId and unitId are required" });
+    }
+
     const deletedCourseUnit = await prisma.courseUnit.delete({
       where: {
         courseId_unitId: {
-          courseId: courseId,
-          unitId: unitId,
+          courseId,
+          unitId,
         },
       },
     });
-    console.log("deleted courseUnit", deletedCourseUnit);
-    res.status(200).json(deletedCourseUnit);
+
+    return res.status(200).json(deletedCourseUnit);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    return sendServerError(res, error);
   }
 };
 
-export const saveCanvasState = async (req, res) => {
+export const saveCanvasState = async (req: Request, res: Response) => {
   const { courseId } = req.params;
-  const { units, unitMappings } = req.body;
+  const { units } = req.body as SaveCanvasBody;
 
   try {
-    const unitsPayload = Array.isArray(units) ? units : [];
-    const mappedUnitIds = new Set(
-      unitsPayload
-        .map((unit: any) => unit?.unitId)
-        .filter((unitId: unknown): unitId is string => typeof unitId === "string" && unitId.length > 0)
-    );
+    if (!courseId) {
+      return res.status(400).json({ message: "courseId is required" });
+    }
 
-    await prisma.$transaction(async (tx) => {
-      // First, clear existing units for this course to handle deletions
-      await tx.courseUnit.deleteMany({
-        where: { courseId: courseId },
-      });
+    const normalizedUnits = new Map<string, CourseUnitCanvasEntry>();
 
-      if (unitsPayload.length > 0) {
-        // Then, create or update units with their new positions
-        const courseUnitsData = unitsPayload.map((unit: any) => ({
-          courseId: courseId,
-          unitId: unit.unitId,
-          semester: unit.semester || 0,
-          year: unit.year || 0,
-          elective: false,
-          position: { x: unit.x, y: unit.y },
-          color: unit.color || null,
-        }));
-
-        await tx.courseUnit.createMany({
-          data: courseUnitsData,
-          skipDuplicates: true,
-        });
+    for (const unit of Array.isArray(units) ? units : []) {
+      if (!unit?.unitId) {
+        continue;
       }
 
-      // Save CLO mappings (UnitLearningOutcomes)
-      if (unitMappings) {
-        for (const [unitId, mappings] of Object.entries(unitMappings)) {
-          if (!mappedUnitIds.has(unitId)) continue;
-          const mappingsData = mappings as any;
+      normalizedUnits.set(unit.unitId, unit);
+    }
 
-          const existingUlos = await tx.unitLearningOutcome.findMany({
-            where: { unitId: unitId },
-            select: { uloId: true },
-          });
-
-          const existingUloIds = existingUlos.map((ulo) => ulo.uloId);
-          if (existingUloIds.length > 0) {
-            await tx.assessmentULO.deleteMany({
-              where: {
-                uloId: { in: existingUloIds },
-              },
-            });
-          }
-          
-          // Clear existing CLO mappings for this unit
-          await tx.unitLearningOutcome.deleteMany({
-            where: { unitId: unitId },
-          });
-
-          // Create new CLO mappings
-          if (mappingsData.clos && mappingsData.clos.length > 0) {
-            const cloMappingsData = mappingsData.clos.map((clo: any) => ({
-              uloDesc: `CLO: ${clo.cloDesc}`,
-              unitId: unitId,
-              cloId: parseInt(clo.cloId),
-            }));
-
-            try {
-              await tx.unitLearningOutcome.createMany({
-                data: cloMappingsData,
-                skipDuplicates: false,
-              });
-            } catch (cloError) {
-              console.error(`Error creating CLO mappings for unit ${unitId}:`, cloError);
-              throw cloError;
-            }
-          }
-        }
-      }
-
-      // Save Tag mappings (CourseUnitTags)
-      if (unitMappings) {
-        for (const [unitId, mappings] of Object.entries(unitMappings)) {
-          if (!mappedUnitIds.has(unitId)) continue;
-          const mappingsData = mappings as any;
-          
-          // Clear existing tag mappings for this unit in this course
-          await tx.courseUnitTags.deleteMany({
-            where: {
-              courseId: courseId,
-              unitId: unitId,
-            },
-          });
-
-          // Create new tag mappings
-          if (mappingsData.tags && mappingsData.tags.length > 0) {
-            const tagMappingsData = mappingsData.tags.map((tag: any) => ({
-              courseId: courseId,
-              unitId: unitId,
-              tagId: parseInt(tag.tagId),
-            }));
-
-            try {
-              await tx.courseUnitTags.createMany({
-                data: tagMappingsData,
-                skipDuplicates: false,
-              });
-            } catch (tagError) {
-              console.error(`Error creating tag mappings for unit ${unitId}:`, tagError);
-              throw tagError;
-            }
-          }
-        }
-    // Build all insert data upfront before entering the transaction
-    const courseUnitsData = (units ?? []).map((unit) => ({
+    const courseUnitsData = Array.from(normalizedUnits.values()).map((unit) => ({
       courseId,
-      unitId: unit.unitId,
-      semester: 0,
-      year: 0,
-      elective: false,
-      position: { x: unit.x, y: unit.y },
+      unitId: unit.unitId as string,
+      semester: toFiniteNumber(unit.semester, 0),
+      year: toFiniteNumber(unit.year, 0),
+      elective: Boolean(unit.elective),
+      position: {
+        x: toFiniteNumber(unit.x, 0),
+        y: toFiniteNumber(unit.y, 0),
+      },
       color: unit.color || null,
     }));
 
-    const allUnitIds: string[] = Object.keys(unitMappings ?? {});
-
-    const allCloData: { uloDesc: string; unitId: string; cloId: number }[] = [];
-    const allTagData: { courseId: string; unitId: string; tagId: number }[] = [];
-
-    for (const [unitId, mappings] of Object.entries(unitMappings ?? {})) {
-      const m = mappings as any;
-      for (const clo of m.clos ?? []) {
-        allCloData.push({ uloDesc: `CLO: ${clo.cloDesc}`, unitId, cloId: parseInt(clo.cloId) });
-      }
-      for (const tag of m.tags ?? []) {
-        allTagData.push({ courseId, unitId, tagId: parseInt(tag.tagId) });
-      }
-    }
-
-    // Single transaction with bulk operations — O(6) round-trips regardless of unit count
     await prisma.$transaction(async (tx) => {
-      await tx.courseUnit.deleteMany({ where: { courseId } });
+      await tx.courseUnit.deleteMany({
+        where: { courseId },
+      });
 
       if (courseUnitsData.length > 0) {
-        await tx.courseUnit.createMany({ data: courseUnitsData, skipDuplicates: true });
+        await tx.courseUnit.createMany({
+          data: courseUnitsData,
+          skipDuplicates: false,
+        });
       }
+    });
 
-      if (allUnitIds.length > 0) {
-        await tx.unitLearningOutcome.deleteMany({ where: { unitId: { in: allUnitIds } } });
-        await tx.courseUnitTags.deleteMany({ where: { courseId, unitId: { in: allUnitIds } } });
-      }
-
-      if (allCloData.length > 0) {
-        await tx.unitLearningOutcome.createMany({ data: allCloData, skipDuplicates: true });
-      }
-
-      if (allTagData.length > 0) {
-        await tx.courseUnitTags.createMany({ data: allTagData, skipDuplicates: true });
-      }
-    }, { maxWait: 10000, timeout: 15000 });
-
-    return res.status(200).json({ message: "Canvas state saved successfully" });
+    return res.status(200).json({
+      message: "Canvas state saved successfully",
+      savedUnits: courseUnitsData.length,
+    });
   } catch (error) {
-    console.error("Error saving canvas state:", error);
-    return res.status(500).json({ message: "Server error", error: error instanceof Error ? error.message : "Unknown error" });
+    return sendServerError(res, error);
   }
 };
 
-export const viewCourseUnits = async (req, res) => {
-  const { courseId } = req.query;
+export const viewCourseUnits = async (req: Request, res: Response) => {
+  const courseId = typeof req.query.courseId === "string" ? req.query.courseId : null;
+
   try {
+    if (!courseId) {
+      return res.status(400).json({ message: "courseId query param is required" });
+    }
+
     const courseUnits = await prisma.courseUnit.findMany({
       where: {
-        courseId: courseId,
+        courseId,
       },
       include: {
-        unit: true, // Include the full Unit object
+        unit: true,
       },
+      orderBy: [{ courseId: "asc" }, { unitId: "asc" }],
     });
-    res.status(200).json(courseUnits);
+
+    return res.status(200).json(courseUnits);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    return sendServerError(res, error);
   }
 };
 
-export const updateCourseUnit = async (req, res) => {
+export const updateCourseUnit = async (req: Request, res: Response) => {
   const { courseId, unitId } = req.params;
   const { semester, year, elective, specialisationSId, color } = req.body;
 
   try {
+    if (!courseId || !unitId) {
+      return res.status(400).json({ message: "courseId and unitId are required" });
+    }
+
     const updatedCourseUnit = await prisma.courseUnit.update({
       where: {
         courseId_unitId: {
-          courseId: courseId,
-          unitId: unitId,
+          courseId,
+          unitId,
         },
       },
       data: {
-        semester: parseInt(semester),
-        year: parseInt(year),
-        elective,
-        specialisationSId: specialisationSId ? parseInt(specialisationSId) : null,
+        semester: semester === undefined ? undefined : toFiniteNumber(semester, 0),
+        year: year === undefined ? undefined : toFiniteNumber(year, 0),
+        elective: elective === undefined ? undefined : Boolean(elective),
+        specialisationSId:
+          specialisationSId === undefined || specialisationSId === null || specialisationSId === ""
+            ? null
+            : toFiniteNumber(specialisationSId, 0),
         color: color || null,
       },
     });
 
     return res.status(200).json(updatedCourseUnit);
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    return sendServerError(res, error);
   }
 };

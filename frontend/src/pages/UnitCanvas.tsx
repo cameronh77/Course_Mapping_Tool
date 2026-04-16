@@ -998,8 +998,13 @@ export const CanvasPage: React.FC = () => {
                     unitBoxes.find((u) => u.id === editingId)?.color || null,
                 }}
                 onView={() => {
+                  const selectedUnit = unitBoxes.find((item) => item.id === editingId);
+                  if (!selectedUnit) {
+                    return;
+                  }
+
+                  setUnit(selectedUnit);
                   navigate("/UnitInternalCanvas");
-                  setUnit(unitBoxes.find((item) => item.id === editingId));
                 }}
               />
             </div>
