@@ -30,6 +30,7 @@ interface UnitBoxProps {
   unitMappings: { clos: CourseLearningOutcome[], tags: Tag[] };
   currentCLOs: CourseLearningOutcome[];
   getCLOColor: (cloId: number) => string;
+  isInvalidDrop?: boolean;
   
   // Event Handlers
   onMouseDown: (e: React.MouseEvent, id: number) => void;
@@ -55,6 +56,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   unitMappings,
   currentCLOs,
   getCLOColor,
+  isInvalidDrop = false,
   onMouseDown,
   onDoubleClick,
   onClick,
@@ -69,10 +71,12 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   const unitKey = unit.unitId || unit.id.toString();
   const collapsedHeight = getUnitHeight(unit.credits);
   const isMultiRow = collapsedHeight > BASE_HEIGHT;
+  const isBeingDragged = draggedUnit === unit.id;
+  const showInvalidRing = isBeingDragged && isInvalidDrop;
 
   return (
     <div
-      className={`absolute group transition-shadow duration-200 ${draggedUnit === unit.id ? "shadow-2xl scale-105 z-50" : (isExpanded ? "z-40 shadow-xl" : "z-10 shadow-sm hover:shadow-md")}`}
+      className={`absolute group transition-shadow duration-200 ${isBeingDragged ? "shadow-2xl scale-105 z-50" : (isExpanded ? "z-40 shadow-xl" : "z-10 shadow-sm hover:shadow-md")} ${showInvalidRing ? "ring-4 ring-red-500/80 rounded" : ""}`}
       style={{ left: `${unit.x}px`, top: `${unit.y}px`, width: `${UNIT_BOX_WIDTH}px`, height: isExpanded ? 'auto' : `${collapsedHeight}px`, minHeight: `${collapsedHeight}px` }}
       onClick={connectionMode && unit.unitId ? () => onClick(unit.unitId!) : undefined}
       onMouseEnter={() => onMouseEnter(unit.unitId || null)}

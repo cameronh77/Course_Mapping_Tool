@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
-import { UnitBox, getUnitHeight } from "../components/common/UnitBox";
+import { UnitBox, getUnitHeight, getUnitRowSpan } from "../components/common/UnitBox";
 import { GridBackground } from "../components/common/GridBackground";
 import { ConnectionLines } from "../components/common/ConnectionLines";
 import { ThemeView } from "../components/common/ThemeView";
@@ -53,6 +53,37 @@ const getCLOColor = (cloId: number): string => {
   return CLO_COLOR_PALETTE[cloId % CLO_COLOR_PALETTE.length];
 };
 
+// --- Slot / collision helpers ----------------------------------------------
+// A unit occupies `rowSpan` consecutive row-slots in a single column.
+// These helpers convert pixel x/y to grid (col, startRow) and detect
+// collisions or grid-overflow so that edit/drag/drop can be validated.
+
+const getColFromX = (x: number): number =>
+  Math.max(0, Math.round((x - START_X) / COL_WIDTH));
+
+const getRowFromY = (y: number): number =>
+  Math.max(0, Math.round((y - START_Y - 20) / ROW_HEIGHT));
+
+/** Returns the first unit that would overlap the given (col, startRow, rowSpan)
+ *  block, ignoring `excludeId`. Returns null when the block is free. */
+const findCollidingUnit = (
+  excludeId: number | null,
+  col: number,
+  startRow: number,
+  rowSpan: number,
+  units: UnitBoxType[]
+): UnitBoxType | null => {
+  const endRow = startRow + rowSpan;
+  for (const other of units) {
+    if (excludeId != null && other.id === excludeId) continue;
+    if (getColFromX(other.x) !== col) continue;
+    const otherStart = getRowFromY(other.y);
+    const otherEnd = otherStart + getUnitRowSpan(other.credits);
+    if (startRow < otherEnd && otherStart < endRow) return other;
+  }
+  return null;
+};
+
 export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
 
@@ -68,6 +99,8 @@ export const CanvasPage: React.FC = () => {
   const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  // True while the dragged unit is over a colliding / out-of-bounds slot
+  const [dragInvalid, setDragInvalid] = useState<boolean>(false);
 
   // State for dragging NEW units from sidebar
   const [draggedNewUnit, setDraggedNewUnit] = useState<{
@@ -337,17 +370,36 @@ export const CanvasPage: React.FC = () => {
       Number((currentCourse as any)?.numberTeachingPeriods) ||
       DEFAULT_SEMESTERS;
     const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+    const rowSpan = getUnitRowSpan(selectedUnit.credits);
 
     const col = Math.max(0, Math.round((x - START_X) / COL_WIDTH));
     let closestRow = 0;
     let minDistance = Infinity;
-    for (let r = 0; r < totalRows; r++) {
+    // Only snap to rows where the unit can actually fit within the grid
+    for (let r = 0; r <= totalRows - rowSpan; r++) {
       const expectedY = START_Y + r * ROW_HEIGHT + 20;
       const dist = Math.abs(y - expectedY);
       if (dist < minDistance) {
         minDistance = dist;
         closestRow = r;
       }
+    }
+
+    // Validation: must fit inside the grid
+    if (closestRow + rowSpan > totalRows) {
+      alert(
+        `This ${selectedUnit.credits ?? "?"}cp unit needs ${rowSpan} consecutive teaching-period slot${rowSpan > 1 ? "s" : ""} and won't fit at the chosen position.`
+      );
+      return;
+    }
+
+    // Validation: must not collide with an existing unit
+    const collision = findCollidingUnit(null, col, closestRow, rowSpan, unitBoxes);
+    if (collision) {
+      alert(
+        `Cannot place "${selectedUnit.unitId ?? selectedUnit.unitName}" here — it would overlap with "${collision.unitId ?? collision.name}".`
+      );
+      return;
     }
 
     const snappedX =
@@ -422,6 +474,39 @@ export const CanvasPage: React.FC = () => {
     if (editingId) {
       const editedUnit = unitBoxes.find((unit) => unit.id === editingId);
       if (editedUnit) {
+        // Validate credit-points change against current canvas position
+        const newCredits = formData.credits ?? editedUnit.credits;
+        const oldCredits = editedUnit.credits;
+        if (newCredits !== oldCredits) {
+          const semestersPerYear =
+            Number((currentCourse as any)?.numberTeachingPeriods) ||
+            DEFAULT_SEMESTERS;
+          const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+          const col = getColFromX(editedUnit.x);
+          const startRow = getRowFromY(editedUnit.y);
+          const newRowSpan = getUnitRowSpan(newCredits);
+
+          if (startRow + newRowSpan > totalRows) {
+            alert(
+              `Cannot change to ${newCredits}cp — the unit would extend beyond the last teaching period at its current position. Move it earlier first.`
+            );
+            return;
+          }
+          const collision = findCollidingUnit(
+            editedUnit.id,
+            col,
+            startRow,
+            newRowSpan,
+            unitBoxes
+          );
+          if (collision) {
+            alert(
+              `Cannot change to ${newCredits}cp — it would overlap with "${collision.unitId ?? collision.name}". Move one of the units first.`
+            );
+            return;
+          }
+        }
+
         updateUnit(editedUnit.unitId!, {
           unitName: formData.unitName || editedUnit.name,
           unitDesc: formData.unitDesc || editedUnit.description,
@@ -511,7 +596,18 @@ export const CanvasPage: React.FC = () => {
     setDraggedUnit(id);
     setIsDragging(false);
 
+    // Closure-captured origin — guaranteed available in handleUp regardless of
+    // any other interleaved state changes. Used to revert on invalid drop.
+    const dragOrigin = { x: unit.x, y: unit.y };
+    setDragInvalid(false);
+
     const draggingUnitHeight = getUnitHeight(unit.credits);
+    const draggingRowSpan = getUnitRowSpan(unit.credits);
+    const semestersPerYear =
+      Number((currentCourse as any)?.numberTeachingPeriods) ||
+      DEFAULT_SEMESTERS;
+    const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+
     const handleMove = (moveEvent: MouseEvent) => {
       if (!canvasRef.current) return;
       setIsDragging(true);
@@ -519,66 +615,113 @@ export const CanvasPage: React.FC = () => {
         moveEvent,
         canvasRef.current
       );
+      const nextX = Math.max(
+        0,
+        Math.min(
+          newMouseX - offset.x,
+          canvasRef.current.scrollWidth - UNIT_BOX_WIDTH
+        )
+      );
+      const nextY = Math.max(
+        0,
+        Math.min(
+          newMouseY - offset.y,
+          canvasRef.current.scrollHeight - draggingUnitHeight
+        )
+      );
+
+      // Live validity check against the slot the cursor is currently over
+      const hoverCol = getColFromX(nextX);
+      const hoverRow = getRowFromY(nextY);
+      const overflows = hoverRow + draggingRowSpan > totalRows;
+      const collides =
+        !overflows &&
+        findCollidingUnit(id, hoverCol, hoverRow, draggingRowSpan, unitBoxes) !=
+          null;
+      setDragInvalid(overflows || collides);
+
       setUnitBoxes((prevUnits) =>
         prevUnits.map((u) =>
-          u.id === id
-            ? {
-                ...u,
-                x: Math.max(
-                  0,
-                  Math.min(
-                    newMouseX - offset.x,
-                    canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH
-                  )
-                ),
-                y: Math.max(
-                  0,
-                  Math.min(
-                    newMouseY - offset.y,
-                    canvasRef.current!.scrollHeight - draggingUnitHeight
-                  )
-                ),
-              }
-            : u
+          u.id === id ? { ...u, x: nextX, y: nextY } : u
         )
       );
     };
 
     const handleUp = () => {
-      setUnitBoxes((prevUnits) =>
-        prevUnits.map((u) => {
-          if (u.id === id) {
-            let snappedX = u.x;
-            let snappedY = u.y;
-            if (u.x >= START_X - 100 && u.y >= START_Y - 50) {
-              const semestersPerYear =
-                Number((currentCourse as any)?.numberTeachingPeriods) ||
-                DEFAULT_SEMESTERS;
-              const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
-              const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
-              let closestRow = 0;
-              let minDistance = Infinity;
-              for (let r = 0; r < totalRows; r++) {
-                const expectedY = START_Y + r * ROW_HEIGHT + 20;
-                const dist = Math.abs(u.y - expectedY);
-                if (dist < minDistance) {
-                  minDistance = dist;
-                  closestRow = r;
-                }
-              }
-              snappedX =
-                START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
-              snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
+      // Cancellation reason captured inside the updater, surfaced via alert
+      // AFTER the state has been queued (avoids double-alerts under StrictMode).
+      let cancelReason: string | null = null;
+
+      setUnitBoxes((prevUnits) => {
+        const dragged = prevUnits.find((u) => u.id === id);
+        if (!dragged) return prevUnits;
+
+        // Default target = revert to origin. Only overwritten on a valid drop.
+        let targetX = dragOrigin.x;
+        let targetY = dragOrigin.y;
+
+        // If the user released far outside the grid → keep origin (already set).
+        const droppedOutsideGrid =
+          dragged.x < START_X - 100 || dragged.y < START_Y - 50;
+
+        if (!droppedOutsideGrid) {
+          const col = getColFromX(dragged.x);
+          let closestRow = 0;
+          let minDistance = Infinity;
+          // Only consider rows where the unit's full row-span fits the grid
+          for (let r = 0; r <= totalRows - draggingRowSpan; r++) {
+            const expectedY = START_Y + r * ROW_HEIGHT + 20;
+            const dist = Math.abs(dragged.y - expectedY);
+            if (dist < minDistance) {
+              minDistance = dist;
+              closestRow = r;
             }
-            return { ...u, x: snappedX, y: snappedY };
           }
-          return u;
-        })
-      );
+
+          const overflows = closestRow + draggingRowSpan > totalRows;
+          const collision = overflows
+            ? null
+            : findCollidingUnit(
+                id,
+                col,
+                closestRow,
+                draggingRowSpan,
+                prevUnits
+              );
+
+          if (overflows || collision) {
+            // Invalid drop — keep the revert-to-origin target and record reason.
+            cancelReason = overflows
+              ? `this ${dragged.credits ?? "?"}cp unit needs ${draggingRowSpan} consecutive teaching-period slot${draggingRowSpan > 1 ? "s" : ""} and won't fit there.`
+              : `it would overlap with "${collision!.unitId ?? collision!.name}".`;
+          } else {
+            // Valid drop — commit the snapped position.
+            targetX =
+              START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+            targetY = START_Y + closestRow * ROW_HEIGHT + 20;
+          }
+        } else {
+          cancelReason = "the unit was dropped outside the grid.";
+        }
+
+        return prevUnits.map((u) =>
+          u.id === id ? { ...u, x: targetX, y: targetY } : u
+        );
+      });
+
       setDraggedUnit(null);
+      setDragInvalid(false);
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
       setTimeout(() => setIsDragging(false), 100);
+
+      // Surface the cancellation outside the React updater so it fires once.
+      if (cancelReason) {
+        setTimeout(
+          () => alert(`Move cancelled — position reset.\n\n${cancelReason}`),
+          0
+        );
+      }
     };
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleUp);
@@ -872,6 +1015,7 @@ export const CanvasPage: React.FC = () => {
               key={unit.id}
               unit={unit}
               draggedUnit={draggedUnit}
+              isInvalidDrop={dragInvalid && draggedUnit === unit.id}
               selectedUnits={selectedUnits}
               connectionMode={connectionMode}
               connectionSource={connectionSource}
