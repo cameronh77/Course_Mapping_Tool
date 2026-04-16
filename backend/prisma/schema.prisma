@@ -14,6 +14,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum BloomsLevel {
+  REMEMBER
+  UNDERSTAND
+  APPLY
+  ANALYSE
+  EVALUATE
+  CREATE
+}
+
 model Course {
   courseId              String @id
   courseName            String
@@ -132,11 +141,12 @@ model CourseLearningOutcome {
 }
 
 model UnitLearningOutcome {
-  uloId    Int    @id @default(autoincrement())
-  uloDesc  String
-  unitId   String
-  cloId    Int?
-  position Json?
+  uloId       Int          @id @default(autoincrement())
+  uloDesc     String
+  unitId      String
+  cloId       Int?
+  bloomsLevel BloomsLevel?
+  position    Json?
 
   unit     Unit                   @relation(fields: [unitId], references: [unitId], onDelete:Cascade)
   courseLO CourseLearningOutcome? @relation(fields: [cloId], references: [cloId])
