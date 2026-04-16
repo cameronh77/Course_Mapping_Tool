@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
-import { UnitBox } from "../components/common/UnitBox";
+import { UnitBox, getUnitHeight } from "../components/common/UnitBox";
 import { GridBackground } from "../components/common/GridBackground";
 import { ConnectionLines } from "../components/common/ConnectionLines";
 import { ThemeView } from "../components/common/ThemeView";
@@ -511,6 +511,7 @@ export const CanvasPage: React.FC = () => {
     setDraggedUnit(id);
     setIsDragging(false);
 
+    const draggingUnitHeight = getUnitHeight(unit.credits);
     const handleMove = (moveEvent: MouseEvent) => {
       if (!canvasRef.current) return;
       setIsDragging(true);
@@ -534,7 +535,7 @@ export const CanvasPage: React.FC = () => {
                   0,
                   Math.min(
                     newMouseY - offset.y,
-                    canvasRef.current!.scrollHeight - 100
+                    canvasRef.current!.scrollHeight - draggingUnitHeight
                   )
                 ),
               }
