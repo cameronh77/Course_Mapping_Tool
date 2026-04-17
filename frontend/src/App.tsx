@@ -7,6 +7,7 @@ import { CanvasPage } from "./pages/UnitCanvas";
 import Navbar from "./components/navbar";
 import { useCourseStore } from "./stores/useCourseStore";
 import { CourseEdit } from "./pages/CourseEdit";
+import UnitInternalCanvas from "./pages/UnitInternalCanvas";
 import { TmpNewHomePage } from "./pages/TmpNewHomePage";
 
 const App = () => {
@@ -19,6 +20,7 @@ const App = () => {
         <Route path="/" element={<TmpNewHomePage />} />
         <Route path="/UnitCanvas" element={<CanvasPage />} />
         <Route path="/CourseEdit" element={<CourseEdit />} />
+        <Route path="/UnitInternalCanvas" element={<UnitInternalCanvas />} />
       </Routes>
     </div>
   );

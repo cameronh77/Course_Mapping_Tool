@@ -44,9 +44,11 @@ model Unit {
   learningOutcomes UnitLearningOutcome[]  
   relationships    UnitRelationship[]     @relation("UnitRelations")
   relatedTo        UnitRelationship[]     @relation("RelatedUnits")
-  AssessmentULO    AssessmentULO[]        
+  AssessmentULO    AssessmentULO[]
+  Assessments      Assessment[]
+  teachingActivities TeachingActivity[]
 
-  existingTags      CourseUnitTags[]      
+  existingTags      CourseUnitTags[]
 }
 
 model CourseUnit {
@@ -130,25 +132,41 @@ model CourseLearningOutcome {
 }
 
 model UnitLearningOutcome {
-  uloId   Int    @id @default(autoincrement())
-  uloDesc String
-  unitId  String
-  cloId   Int?
+  uloId    Int    @id @default(autoincrement())
+  uloDesc  String
+  unitId   String
+  cloId    Int?
+  position Json?
 
   unit     Unit                   @relation(fields: [unitId], references: [unitId], onDelete:Cascade)
   courseLO CourseLearningOutcome? @relation(fields: [cloId], references: [cloId])
 
   assessments AssessmentULO[]
+  teachingActivityLinks TeachingActivityULO[]
 }
 
 model Assessment {
-  assessmentId Int    @id @default(autoincrement())
-  aDesc        String
+  assessmentId Int      @id @default(autoincrement())
+  assessmentName        String
+  value                 Int
+  hurdleReq             Int?
+  dueWeek               Int[]
+  assessmentConditions  String
+  feedbackWeek          Int[]
+  feedbackDetails       String[]
+
+  assessmentDesc      String
+  assessmentType      String
+  unitId              String
 
   unitLos AssessmentULO[]
+  teachingActivityLinks TeachingActivityAssessment[]
 
+  position            Json?
   outgoingRelationships AssessmentRelationship[] @relation("AssessmentRelations")
   incomingRelationships AssessmentRelationship[] @relation("RelatedAssessments")
+
+  unit                Unit  @relation(fields: [unitId], references:[unitId], onDelete:Cascade)
 }
 
 model AssessmentULO {
@@ -161,15 +179,20 @@ model AssessmentULO {
   unit   Unit   @relation(fields: [unitId], references: [unitId])
   unitId String
 
+  reversed Boolean @default(false)
+
   @@id([assessmentId, uloId, unitId])
 }
 
 model AssessmentRelationship {
-  assessment   Assessment @relation("AssessmentRelations", fields: [assessmentId], references: [assessmentId])
-  assessmentId Int
+  assessment      Assessment @relation("AssessmentRelations", fields: [assessmentId], references: [assessmentId], onDelete: Cascade)
+  assessmentId    Int
+  connectionType  String?
 
-  related   Assessment @relation("RelatedAssessments", fields: [relatedId], references: [assessmentId])
+  related   Assessment @relation("RelatedAssessments", fields: [relatedId], references: [assessmentId], onDelete: Cascade)
   relatedId Int
+
+  unitId    String?
 
   @@id([assessmentId, relatedId])
 }
@@ -204,4 +227,53 @@ model UnitRelationship {
   related        Unit            @relation("RelatedUnits", fields: [relatedId], references: [unitId])
   course         Course?         @relation(fields: [courseId], references: [courseId])
   specialisation Specialisation? @relation(fields: [sId], references: [sId])
+}
+
+model TeachingActivity {
+  activityId   Int    @id @default(autoincrement())
+  activityName String
+  activityDesc String
+  activityType String
+  unitId       String
+  position     Json?
+
+  unit            Unit                           @relation(fields: [unitId], references: [unitId], onDelete: Cascade)
+  assessmentLinks TeachingActivityAssessment[]
+  uloLinks        TeachingActivityULO[]
+  outgoingRelationships TeachingActivityRelationship[] @relation("TASourceRelations")
+  incomingRelationships TeachingActivityRelationship[] @relation("TATargetRelations")
+}
+
+model TeachingActivityRelationship {
+  source    TeachingActivity @relation("TASourceRelations", fields: [sourceId], references: [activityId], onDelete: Cascade)
+  sourceId  Int
+
+  target    TeachingActivity @relation("TATargetRelations", fields: [targetId], references: [activityId], onDelete: Cascade)
+  targetId  Int
+
+  unitId    String
+
+  @@id([sourceId, targetId])
+}
+
+model TeachingActivityAssessment {
+  activity     TeachingActivity @relation(fields: [activityId], references: [activityId], onDelete: Cascade)
+  activityId   Int
+  assessment   Assessment       @relation(fields: [assessmentId], references: [assessmentId], onDelete: Cascade)
+  assessmentId Int
+  unitId       String
+  reversed     Boolean @default(false)
+
+  @@id([activityId, assessmentId])
+}
+
+model TeachingActivityULO {
+  activity   TeachingActivity    @relation(fields: [activityId], references: [activityId], onDelete: Cascade)
+  activityId Int
+  unitLO     UnitLearningOutcome @relation(fields: [uloId], references: [uloId], onDelete: Cascade)
+  uloId      Int
+  unitId     String
+  reversed   Boolean @default(false)
+
+  @@id([activityId, uloId])
 }

@@ -67,93 +67,59 @@ export const saveCanvasState = async (req, res) => {
   const { units, unitMappings } = req.body;
 
   try {
+    // Build all insert data upfront before entering the transaction
+    const courseUnitsData = (units ?? []).map((unit) => ({
+      courseId,
+      unitId: unit.unitId,
+      semester: 0,
+      year: 0,
+      elective: false,
+      position: { x: unit.x, y: unit.y },
+      color: unit.color || null,
+    }));
+
+    const allUnitIds: string[] = Object.keys(unitMappings ?? {});
+
+    const allCloData: { uloDesc: string; unitId: string; cloId: number }[] = [];
+    const allTagData: { courseId: string; unitId: string; tagId: number }[] = [];
+
+    for (const [unitId, mappings] of Object.entries(unitMappings ?? {})) {
+      const m = mappings as any;
+      for (const clo of m.clos ?? []) {
+        allCloData.push({ uloDesc: `CLO: ${clo.cloDesc}`, unitId, cloId: parseInt(clo.cloId) });
+      }
+      for (const tag of m.tags ?? []) {
+        allTagData.push({ courseId, unitId, tagId: parseInt(tag.tagId) });
+      }
+    }
+
+    // Single transaction with bulk operations — O(6) round-trips regardless of unit count
     await prisma.$transaction(async (tx) => {
-      // First, clear existing units for this course to handle deletions
-      await tx.courseUnit.deleteMany({
-        where: { courseId: courseId },
-      });
+      await tx.courseUnit.deleteMany({ where: { courseId } });
 
-      if (units && units.length > 0) {
-        // Then, create or update units with their new positions
-        const courseUnitsData = units.map((unit) => ({
-          courseId: courseId,
-          unitId: unit.unitId,
-          semester: 0,
-          year: 0,
-          elective: false,
-          position: { x: unit.x, y: unit.y },
-          color: unit.color || null,
-        }));
+      if (courseUnitsData.length > 0) {
+        await tx.courseUnit.createMany({ data: courseUnitsData, skipDuplicates: true });
+      }
 
-        await tx.courseUnit.createMany({
-          data: courseUnitsData,
-          skipDuplicates: true,
+      if (allUnitIds.length > 0) {
+        const ulosToDelete = await tx.unitLearningOutcome.findMany({
+          where: { unitId: { in: allUnitIds } },
+          select: { uloId: true },
         });
+        const uloIds = ulosToDelete.map((u) => u.uloId);
+        if (uloIds.length > 0) {
+          await tx.assessmentULO.deleteMany({ where: { uloId: { in: uloIds } } });
+        }
+        await tx.unitLearningOutcome.deleteMany({ where: { unitId: { in: allUnitIds } } });
+        await tx.courseUnitTags.deleteMany({ where: { courseId, unitId: { in: allUnitIds } } });
       }
 
-      // Save CLO mappings (UnitLearningOutcomes)
-      if (unitMappings) {
-        for (const [unitId, mappings] of Object.entries(unitMappings)) {
-          const mappingsData = mappings as any;
-          
-          // Clear existing CLO mappings for this unit
-          await tx.unitLearningOutcome.deleteMany({
-            where: { unitId: unitId },
-          });
-
-          // Create new CLO mappings
-          if (mappingsData.clos && mappingsData.clos.length > 0) {
-            const cloMappingsData = mappingsData.clos.map((clo: any) => ({
-              uloDesc: `CLO: ${clo.cloDesc}`,
-              unitId: unitId,
-              cloId: parseInt(clo.cloId),
-            }));
-
-            try {
-              await tx.unitLearningOutcome.createMany({
-                data: cloMappingsData,
-                skipDuplicates: false,
-              });
-            } catch (cloError) {
-              console.error(`Error creating CLO mappings for unit ${unitId}:`, cloError);
-              throw cloError;
-            }
-          }
-        }
+      if (allCloData.length > 0) {
+        await tx.unitLearningOutcome.createMany({ data: allCloData, skipDuplicates: true });
       }
 
-      // Save Tag mappings (CourseUnitTags)
-      if (unitMappings) {
-        for (const [unitId, mappings] of Object.entries(unitMappings)) {
-          const mappingsData = mappings as any;
-          
-          // Clear existing tag mappings for this unit in this course
-          await tx.courseUnitTags.deleteMany({
-            where: {
-              courseId: courseId,
-              unitId: unitId,
-            },
-          });
-
-          // Create new tag mappings
-          if (mappingsData.tags && mappingsData.tags.length > 0) {
-            const tagMappingsData = mappingsData.tags.map((tag: any) => ({
-              courseId: courseId,
-              unitId: unitId,
-              tagId: parseInt(tag.tagId),
-            }));
-
-            try {
-              await tx.courseUnitTags.createMany({
-                data: tagMappingsData,
-                skipDuplicates: false,
-              });
-            } catch (tagError) {
-              console.error(`Error creating tag mappings for unit ${unitId}:`, tagError);
-              throw tagError;
-            }
-          }
-        }
+      if (allTagData.length > 0) {
+        await tx.courseUnitTags.createMany({ data: allTagData, skipDuplicates: true });
       }
     });
 

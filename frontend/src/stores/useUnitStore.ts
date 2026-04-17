@@ -1,8 +1,18 @@
 import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 
+const getPersistedUnit = () => {
+  try {
+    const stored = localStorage.getItem("currentUnit");
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+};
+
 export const useUnitStore = create((set) => ({
   existingUnits: [],
+  currentUnit: getPersistedUnit(),
 
   checkUnitExists: async (unitId) => {
     try {
@@ -10,16 +20,14 @@ export const useUnitStore = create((set) => ({
 
       const units = res.data;
 
-      const foundById = units.find(
-        (unit) => unit.unitId === unitId
-      )
+      const foundById = units.find((unit) => unit.unitId === unitId);
 
       if (foundById) {
         return { isDuplicate: true, field: "unitId" };
       }
 
       return { isDuplicate: false };
-    } catch(error) {
+    } catch (error) {
       console.error("Error checking unit existence:", error);
       throw new Error("Failed to perform duplicate check.");
     }
@@ -58,5 +66,14 @@ export const useUnitStore = create((set) => ({
     } catch (error) {
       console.log(error.response.data.message);
     }
+  },
+
+  setUnit: async (unit) => {
+    if (unit) {
+      localStorage.setItem("currentUnit", JSON.stringify(unit));
+    } else {
+      localStorage.removeItem("currentUnit");
+    }
+    set({ currentUnit: unit });
   },
 }));

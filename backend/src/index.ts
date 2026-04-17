@@ -6,6 +6,11 @@ import courseLearningOutcomeRoutes from "./course-learning-outcome/routes/course
 import unitLearningOutcomeRoutes from "./unit-learning-outcome/routes/unitLearningOutcomeRoutes.js";
 import tagRoutes from "./tag/routes/tagRoutes.js";
 import unitRelationshipRoutes from "./unit-relationship/routes/unitRelationshipRoutes.js";
+import assessmentRoutes from "./Assessment/routes/assessmentRoutes.js";
+import assessmentRelationshipRoutes from "./AssessmentRelationships/routes/assessmentRelationshipRoutes.js";
+import assessmentULORoutes from "./assessment-ulo/routes/assessmentULORoutes.js";
+import teachingActivityRoutes from "./teaching-activity/routes/teachingActivityRoutes.js";
+import teachingActivityLinksRoutes from "./teaching-activity-links/routes/teachingActivityLinksRoutes.js";
 import cors from "cors";
 
 const app = express();
@@ -25,6 +30,11 @@ app.use("/api/CLO", courseLearningOutcomeRoutes);
 app.use("/api/ULO", unitLearningOutcomeRoutes);
 app.use("/api/tag", tagRoutes);
 app.use("/api/unit-relationship", unitRelationshipRoutes);
+app.use("/api/assessment", assessmentRoutes);
+app.use("/api/assessment-relationship", assessmentRelationshipRoutes);
+app.use("/api/assessment-ulo", assessmentULORoutes);
+app.use("/api/teaching-activity", teachingActivityRoutes);
+app.use("/api/teaching-activity-links", teachingActivityLinksRoutes);
 
 const server = app.listen(3000, () =>
   console.log(`

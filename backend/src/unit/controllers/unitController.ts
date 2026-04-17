@@ -4,13 +4,7 @@ export const addUnit = async (req, res) => {
   const { unitId, unitName, unitDesc, credits, semestersOffered } = req.body;
 
   try {
-    if (
-      !unitId ||
-      !unitName ||
-      !unitDesc ||
-      !credits ||
-      !semestersOffered
-    ) {
+    if (!unitId || !unitName || !unitDesc || !credits || !semestersOffered) {
       return res.status(400).json({ message: "All fields must be filled in" });
     }
 
@@ -106,19 +100,19 @@ export const viewUnits = async (req, res) => {
             {
               unitName: {
                 contains: searchTerm,
-                mode: 'insensitive', // Makes the search case-insensitive
+                mode: "insensitive", // Makes the search case-insensitive
               },
             },
             {
               unitId: {
                 contains: searchTerm,
-                mode: 'insensitive',
+                mode: "insensitive",
               },
             },
             {
               unitDesc: {
                 contains: searchTerm,
-                mode: 'insensitive',
+                mode: "insensitive",
               },
             },
           ],

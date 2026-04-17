@@ -1,7 +1,7 @@
 import prisma from "../../../database/prismaClient.js";
 
 export const addUnitLearningOutcome = async (req, res) => {
-  const { uloDesc, unitId, cloId } = req.body;
+  const { uloDesc, unitId, cloId, position } = req.body;
 
   try {
     if (!uloDesc || !unitId) {
@@ -13,6 +13,7 @@ export const addUnitLearningOutcome = async (req, res) => {
         uloDesc,
         unitId,
         cloId: cloId ? parseInt(cloId) : null,
+        position: position || null,
       },
     });
 
@@ -26,6 +27,10 @@ export const addUnitLearningOutcome = async (req, res) => {
 export const deleteUnitLearningOutcome = async (req, res) => {
   const { uloId } = req.body;
   try {
+    // Delete dependent AssessmentULO links first
+    await prisma.assessmentULO.deleteMany({
+      where: { uloId: parseInt(uloId) },
+    });
     const deletedUnitLearningOutcome = await prisma.unitLearningOutcome.delete({
       where: {
         uloId: parseInt(uloId),
@@ -49,9 +54,22 @@ export const viewUnitLearningOutcomes = async (req, res) => {
   }
 };
 
+export const viewUnitLearningOutcomesByUnit = async (req, res) => {
+  const { unitId } = req.params;
+  try {
+    const unitLearningOutcomes = await prisma.unitLearningOutcome.findMany({
+      where: { unitId },
+    });
+    res.status(200).json(unitLearningOutcomes);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 export const updateUnitLearningOutcome = async (req, res) => {
     const { uloId } = req.params;
-    const { uloDesc, unitId, cloId } = req.body;
+    const { uloDesc, unitId, cloId, position } = req.body;
 
     try {
         const updatedUnitLearningOutcome = await prisma.unitLearningOutcome.update({
@@ -62,6 +80,7 @@ export const updateUnitLearningOutcome = async (req, res) => {
                 uloDesc,
                 unitId,
                 cloId: cloId ? parseInt(cloId) : null,
+                position: position !== undefined ? position : undefined,
             }
         });
 
