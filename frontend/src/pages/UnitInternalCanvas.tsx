@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
@@ -263,6 +263,7 @@ export const UnitInternalCanvas: React.FC = () => {
             uloDesc: u.uloDesc,
             unitId: u.unitId,
             cloId: u.cloId,
+            bloomsLevel: u.bloomsLevel ?? null,
             x: u.position?.x ?? 500,
             y: u.position?.y ?? 100,
           }));
@@ -851,7 +852,7 @@ export const UnitInternalCanvas: React.FC = () => {
     }
   };
 
-  const handleCreateULO = async (description: string) => {
+  const handleCreateULO = async (description: string, bloomsLevel: import("../types").BloomsLevel | null) => {
     if (!currentUnit?.unitId) return;
     // Find the pending ULO box (last added, no uloId from DB)
     const pendingBox = uloBoxes.find((u) => !u.uloId);
@@ -859,6 +860,7 @@ export const UnitInternalCanvas: React.FC = () => {
       const res = await axiosInstance.post("/ULO/create", {
         uloDesc: description,
         unitId: currentUnit.unitId,
+        bloomsLevel: bloomsLevel || null,
         position: {
           x: pendingBox?.x ?? 500,
           y: pendingBox?.y ?? 100,
@@ -874,6 +876,7 @@ export const UnitInternalCanvas: React.FC = () => {
                   uloId: res.data.uloId,
                   id: res.data.uloId,
                   uloDesc: description,
+                  bloomsLevel: res.data.bloomsLevel ?? null,
                 }
               : u
           )
@@ -1655,17 +1658,20 @@ export const UnitInternalCanvas: React.FC = () => {
                 </button>
               </div>
               <UnitLearningOutcomeForm
-                onSave={async (description: string) => {
+                onSave={async (description: string, bloomsLevel: import("../types").BloomsLevel | null) => {
                   const box = uloBoxes.find((u) => u.id === editingId);
                   const dbId = box?.uloId ?? editingId;
                   try {
                     await axiosInstance.put(`/ULO/update/${dbId}`, {
                       uloDesc: description,
                       unitId: currentUnit?.unitId,
+                      bloomsLevel: bloomsLevel || null,
                     });
                     setULOBoxes((prev) =>
                       prev.map((u) =>
-                        u.id === editingId ? { ...u, uloDesc: description } : u
+                        u.id === editingId
+                          ? { ...u, uloDesc: description, bloomsLevel }
+                          : u
                       )
                     );
                   } catch (err) {
@@ -1679,6 +1685,7 @@ export const UnitInternalCanvas: React.FC = () => {
                   setEditingId(null);
                 }}
                 initialData={uloBoxes.find((u) => u.id === editingId)?.uloDesc}
+                initialBloomsLevel={uloBoxes.find((u) => u.id === editingId)?.bloomsLevel}
               />
             </div>
           </div>
