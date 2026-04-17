@@ -1,3 +1,11 @@
+export type BloomsLevel =
+  | "REMEMBER"
+  | "UNDERSTAND"
+  | "APPLY"
+  | "ANALYSE"
+  | "EVALUATE"
+  | "CREATE";
+
 // Unit and Canvas-related types
 export interface Unit {
   unitId: string;
@@ -19,6 +27,7 @@ export interface unitLearningOutcome {
   uloDesc: string;
   unitId: string;
   cloId?: string;
+  bloomsLevel?: BloomsLevel | null;
 }
 
 export interface unitLearningOutcomeBox {
@@ -27,6 +36,7 @@ export interface unitLearningOutcomeBox {
   uloDesc: string;
   unitId: string;
   cloId?: string;
+  bloomsLevel?: BloomsLevel | null;
   x: number;
   y: number;
 }

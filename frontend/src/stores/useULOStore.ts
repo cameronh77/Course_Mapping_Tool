@@ -36,6 +36,7 @@ export const useULOStore = create((set) => ({
       const input = {
         uloDesc: data.uloDesc,
         unitId: data.unitId,
+        bloomsLevel: data.bloomsLevel !== undefined ? data.bloomsLevel : undefined,
       };
       const res = await axiosInstance.put(`/ULO/update/${data.uloId}`, input);
       set((state) => ({
