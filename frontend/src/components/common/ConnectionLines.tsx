@@ -16,6 +16,12 @@ interface ConnectionLinesProps {
   numberTeachingPeriods?: number;
   hoveredUnit?: string | null;
   onDeleteRelationship: (relationshipId: number) => void;
+  onRerouteStart?: (
+    relId: number,
+    sourceUnitId: string,
+    e: React.MouseEvent
+  ) => void;
+  rerouting?: { relId: number; world: { x: number; y: number } } | null;
 }
 
 const getRelationshipColor = (type: UnitRelationship["relationshipType"]) => {
@@ -79,47 +85,91 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({
   unitBoxes,
   numberTeachingPeriods,
   hoveredUnit,
-  onDeleteRelationship
+  onDeleteRelationship,
+  onRerouteStart,
+  rerouting,
 }) => {
+  const UNIT_HEIGHT = 80;
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
       {relationships.map((rel) => {
         const sourceUnit = unitBoxes.find((u) => u.unitId === rel.unitId);
         const targetUnit = unitBoxes.find((u) => u.unitId === rel.relatedId);
         if (!sourceUnit || !targetUnit) return null;
-        
+
+        const isRerouting = rerouting?.relId === rel.id;
+
         const { d, endX, endY, angle } = getCurvePath(sourceUnit, targetUnit, rel.id, numberTeachingPeriods);
         const color = getRelationshipColor(rel.relationshipType);
         const arrowLength = 12;
         const arrowAngle = Math.PI / 6;
-        
-        // Determine if this connection is related to the hovered unit
+
         const isRelated = hoveredUnit && (rel.unitId === hoveredUnit || rel.relatedId === hoveredUnit);
-        
+
+        // While this relationship is being rerouted, replace its rendered path
+        // with a straight ghost line from source centre to the cursor.
+        if (isRerouting && rerouting) {
+          const sx = sourceUnit.x + UNIT_BOX_WIDTH / 2;
+          const sy = sourceUnit.y + UNIT_HEIGHT / 2;
+          const gx = rerouting.world.x;
+          const gy = rerouting.world.y;
+          const gAngle = Math.atan2(gy - sy, gx - sx);
+          return (
+            <g key={rel.id} className="pointer-events-none" style={{ opacity: 0.9 }}>
+              <path
+                d={`M ${sx} ${sy} L ${gx} ${gy}`}
+                stroke={color}
+                strokeWidth="3"
+                strokeDasharray="6 4"
+                fill="none"
+              />
+              <polygon
+                points={`${gx},${gy} ${gx - arrowLength * Math.cos(gAngle - arrowAngle)},${gy - arrowLength * Math.sin(gAngle - arrowAngle)} ${gx - arrowLength * Math.cos(gAngle + arrowAngle)},${gy - arrowLength * Math.sin(gAngle + arrowAngle)}`}
+                fill={color}
+              />
+            </g>
+          );
+        }
+
         return (
-          <g 
-            key={rel.id} 
-            className="cursor-pointer pointer-events-auto transition-all duration-200" 
+          <g
+            key={rel.id}
+            className="cursor-pointer pointer-events-auto transition-all duration-200"
             style={{
               opacity: hoveredUnit ? (isRelated ? 1 : 0.15) : 0.5,
               filter: isRelated && hoveredUnit ? 'drop-shadow(0 0 4px rgba(0,0,0,0.3))' : 'drop-shadow(0 0 1px rgba(0,0,0,0.1))',
             }}
             onClick={() => onDeleteRelationship(rel.id)}
           >
-            <path 
-              d={d} 
-              stroke={color} 
-              strokeWidth={isRelated && hoveredUnit ? "4.5" : "3"} 
-              fill="none" 
+            <path
+              d={d}
+              stroke={color}
+              strokeWidth={isRelated && hoveredUnit ? "4.5" : "3"}
+              fill="none"
               className="transition-all duration-200"
             />
-            <polygon 
-              points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`} 
+            <polygon
+              points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`}
               fill={color}
               className="transition-all duration-200"
             />
             {/* Transparent hit area for easier clicking */}
             <path d={d} stroke="transparent" strokeWidth="16" fill="none" />
+            {/* Enlarged invisible arrowhead grab-handle for rerouting */}
+            {onRerouteStart && (
+              <circle
+                cx={endX}
+                cy={endY}
+                r={14}
+                fill="transparent"
+                className="cursor-grab active:cursor-grabbing"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  onRerouteStart(rel.id, rel.unitId, e);
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
           </g>
         );
       })}

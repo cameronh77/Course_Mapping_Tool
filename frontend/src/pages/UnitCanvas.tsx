@@ -152,6 +152,13 @@ export const CanvasPage: React.FC = () => {
   const [selectedRelationType, setSelectedRelationType] =
     useState<UnitRelationship["relationshipType"]>("PREREQUISITE");
 
+  // Arrowhead-drag state for re-routing an existing relationship.
+  const [rerouting, setRerouting] = useState<{
+    relId: number;
+    sourceUnitId: string;
+    world: { x: number; y: number };
+  } | null>(null);
+
   // State for expanded units and active tabs
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
   const [activeTabs, setActiveTabs] = useState<
@@ -810,6 +817,71 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
+  const handleRerouteStart = (
+    relId: number,
+    sourceUnitId: string,
+    e: React.MouseEvent
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!canvasRef.current) return;
+    const { x, y } = getMouseCoords(e, canvasRef.current);
+    setRerouting({ relId, sourceUnitId, world: { x, y } });
+
+    // Snapshot unit boxes at drag-start so hit-testing is immune to any
+    // concurrent unit-drag or re-render.
+    const boxesSnapshot = unitBoxes;
+    const UNIT_HEIGHT = 80;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!canvasRef.current) return;
+      const coords = getMouseCoords(ev, canvasRef.current);
+      setRerouting((prev) => (prev ? { ...prev, world: coords } : null));
+    };
+
+    const onUp = async (ev: MouseEvent) => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      if (!canvasRef.current) {
+        setRerouting(null);
+        return;
+      }
+      const { x: wx, y: wy } = getMouseCoords(ev, canvasRef.current);
+      setRerouting(null);
+
+      const hit = boxesSnapshot.find(
+        (u) =>
+          u.unitId &&
+          wx >= u.x &&
+          wx <= u.x + UNIT_BOX_WIDTH &&
+          wy >= u.y &&
+          wy <= u.y + UNIT_HEIGHT
+      );
+      if (!hit || !hit.unitId) return;
+      if (hit.unitId === sourceUnitId) return;
+
+      const current = relationships.find((r) => r.id === relId);
+      if (!current || current.relatedId === hit.unitId) return;
+
+      try {
+        const res = await axiosInstance.put(
+          `/unit-relationship/update/${relId}`,
+          { relatedId: hit.unitId }
+        );
+        setRelationships((prev) =>
+          prev.map((r) =>
+            r.id === relId ? { ...r, ...res.data } : r
+          )
+        );
+      } catch (err: any) {
+        alert(err?.response?.data?.message || "Failed to re-route link");
+      }
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   const handleUnitClickForConnection = (unitId: string) => {
     if (!connectionMode) return;
     if (!connectionSource) setConnectionSource(unitId);
@@ -1098,6 +1170,8 @@ export const CanvasPage: React.FC = () => {
                 numberTeachingPeriods={semPerYear}
                 hoveredUnit={hoveredUnit}
                 onDeleteRelationship={handleDeleteRelationship}
+                onRerouteStart={handleRerouteStart}
+                rerouting={rerouting}
               />
             </svg>
           </div>
