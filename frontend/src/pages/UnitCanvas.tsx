@@ -56,9 +56,8 @@ const getCLOColor = (cloId: number): string => {
 export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
 
-  // UX State - View Mode & Sidebar Navigation Tab
+  // UX State - View Mode
   const [viewMode, setViewMode] = useState<'grid' | 'theme'>('grid');
-  const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
 
   // State for editing
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -965,8 +964,6 @@ export const CanvasPage: React.FC = () => {
     >
       <div className="flex flex-col h-full z-20 w-[300px] border-r shadow-xl">
         <CanvasSidebar
-          sidebarTab={sidebarTab}
-          setSidebarTab={setSidebarTab}
           handleSaveCanvas={handleSaveCanvas}
           setShowCreateForm={setShowCreateForm}
           searchTerm={searchTerm}
