@@ -41,7 +41,7 @@ export const GridBackground: React.FC<GridBackgroundProps> = ({
         return (
           <div key={`sem-group-${s}`}>
             <div className="absolute border-r-2 border-gray-300 bg-gray-50 flex items-center justify-center font-bold text-gray-600 uppercase tracking-widest text-lg" style={{ top: semStartY, left: 0, width: START_X, height: semHeight, writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
-              Semester {s + 1}
+              Teaching Period {s + 1}
             </div>
             {s > 0 && <div className="absolute border-t-2 border-gray-300" style={{ top: semStartY, left: 0, width: START_X + totalCols * COL_WIDTH }} />}
             {Array.from({ length: MAX_UNITS_PER_SEM }).map((_, unitInSem) => {
