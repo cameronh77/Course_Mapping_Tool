@@ -113,6 +113,7 @@ export const CanvasPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Unit[]>([]);
   const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
+  const latestSearchRef = useRef<string>("");
   const {
     currentUnit,
     checkUnitExists,
@@ -737,11 +738,17 @@ export const CanvasPage: React.FC = () => {
     const term = e.target.value;
     setSearchTerm(term);
     setShowSearchResults(true);
+    latestSearchRef.current = term;
     if (term) {
       try {
-        const response = await axiosInstance.get(`/unit/view?search=${term}`);
+        const response = await axiosInstance.get(
+          `/unit/view?search=${encodeURIComponent(term)}`
+        );
+        // Drop stale responses that completed after a newer keystroke fired.
+        if (latestSearchRef.current !== term) return;
         setSearchResults(response.data);
       } catch (error) {
+        if (latestSearchRef.current !== term) return;
         console.error("Error fetching units:", error);
         setSearchResults([]);
       }
