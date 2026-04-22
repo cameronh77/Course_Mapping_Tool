@@ -4,20 +4,17 @@ import type { CourseLearningOutcome, Tag, UnitBox as UnitBoxType } from "../../t
 const UNIT_BOX_WIDTH = 256;
 const BASE_CREDITS = 6;
 const BASE_HEIGHT = 80;      // height of a standard 6cp unit (also the header height)
-const ROW_PITCH = 150;       // vertical distance between row slots on the canvas
 
-/** Row span used to visualise unit weight: 6cp → 1 row, 12cp → 2 rows, 18cp → 3 rows, etc.
- *  Units with no/low credits default to 1 row so they always remain visible. */
-export const getUnitRowSpan = (credits?: number | null): number => {
-  if (credits == null || credits <= 0) return 1;
-  return Math.max(1, Math.round(credits / BASE_CREDITS));
+/** Extra semester slots a multi-semester unit reserves beyond its head slot.
+ *  6cp → 0, 12cp → 1, 18cp → 2. Drives linked "continues here" ghost slots. */
+export const getExtraSemesters = (credits?: number | null): number => {
+  if (credits == null || credits <= 0) return 0;
+  return Math.max(0, Math.round(credits / BASE_CREDITS) - 1);
 };
 
-/** Collapsed pixel height for a unit based on how many semester rows it should visually span. */
-export const getUnitHeight = (credits?: number | null): number => {
-  const rowSpan = getUnitRowSpan(credits);
-  return BASE_HEIGHT + (rowSpan - 1) * ROW_PITCH;
-};
+/** Collapsed pixel height. Every unit renders at the standard 6cp size;
+ *  multi-semester weight is visualised via linked ghost slots on the canvas. */
+export const getUnitHeight = (_credits?: number | null): number => BASE_HEIGHT;
 
 interface UnitBoxProps {
   unit: UnitBoxType;
@@ -70,7 +67,6 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
   const collapsedHeight = getUnitHeight(unit.credits);
-  const isMultiRow = collapsedHeight > BASE_HEIGHT;
   const isBeingDragged = draggedUnit === unit.id;
   const showInvalidRing = isBeingDragged && isInvalidDrop;
 
@@ -168,16 +164,6 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
             ×
           </button>
         </div>
-
-        {/* Coloured filler so multi-row units appear as one solid tall block when collapsed */}
-        {!isExpanded && isMultiRow && (
-          <div
-            className="flex-1 cursor-grab active:cursor-grabbing"
-            style={{ backgroundColor: unit.color || "#3B82F6" }}
-            onMouseDown={(e) => onMouseDown(e, unit.id)}
-            onDoubleClick={() => onDoubleClick(unit.id)}
-          />
-        )}
 
         {/* Expanded Content Area */}
         {isExpanded && (

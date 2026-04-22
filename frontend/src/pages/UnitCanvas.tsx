@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
-import { UnitBox, getUnitHeight, getUnitRowSpan } from "../components/common/UnitBox";
+import { UnitBox, getUnitHeight, getExtraSemesters } from "../components/common/UnitBox";
 import { GridBackground } from "../components/common/GridBackground";
 import { ConnectionLines } from "../components/common/ConnectionLines";
 import { ThemeView } from "../components/common/ThemeView";
@@ -54,9 +54,12 @@ const getCLOColor = (cloId: number): string => {
 };
 
 // --- Slot / collision helpers ----------------------------------------------
-// A unit occupies `rowSpan` consecutive row-slots in a single column.
-// These helpers convert pixel x/y to grid (col, startRow) and detect
-// collisions or grid-overflow so that edit/drag/drop can be validated.
+// Every unit renders in a single row slot. Multi-semester units (12cp, 18cp)
+// additionally reserve one or more "ghost" slots in the following semester(s)
+// — rolling into the next year when the head sits in the final semester.
+// Placement, dragging, and editing must validate the full set of linked slots.
+
+type Slot = { col: number; row: number };
 
 const getColFromX = (x: number): number =>
   Math.max(0, Math.round((x - START_X) / COL_WIDTH));
@@ -64,22 +67,69 @@ const getColFromX = (x: number): number =>
 const getRowFromY = (y: number): number =>
   Math.max(0, Math.round((y - START_Y - 20) / ROW_HEIGHT));
 
-/** Returns the first unit that would overlap the given (col, startRow, rowSpan)
- *  block, ignoring `excludeId`. Returns null when the block is free. */
+const slotFromRow = (row: number) => ({
+  sem: Math.floor(row / MAX_UNITS_PER_SEM),
+  slotInSem: row % MAX_UNITS_PER_SEM,
+});
+
+const slotToRow = (sem: number, slotInSem: number): number =>
+  sem * MAX_UNITS_PER_SEM + slotInSem;
+
+/** All slots a unit occupies: the head slot plus any linked ghost slots for
+ *  multi-semester units. Ghosts step to the next semester, rolling to the next
+ *  year's first semester when the head is in the final semester of its year. */
+const getLinkedSlots = (
+  col: number,
+  row: number,
+  credits: number | null | undefined,
+  semPerYear: number
+): Slot[] => {
+  const slots: Slot[] = [{ col, row }];
+  const extras = getExtraSemesters(credits);
+  let { sem, slotInSem } = slotFromRow(row);
+  let currentCol = col;
+  for (let i = 0; i < extras; i++) {
+    if (sem < semPerYear - 1) {
+      sem += 1;
+    } else {
+      sem = 0;
+      currentCol += 1;
+    }
+    slots.push({ col: currentCol, row: slotToRow(sem, slotInSem) });
+  }
+  return slots;
+};
+
+/** True when every slot (head + ghosts) lies inside the course duration grid. */
+const allSlotsInBounds = (
+  slots: Slot[],
+  yearsCount: number,
+  totalRows: number
+): boolean =>
+  slots.every(
+    (s) => s.col >= 0 && s.col < yearsCount && s.row >= 0 && s.row < totalRows
+  );
+
+/** Returns the first unit whose linked slots overlap any of `candidateSlots`,
+ *  ignoring `excludeId`. Returns null when every candidate slot is free. */
 const findCollidingUnit = (
   excludeId: number | null,
-  col: number,
-  startRow: number,
-  rowSpan: number,
-  units: UnitBoxType[]
+  candidateSlots: Slot[],
+  units: UnitBoxType[],
+  semPerYear: number
 ): UnitBoxType | null => {
-  const endRow = startRow + rowSpan;
+  const taken = new Set(candidateSlots.map((s) => `${s.col}:${s.row}`));
   for (const other of units) {
     if (excludeId != null && other.id === excludeId) continue;
-    if (getColFromX(other.x) !== col) continue;
-    const otherStart = getRowFromY(other.y);
-    const otherEnd = otherStart + getUnitRowSpan(other.credits);
-    if (startRow < otherEnd && otherStart < endRow) return other;
+    const otherSlots = getLinkedSlots(
+      getColFromX(other.x),
+      getRowFromY(other.y),
+      other.credits,
+      semPerYear
+    );
+    for (const s of otherSlots) {
+      if (taken.has(`${s.col}:${s.row}`)) return other;
+    }
   }
   return null;
 };
@@ -369,14 +419,15 @@ export const CanvasPage: React.FC = () => {
     const semestersPerYear =
       Number((currentCourse as any)?.numberTeachingPeriods) ||
       DEFAULT_SEMESTERS;
+    const yearsCountLocal =
+      Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
     const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
-    const rowSpan = getUnitRowSpan(selectedUnit.credits);
+    const extras = getExtraSemesters(selectedUnit.credits);
 
     const col = Math.max(0, Math.round((x - START_X) / COL_WIDTH));
     let closestRow = 0;
     let minDistance = Infinity;
-    // Only snap to rows where the unit can actually fit within the grid
-    for (let r = 0; r <= totalRows - rowSpan; r++) {
+    for (let r = 0; r < totalRows; r++) {
       const expectedY = START_Y + r * ROW_HEIGHT + 20;
       const dist = Math.abs(y - expectedY);
       if (dist < minDistance) {
@@ -385,16 +436,25 @@ export const CanvasPage: React.FC = () => {
       }
     }
 
-    // Validation: must fit inside the grid
-    if (closestRow + rowSpan > totalRows) {
+    const slots = getLinkedSlots(
+      col,
+      closestRow,
+      selectedUnit.credits,
+      semestersPerYear
+    );
+
+    // Validation: every linked slot (head + ghosts) must stay inside the grid
+    if (!allSlotsInBounds(slots, yearsCountLocal, totalRows)) {
       alert(
-        `This ${selectedUnit.credits ?? "?"}cp unit needs ${rowSpan} consecutive teaching-period slot${rowSpan > 1 ? "s" : ""} and won't fit at the chosen position.`
+        extras > 0
+          ? `This ${selectedUnit.credits ?? "?"}cp unit spans ${extras + 1} semesters and would extend beyond the course duration at this position.`
+          : `This unit won't fit at the chosen position.`
       );
       return;
     }
 
-    // Validation: must not collide with an existing unit
-    const collision = findCollidingUnit(null, col, closestRow, rowSpan, unitBoxes);
+    // Validation: no linked slot may collide with an existing unit's slots
+    const collision = findCollidingUnit(null, slots, unitBoxes, semestersPerYear);
     if (collision) {
       alert(
         `Cannot place "${selectedUnit.unitId ?? selectedUnit.unitName}" here — it would overlap with "${collision.unitId ?? collision.name}".`
@@ -481,23 +541,29 @@ export const CanvasPage: React.FC = () => {
           const semestersPerYear =
             Number((currentCourse as any)?.numberTeachingPeriods) ||
             DEFAULT_SEMESTERS;
+          const yearsCountLocal =
+            Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
           const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
           const col = getColFromX(editedUnit.x);
           const startRow = getRowFromY(editedUnit.y);
-          const newRowSpan = getUnitRowSpan(newCredits);
+          const newSlots = getLinkedSlots(
+            col,
+            startRow,
+            newCredits,
+            semestersPerYear
+          );
 
-          if (startRow + newRowSpan > totalRows) {
+          if (!allSlotsInBounds(newSlots, yearsCountLocal, totalRows)) {
             alert(
-              `Cannot change to ${newCredits}cp — the unit would extend beyond the last teaching period at its current position. Move it earlier first.`
+              `Cannot change to ${newCredits}cp — the unit would extend beyond the course duration at its current position. Move it earlier first.`
             );
             return;
           }
           const collision = findCollidingUnit(
             editedUnit.id,
-            col,
-            startRow,
-            newRowSpan,
-            unitBoxes
+            newSlots,
+            unitBoxes,
+            semestersPerYear
           );
           if (collision) {
             alert(
@@ -602,10 +668,12 @@ export const CanvasPage: React.FC = () => {
     setDragInvalid(false);
 
     const draggingUnitHeight = getUnitHeight(unit.credits);
-    const draggingRowSpan = getUnitRowSpan(unit.credits);
+    const draggingExtras = getExtraSemesters(unit.credits);
     const semestersPerYear =
       Number((currentCourse as any)?.numberTeachingPeriods) ||
       DEFAULT_SEMESTERS;
+    const yearsCountLocal =
+      Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
     const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
 
     const handleMove = (moveEvent: MouseEvent) => {
@@ -633,11 +701,16 @@ export const CanvasPage: React.FC = () => {
       // Live validity check against the slot the cursor is currently over
       const hoverCol = getColFromX(nextX);
       const hoverRow = getRowFromY(nextY);
-      const overflows = hoverRow + draggingRowSpan > totalRows;
+      const hoverSlots = getLinkedSlots(
+        hoverCol,
+        hoverRow,
+        unit.credits,
+        semestersPerYear
+      );
+      const overflows = !allSlotsInBounds(hoverSlots, yearsCountLocal, totalRows);
       const collides =
         !overflows &&
-        findCollidingUnit(id, hoverCol, hoverRow, draggingRowSpan, unitBoxes) !=
-          null;
+        findCollidingUnit(id, hoverSlots, unitBoxes, semestersPerYear) != null;
       setDragInvalid(overflows || collides);
 
       setUnitBoxes((prevUnits) =>
@@ -668,8 +741,7 @@ export const CanvasPage: React.FC = () => {
           const col = getColFromX(dragged.x);
           let closestRow = 0;
           let minDistance = Infinity;
-          // Only consider rows where the unit's full row-span fits the grid
-          for (let r = 0; r <= totalRows - draggingRowSpan; r++) {
+          for (let r = 0; r < totalRows; r++) {
             const expectedY = START_Y + r * ROW_HEIGHT + 20;
             const dist = Math.abs(dragged.y - expectedY);
             if (dist < minDistance) {
@@ -678,21 +750,25 @@ export const CanvasPage: React.FC = () => {
             }
           }
 
-          const overflows = closestRow + draggingRowSpan > totalRows;
+          const dropSlots = getLinkedSlots(
+            col,
+            closestRow,
+            dragged.credits,
+            semestersPerYear
+          );
+          const overflows = !allSlotsInBounds(
+            dropSlots,
+            yearsCountLocal,
+            totalRows
+          );
           const collision = overflows
             ? null
-            : findCollidingUnit(
-                id,
-                col,
-                closestRow,
-                draggingRowSpan,
-                prevUnits
-              );
+            : findCollidingUnit(id, dropSlots, prevUnits, semestersPerYear);
 
           if (overflows || collision) {
             // Invalid drop — keep the revert-to-origin target and record reason.
             cancelReason = overflows
-              ? `this ${dragged.credits ?? "?"}cp unit needs ${draggingRowSpan} consecutive teaching-period slot${draggingRowSpan > 1 ? "s" : ""} and won't fit there.`
+              ? `this ${dragged.credits ?? "?"}cp unit spans ${draggingExtras + 1} semester${draggingExtras + 1 > 1 ? "s" : ""} and won't fit there.`
               : `it would overlap with "${collision!.unitId ?? collision!.name}".`;
           } else {
             // Valid drop — commit the snapped position.
@@ -1010,6 +1086,44 @@ export const CanvasPage: React.FC = () => {
             numberTeachingPeriods={semPerYear}
           />
 
+          {/* Ghost slots reserved by multi-semester units (12cp spans 2, 18cp spans 3).
+              Non-interactive — the head slot drives placement, ghosts are derived. */}
+          {unitBoxes.flatMap((unit) => {
+            const col = getColFromX(unit.x);
+            const row = getRowFromY(unit.y);
+            const linked = getLinkedSlots(col, row, unit.credits, semPerYear);
+            return linked.slice(1).map((slot, idx) => {
+              const ghostX =
+                START_X + slot.col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+              const ghostY = START_Y + slot.row * ROW_HEIGHT + 20;
+              const accent = unit.color || "#9CA3AF";
+              return (
+                <div
+                  key={`ghost-${unit.id}-${idx}`}
+                  className="absolute pointer-events-none rounded-lg border-2 border-dashed flex flex-col items-center justify-center text-center"
+                  style={{
+                    left: `${ghostX}px`,
+                    top: `${ghostY}px`,
+                    width: `${UNIT_BOX_WIDTH}px`,
+                    height: `${getUnitHeight(unit.credits)}px`,
+                    borderColor: accent,
+                    backgroundColor: "#F3F4F6",
+                    opacity: 0.7,
+                    zIndex: 1,
+                  }}
+                  title={`${unit.unitId ?? unit.name} continues here (${unit.credits ?? "?"}cp spans ${linked.length} semesters)`}
+                >
+                  <div className="text-xs font-bold text-gray-600">
+                    {unit.unitId ?? unit.name}
+                  </div>
+                  <div className="text-[10px] italic text-gray-500">
+                    continues (cont.)
+                  </div>
+                </div>
+              );
+            });
+          })}
+
           {unitBoxes.map((unit) => (
             <UnitBox
               key={unit.id}
@@ -1045,7 +1159,7 @@ export const CanvasPage: React.FC = () => {
               getCLOColor={getCLOColor}
             />
           ))}
-          
+
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
             <ConnectionLines
               relationships={relationships}
