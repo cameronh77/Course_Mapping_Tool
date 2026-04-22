@@ -81,6 +81,30 @@ export const CanvasPage: React.FC = () => {
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
+
+  // Pan/Zoom state — refs mirror state so imperative handlers read fresh values.
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const panRef = useRef(pan);
+  const zoomRef = useRef(zoom);
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  const [isSpaceHeld, setIsSpaceHeld] = useState(false);
+  const isSpaceHeldRef = useRef(false);
+  useEffect(() => {
+    isSpaceHeldRef.current = isSpaceHeld;
+  }, [isSpaceHeld]);
+  const [isPanning, setIsPanning] = useState(false);
+
+  const MIN_ZOOM = 0.2;
+  const MAX_ZOOM = 3;
+  const clampZoom = (z: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
 
@@ -254,16 +278,114 @@ export const CanvasPage: React.FC = () => {
     loadCLOs();
   }, [currentCourse?.courseId]);
 
+  // Converts screen-space pointer coords to canvas (world) coords under
+  // the current pan/zoom transform. Reads from refs so handlers attached
+  // to document during a drag don't capture stale values.
   const getMouseCoords = (
     e: MouseEvent | React.MouseEvent,
     container: HTMLDivElement
   ) => {
     const rect = container.getBoundingClientRect();
     return {
-      x: e.clientX - rect.left + container.scrollLeft,
-      y: e.clientY - rect.top + container.scrollTop,
+      x: (e.clientX - rect.left - panRef.current.x) / zoomRef.current,
+      y: (e.clientY - rect.top - panRef.current.y) / zoomRef.current,
     };
   };
+
+  const zoomAtPoint = (nextZoom: number, screenX: number, screenY: number) => {
+    const z = clampZoom(nextZoom);
+    const prevZoom = zoomRef.current;
+    const prevPan = panRef.current;
+    const wx = (screenX - prevPan.x) / prevZoom;
+    const wy = (screenY - prevPan.y) / prevZoom;
+    const newPan = { x: screenX - wx * z, y: screenY - wy * z };
+    panRef.current = newPan;
+    zoomRef.current = z;
+    setPan(newPan);
+    setZoom(z);
+  };
+
+  const zoomAtCenter = (nextZoom: number) => {
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    zoomAtPoint(nextZoom, rect.width / 2, rect.height / 2);
+  };
+
+  const resetView = () => {
+    panRef.current = { x: 0, y: 0 };
+    zoomRef.current = 1;
+    setPan({ x: 0, y: 0 });
+    setZoom(1);
+  };
+
+  const fitToScreen = () => {
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const padding = 40;
+    const z = clampZoom(
+      Math.min(
+        (rect.width - padding * 2) / innerWidth,
+        (rect.height - padding * 2) / innerHeight
+      )
+    );
+    const newPan = {
+      x: (rect.width - innerWidth * z) / 2,
+      y: (rect.height - innerHeight * z) / 2,
+    };
+    panRef.current = newPan;
+    zoomRef.current = z;
+    setPan(newPan);
+    setZoom(z);
+  };
+
+  // Native wheel listener: react's synthetic wheel event is passive,
+  // so preventDefault() can't block page scroll/browser zoom without this.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const rect = el.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = Math.exp(-e.deltaY * 0.0015);
+        zoomAtPoint(zoomRef.current * factor, mx, my);
+      } else {
+        e.preventDefault();
+        const newPan = {
+          x: panRef.current.x - e.deltaX,
+          y: panRef.current.y - e.deltaY,
+        };
+        panRef.current = newPan;
+        setPan(newPan);
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Space key enables grab-to-pan drag on the canvas.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat) {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable)
+          return;
+        setIsSpaceHeld(true);
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") setIsSpaceHeld(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
 
   const handleUnitGroupChange = async (
     unitKey: string,
@@ -460,6 +582,32 @@ export const CanvasPage: React.FC = () => {
   }
 
   function handleMouseDownCanvas(e: React.MouseEvent) {
+    // Middle-button OR space+left-click starts a pan drag instead of marquee.
+    const isPanDrag =
+      e.button === 1 || (e.button === 0 && isSpaceHeldRef.current);
+    if (isPanDrag) {
+      e.preventDefault();
+      setIsPanning(true);
+      const startScreen = { x: e.clientX, y: e.clientY };
+      const startPan = { ...panRef.current };
+      const handlePanMove = (moveEvent: MouseEvent) => {
+        const newPan = {
+          x: startPan.x + (moveEvent.clientX - startScreen.x),
+          y: startPan.y + (moveEvent.clientY - startScreen.y),
+        };
+        panRef.current = newPan;
+        setPan(newPan);
+      };
+      const handlePanUp = () => {
+        setIsPanning(false);
+        document.removeEventListener("mousemove", handlePanMove);
+        document.removeEventListener("mouseup", handlePanUp);
+      };
+      document.addEventListener("mousemove", handlePanMove);
+      document.addEventListener("mouseup", handlePanUp);
+      return;
+    }
+
     if (e.button !== 0) return;
     if (selectedUnits.length !== 0) {
       setSelectedUnits([]);
@@ -525,17 +673,11 @@ export const CanvasPage: React.FC = () => {
                 ...u,
                 x: Math.max(
                   0,
-                  Math.min(
-                    newMouseX - offset.x,
-                    canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH
-                  )
+                  Math.min(newMouseX - offset.x, innerWidth - UNIT_BOX_WIDTH)
                 ),
                 y: Math.max(
                   0,
-                  Math.min(
-                    newMouseY - offset.y,
-                    canvasRef.current!.scrollHeight - 100
-                  )
+                  Math.min(newMouseY - offset.y, innerHeight - 100)
                 ),
               }
             : u
@@ -842,74 +984,119 @@ export const CanvasPage: React.FC = () => {
         />
       </div>
 
-      <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
-        {/* View Mode Toggle */}
-        <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
-            onClick={() => setViewMode('grid')}
-          >
-            Grid View
-          </button>
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'theme' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
-            onClick={() => setViewMode('theme')}
-          >
-            Theme View
-          </button>
+      <div ref={canvasRef} className={`flex-1 bg-white overflow-hidden relative ${isPanning ? 'cursor-grabbing' : isSpaceHeld ? 'cursor-grab' : ''}`} style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+        {/* View Mode Toggle + Zoom Controls (floating over the transformed canvas) */}
+        <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
+          <div className="flex items-center gap-1">
+            <button
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+              onClick={() => setViewMode('grid')}
+            >
+              Grid View
+            </button>
+            <button
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'theme' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
+              onClick={() => setViewMode('theme')}
+            >
+              Theme View
+            </button>
+          </div>
+          {viewMode === 'grid' && (
+            <div className="flex items-center gap-1">
+              <button
+                className="px-2 py-1 text-xs font-bold rounded-md text-gray-600 hover:bg-gray-100"
+                onClick={() => zoomAtCenter(zoom * 0.8)}
+                title="Zoom out"
+              >
+                −
+              </button>
+              <span className="px-2 py-1 text-xs font-mono text-gray-600 w-14 text-center">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                className="px-2 py-1 text-xs font-bold rounded-md text-gray-600 hover:bg-gray-100"
+                onClick={() => zoomAtCenter(zoom * 1.25)}
+                title="Zoom in"
+              >
+                +
+              </button>
+              <button
+                className="px-2 py-1 text-xs font-bold rounded-md text-gray-600 hover:bg-gray-100"
+                onClick={resetView}
+                title="Reset view"
+              >
+                100%
+              </button>
+              <button
+                className="px-2 py-1 text-xs font-bold rounded-md text-gray-600 hover:bg-gray-100"
+                onClick={fitToScreen}
+                title="Fit to screen"
+              >
+                Fit
+              </button>
+            </div>
+          )}
         </div>
 
         {viewMode === 'grid' ? (
-        <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
-          <GridBackground
-            expectedDuration={yearsCount}
-            numberTeachingPeriods={semPerYear}
-          />
-
-          {unitBoxes.map((unit) => (
-            <UnitBox
-              key={unit.id}
-              unit={unit}
-              draggedUnit={draggedUnit}
-              selectedUnits={selectedUnits}
-              connectionMode={connectionMode}
-              connectionSource={connectionSource}
-              isExpanded={expandedUnits.has(unit.id)}
-              activeTab={activeTabs[unit.id] || "info"}
-              unitMappings={
-                unitMappings[unit.unitId || unit.id.toString()] || {
-                  clos: [],
-                  tags: [],
-                }
-              }
-              currentCLOs={currentCLOs || []}
-              onMouseDown={handleMouseDown}
-              onDoubleClick={handleDoubleClick}
-              onClick={handleUnitClickForConnection}
-              onMouseEnter={() =>
-                setHoveredUnit(unit.unitId || unit.id.toString())
-              }
-              onMouseLeave={() => setHoveredUnit(null)}
-              onContextMenu={handleUnitRightClick}
-              onDrop={handleUnitBoxDrop}
-              toggleExpand={toggleExpand}
-              setActiveTab={(id, tab) =>
-                setActiveTabs((prev) => ({ ...prev, [id]: tab }))
-              }
-              deleteUnit={deleteUnit}
-              getCLOColor={getCLOColor}
-            />
-          ))}
-          
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
-            <ConnectionLines
-              relationships={relationships}
-              unitBoxes={unitBoxes}
+        <div
+          className="absolute top-0 left-0"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: '0 0',
+          }}
+        >
+          <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
+            <GridBackground
+              expectedDuration={yearsCount}
               numberTeachingPeriods={semPerYear}
-              hoveredUnit={hoveredUnit}
-              onDeleteRelationship={handleDeleteRelationship}
             />
-          </svg>
+
+            {unitBoxes.map((unit) => (
+              <UnitBox
+                key={unit.id}
+                unit={unit}
+                draggedUnit={draggedUnit}
+                selectedUnits={selectedUnits}
+                connectionMode={connectionMode}
+                connectionSource={connectionSource}
+                isExpanded={expandedUnits.has(unit.id)}
+                activeTab={activeTabs[unit.id] || "info"}
+                unitMappings={
+                  unitMappings[unit.unitId || unit.id.toString()] || {
+                    clos: [],
+                    tags: [],
+                  }
+                }
+                currentCLOs={currentCLOs || []}
+                onMouseDown={handleMouseDown}
+                onDoubleClick={handleDoubleClick}
+                onClick={handleUnitClickForConnection}
+                onMouseEnter={() =>
+                  setHoveredUnit(unit.unitId || unit.id.toString())
+                }
+                onMouseLeave={() => setHoveredUnit(null)}
+                onContextMenu={handleUnitRightClick}
+                onDrop={handleUnitBoxDrop}
+                toggleExpand={toggleExpand}
+                setActiveTab={(id, tab) =>
+                  setActiveTabs((prev) => ({ ...prev, [id]: tab }))
+                }
+                deleteUnit={deleteUnit}
+                getCLOColor={getCLOColor}
+              />
+            ))}
+
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
+              <ConnectionLines
+                relationships={relationships}
+                unitBoxes={unitBoxes}
+                numberTeachingPeriods={semPerYear}
+                hoveredUnit={hoveredUnit}
+                onDeleteRelationship={handleDeleteRelationship}
+              />
+            </svg>
+          </div>
         </div>
         ) : (
           <ThemeView
