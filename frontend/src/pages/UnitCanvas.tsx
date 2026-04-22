@@ -31,6 +31,10 @@ const DEFAULT_YEARS = 3;
 const DEFAULT_SEMESTERS = 2;
 const MAX_UNITS_PER_SEM = 4;
 const UNIT_BOX_WIDTH = 256;
+const BASE_CREDITS = 6;
+const DEFAULT_MAX_CP_PER_PERIOD = MAX_UNITS_PER_SEM * BASE_CREDITS; // 24
+const MIN_MAX_CP_PER_PERIOD = BASE_CREDITS;
+const ABS_MAX_CP_PER_PERIOD = MAX_UNITS_PER_SEM * BASE_CREDITS;
 
 // Color palette for CLOs - vibrant and distinct colors
 const CLO_COLOR_PALETTE = [
@@ -134,12 +138,134 @@ const findCollidingUnit = (
   return null;
 };
 
+const periodKey = (col: number, sem: number) => `${col}:${sem}`;
+const slotKey = (col: number, row: number) => `${col}:${row}`;
+
+/** CP used in each teaching period (keyed by `${col}:${sem}`). Full-weight rule:
+ *  a unit contributes its full credit weight to every period it touches (head +
+ *  ghosts). Caller may pass excludeId to ignore the unit currently being moved. */
+const getPeriodCPUsage = (
+  units: UnitBoxType[],
+  semPerYear: number,
+  excludeId: number | null = null
+): Map<string, number> => {
+  const usage = new Map<string, number>();
+  for (const u of units) {
+    if (excludeId != null && u.id === excludeId) continue;
+    const credits = u.credits ?? 0;
+    if (credits <= 0) continue;
+    const slots = getLinkedSlots(
+      getColFromX(u.x),
+      getRowFromY(u.y),
+      u.credits,
+      semPerYear
+    );
+    const seen = new Set<string>();
+    for (const s of slots) {
+      const sem = Math.floor(s.row / MAX_UNITS_PER_SEM);
+      const key = periodKey(s.col, sem);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      usage.set(key, (usage.get(key) ?? 0) + credits);
+    }
+  }
+  return usage;
+};
+
+/** First period (if any) whose cap would be exceeded by placing `credits` at
+ *  `candidateSlots`. Returns null when every touched period still fits. */
+const findCapViolation = (
+  candidateSlots: Slot[],
+  credits: number,
+  usage: Map<string, number>,
+  cap: number
+): { col: number; sem: number; wouldBe: number } | null => {
+  if (credits <= 0) return null;
+  const seen = new Set<string>();
+  for (const s of candidateSlots) {
+    const sem = Math.floor(s.row / MAX_UNITS_PER_SEM);
+    const key = periodKey(s.col, sem);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const used = usage.get(key) ?? 0;
+    if (used + credits > cap) {
+      return { col: s.col, sem, wouldBe: used + credits };
+    }
+  }
+  return null;
+};
+
+/** Count of slot footprints (heads + ghosts) that land in a given period. */
+const getPeriodFootprint = (
+  units: UnitBoxType[],
+  col: number,
+  sem: number,
+  semPerYear: number
+): number => {
+  let count = 0;
+  for (const u of units) {
+    const credits = u.credits ?? 0;
+    if (credits <= 0) continue;
+    const slots = getLinkedSlots(
+      getColFromX(u.x),
+      getRowFromY(u.y),
+      u.credits,
+      semPerYear
+    );
+    for (const s of slots) {
+      if (
+        s.col === col &&
+        Math.floor(s.row / MAX_UNITS_PER_SEM) === sem
+      ) {
+        count++;
+      }
+    }
+  }
+  return count;
+};
+
+/** Slots that should render as "blocked" to signal the period's CP cap is
+ *  exhausted. Mark the bottom-most slotInSem first so blocking grows upward. */
+const computeBlockedSlots = (
+  units: UnitBoxType[],
+  yearsCountLocal: number,
+  semPerYear: number,
+  cap: number
+): Set<string> => {
+  const blocked = new Set<string>();
+  const usage = getPeriodCPUsage(units, semPerYear);
+  for (let col = 0; col < yearsCountLocal; col++) {
+    for (let sem = 0; sem < semPerYear; sem++) {
+      const used = usage.get(periodKey(col, sem)) ?? 0;
+      const footprint = getPeriodFootprint(units, col, sem, semPerYear);
+      const slotsRemaining = Math.max(
+        0,
+        Math.floor((cap - used) / BASE_CREDITS)
+      );
+      const usable = footprint + slotsRemaining;
+      const blockedCount = Math.max(0, MAX_UNITS_PER_SEM - usable);
+      for (let i = 0; i < blockedCount; i++) {
+        const slotInSem = MAX_UNITS_PER_SEM - 1 - i;
+        const absRow = sem * MAX_UNITS_PER_SEM + slotInSem;
+        blocked.add(slotKey(col, absRow));
+      }
+    }
+  }
+  return blocked;
+};
+
 export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
 
   // UX State - View Mode & Sidebar Navigation Tab
   const [viewMode, setViewMode] = useState<'grid' | 'theme'>('grid');
   const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
+
+  // User-configurable CP cap per teaching period. Full-weight rule: a unit's
+  // credits count against the cap of every period it touches (head + ghosts).
+  const [maxCPPerPeriod, setMaxCPPerPeriod] = useState<number>(
+    DEFAULT_MAX_CP_PER_PERIOD
+  );
 
   // State for editing
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -462,6 +588,21 @@ export const CanvasPage: React.FC = () => {
       return;
     }
 
+    // Validation: placing must not push any touched period over the CP cap.
+    const placeUsage = getPeriodCPUsage(unitBoxes, semestersPerYear);
+    const capViolation = findCapViolation(
+      slots,
+      selectedUnit.credits ?? 0,
+      placeUsage,
+      maxCPPerPeriod
+    );
+    if (capViolation) {
+      alert(
+        `Cannot place "${selectedUnit.unitId ?? selectedUnit.unitName}" here — it would push Year ${capViolation.col + 1}, Semester ${capViolation.sem + 1} to ${capViolation.wouldBe}cp (cap is ${maxCPPerPeriod}cp).`
+      );
+      return;
+    }
+
     const snappedX =
       START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
     const snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
@@ -568,6 +709,19 @@ export const CanvasPage: React.FC = () => {
           if (collision) {
             alert(
               `Cannot change to ${newCredits}cp — it would overlap with "${collision.unitId ?? collision.name}". Move one of the units first.`
+            );
+            return;
+          }
+
+          const capViolation = findCapViolation(
+            newSlots,
+            newCredits ?? 0,
+            getPeriodCPUsage(unitBoxes, semestersPerYear, editedUnit.id),
+            maxCPPerPeriod
+          );
+          if (capViolation) {
+            alert(
+              `Cannot change to ${newCredits}cp — it would push Year ${capViolation.col + 1}, Semester ${capViolation.sem + 1} to ${capViolation.wouldBe}cp (cap is ${maxCPPerPeriod}cp). Raise the cap or rearrange first.`
             );
             return;
           }
@@ -711,7 +865,16 @@ export const CanvasPage: React.FC = () => {
       const collides =
         !overflows &&
         findCollidingUnit(id, hoverSlots, unitBoxes, semestersPerYear) != null;
-      setDragInvalid(overflows || collides);
+      const exceedsCap =
+        !overflows &&
+        !collides &&
+        findCapViolation(
+          hoverSlots,
+          unit.credits ?? 0,
+          getPeriodCPUsage(unitBoxes, semestersPerYear, id),
+          maxCPPerPeriod
+        ) != null;
+      setDragInvalid(overflows || collides || exceedsCap);
 
       setUnitBoxes((prevUnits) =>
         prevUnits.map((u) =>
@@ -764,12 +927,25 @@ export const CanvasPage: React.FC = () => {
           const collision = overflows
             ? null
             : findCollidingUnit(id, dropSlots, prevUnits, semestersPerYear);
+          const capViolation =
+            overflows || collision
+              ? null
+              : findCapViolation(
+                  dropSlots,
+                  dragged.credits ?? 0,
+                  getPeriodCPUsage(prevUnits, semestersPerYear, id),
+                  maxCPPerPeriod
+                );
 
-          if (overflows || collision) {
+          if (overflows || collision || capViolation) {
             // Invalid drop — keep the revert-to-origin target and record reason.
-            cancelReason = overflows
-              ? `this ${dragged.credits ?? "?"}cp unit spans ${draggingExtras + 1} semester${draggingExtras + 1 > 1 ? "s" : ""} and won't fit there.`
-              : `it would overlap with "${collision!.unitId ?? collision!.name}".`;
+            if (overflows) {
+              cancelReason = `this ${dragged.credits ?? "?"}cp unit spans ${draggingExtras + 1} semester${draggingExtras + 1 > 1 ? "s" : ""} and won't fit there.`;
+            } else if (collision) {
+              cancelReason = `it would overlap with "${collision.unitId ?? collision.name}".`;
+            } else if (capViolation) {
+              cancelReason = `it would push Year ${capViolation.col + 1}, Semester ${capViolation.sem + 1} to ${capViolation.wouldBe}cp (cap is ${maxCPPerPeriod}cp).`;
+            }
           } else {
             // Valid drop — commit the snapped position.
             targetX =
@@ -1019,6 +1195,14 @@ export const CanvasPage: React.FC = () => {
     START_Y + semPerYear * MAX_UNITS_PER_SEM * ROW_HEIGHT + 100
   );
 
+  // Slots the grid should render as "Cap Reached" under the current CP cap.
+  const blockedSlots = computeBlockedSlots(
+    unitBoxes,
+    yearsCount,
+    semPerYear,
+    maxCPPerPeriod
+  );
+
   // Wrapper for the onDrop handler to process logic locally in UnitCanvas
   const handleUnitBoxDrop = (unitKey: string, parsed: any) => {
     handleDropOnUnit(unitKey, parsed);
@@ -1077,6 +1261,28 @@ export const CanvasPage: React.FC = () => {
           >
             Theme View
           </button>
+          {viewMode === 'grid' && (
+            <label className="ml-auto flex items-center gap-2 text-xs font-semibold text-gray-600 pr-2">
+              Max CP / period
+              <input
+                type="number"
+                min={MIN_MAX_CP_PER_PERIOD}
+                max={ABS_MAX_CP_PER_PERIOD}
+                step={BASE_CREDITS}
+                value={maxCPPerPeriod}
+                onChange={(e) => {
+                  const raw = Number(e.target.value);
+                  if (Number.isNaN(raw)) return;
+                  const clamped = Math.max(
+                    MIN_MAX_CP_PER_PERIOD,
+                    Math.min(ABS_MAX_CP_PER_PERIOD, raw)
+                  );
+                  setMaxCPPerPeriod(clamped);
+                }}
+                className="w-16 px-2 py-1 text-xs font-bold text-gray-800 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </label>
+          )}
         </div>
 
         {viewMode === 'grid' ? (
@@ -1084,6 +1290,7 @@ export const CanvasPage: React.FC = () => {
           <GridBackground
             expectedDuration={yearsCount}
             numberTeachingPeriods={semPerYear}
+            blockedSlots={blockedSlots}
           />
 
           {/* Ghost slots reserved by multi-semester units (12cp spans 2, 18cp spans 3).

@@ -13,11 +13,15 @@ const UNIT_BOX_WIDTH = 256;
 interface GridBackgroundProps {
   expectedDuration?: number;
   numberTeachingPeriods?: number;
+  /** Keys "col:absRow" of slots that should render disabled because the
+   *  teaching period's CP cap leaves no room for another 6-CP unit there. */
+  blockedSlots?: Set<string>;
 }
 
 export const GridBackground: React.FC<GridBackgroundProps> = ({
   expectedDuration,
-  numberTeachingPeriods
+  numberTeachingPeriods,
+  blockedSlots
 }) => {
   const years = expectedDuration || DEFAULT_YEARS;
   const semestersPerYear = numberTeachingPeriods || DEFAULT_SEMESTERS;
@@ -44,11 +48,47 @@ export const GridBackground: React.FC<GridBackgroundProps> = ({
               const absRow = s * MAX_UNITS_PER_SEM + unitInSem;
               return (
                 <div key={`sem-${s}-unit-${unitInSem}`}>
-                  {Array.from({ length: totalCols }).map((_, col) => (
-                    <div key={`slot-${col}-${absRow}`} className="absolute border-2 border-dashed border-gray-300 rounded-lg bg-gray-50/50 flex items-center justify-center" style={{ top: START_Y + absRow * ROW_HEIGHT + 20, left: START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2, width: UNIT_BOX_WIDTH, height: 80 }}>
-                      <span className="text-gray-400 font-medium text-xs opacity-50">Drop Unit Here</span>
-                    </div>
-                  ))}
+                  {Array.from({ length: totalCols }).map((_, col) => {
+                    const isBlocked = blockedSlots?.has(`${col}:${absRow}`);
+                    return (
+                      <div
+                        key={`slot-${col}-${absRow}`}
+                        className={`absolute border-2 rounded-lg flex items-center justify-center ${
+                          isBlocked
+                            ? "border-solid border-red-200 bg-red-50/60"
+                            : "border-dashed border-gray-300 bg-gray-50/50"
+                        }`}
+                        style={{
+                          top: START_Y + absRow * ROW_HEIGHT + 20,
+                          left:
+                            START_X +
+                            col * COL_WIDTH +
+                            (COL_WIDTH - UNIT_BOX_WIDTH) / 2,
+                          width: UNIT_BOX_WIDTH,
+                          height: 80,
+                          ...(isBlocked && {
+                            backgroundImage:
+                              "repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(239,68,68,0.08) 6px, rgba(239,68,68,0.08) 12px)"
+                          })
+                        }}
+                        title={
+                          isBlocked
+                            ? "Capacity reached — raise the period's CP cap to use this slot"
+                            : undefined
+                        }
+                      >
+                        <span
+                          className={`font-medium text-xs ${
+                            isBlocked
+                              ? "text-red-400/80 uppercase tracking-wider"
+                              : "text-gray-400 opacity-50"
+                          }`}
+                        >
+                          {isBlocked ? "Cap Reached" : "Drop Unit Here"}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
