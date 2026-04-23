@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
+import { THEME_COLORS } from "../common/themeViewConstants";
 import type { Unit } from "../../types";
 
 interface CanvasSidebarProps {
@@ -183,20 +184,28 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
               </div>
               <br></br>
               <div className="flex flex-wrap gap-2 mb-3 max-h-[20vh] overflow-y-auto">
-                  {existingTags && existingTags.map((tag: any) => (
-                    <div
-                      key={tag.tagId}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("application/json", JSON.stringify({ type: 'tag', data: tag }));
-                      }}
-                      className="bg-green-50 hover:bg-green-100 text-green-800 font-medium text-xs py-1 px-2.5 rounded-full cursor-grab active:cursor-grabbing shadow-sm border border-green-200 flex items-center gap-1 transition-colors"
-                      title="Drag onto a Unit Box"
-                    >
-                      <span className="text-[10px] text-green-500">●</span>
-                      {tag.tagName}
-                    </div>
-                  ))}
+                  {existingTags && existingTags.map((tag: any, idx: number) => {
+                    const colors = THEME_COLORS[idx % THEME_COLORS.length];
+                    return (
+                      <div
+                        key={tag.tagId}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("application/json", JSON.stringify({ type: 'tag', data: tag }));
+                        }}
+                        className="font-medium text-xs py-1 px-2.5 rounded-full cursor-grab active:cursor-grabbing shadow-sm border flex items-center gap-1 transition-colors hover:shadow-md"
+                        style={{
+                          backgroundColor: colors.bg,
+                          borderColor: colors.border,
+                          color: colors.label,
+                        }}
+                        title="Drag onto a Unit Box"
+                      >
+                        <span className="text-[10px]" style={{ color: colors.text }}>●</span>
+                        {tag.tagName}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           </div>
