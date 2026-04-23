@@ -31,6 +31,9 @@ interface UnitSidebarProps {
   linkMode: boolean;
   setLinkMode: (mode: boolean) => void;
   setLinkSource: (source: null) => void;
+
+  onCLOHover: (cloId: number) => void;
+  onCLOLeave: () => void;
 }
 
 export const UnitSidebar: React.FC<UnitSidebarProps> = ({
@@ -42,6 +45,8 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
   linkMode,
   setLinkMode,
   setLinkSource,
+  onCLOHover,
+  onCLOLeave,
 }) => {
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
@@ -159,7 +164,7 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
           <h2 className="text-sm font-bold mb-2 text-purple-800 border-b pb-1">
             Course Outcomes
           </h2>
-          <p className="text-xs text-gray-500 mb-3">Drag onto an assessment.</p>
+          <p className="text-xs text-gray-500 mb-3">Drag onto a ULO or assessment to link it.</p>
 
           <div className="flex flex-col gap-2 max-h-[25vh] overflow-y-auto">
             {currentCLOs?.map((clo: any) => {
@@ -174,7 +179,9 @@ export const UnitSidebar: React.FC<UnitSidebarProps> = ({
                       JSON.stringify({ type: "clo", data: clo })
                     );
                   }}
-                  className="text-xs p-2 rounded cursor-grab border shadow-sm flex gap-2"
+                  onMouseEnter={() => onCLOHover(clo.cloId)}
+                  onMouseLeave={onCLOLeave}
+                  className="text-xs p-2 rounded cursor-grab border shadow-sm flex gap-2 transition-shadow hover:shadow-md"
                   style={{
                     backgroundColor: cloColor + "15",
                     borderColor: cloColor + "33",

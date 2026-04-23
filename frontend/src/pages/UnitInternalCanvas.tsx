@@ -1341,6 +1341,42 @@ export const UnitInternalCanvas: React.FC = () => {
     }
   };
 
+  // ── CLO sidebar hover highlighting ──────────────────────────────────────
+  const [hoveredCLOId, setHoveredCLOId] = useState<number | null>(null);
+
+  // ── CLO → ULO linking ────────────────────────────────────────────────────
+  const handleCLODropOnULO = async (uloId: number, clo: CourseLearningOutcome) => {
+    try {
+      await axiosInstance.put(`/ULO/update/${uloId}`, {
+        cloId: clo.cloId,
+        unitId: currentUnit?.unitId,
+      });
+      setULOBoxes((prev) =>
+        prev.map((u) =>
+          (u.uloId ?? u.id) === uloId ? { ...u, cloId: String(clo.cloId) } : u
+        )
+      );
+    } catch (error) {
+      console.error("Failed to link CLO to ULO:", error);
+    }
+  };
+
+  const handleCLOUnlinkFromULO = async (uloId: number) => {
+    try {
+      await axiosInstance.put(`/ULO/update/${uloId}`, {
+        cloId: null,
+        unitId: currentUnit?.unitId,
+      });
+      setULOBoxes((prev) =>
+        prev.map((u) =>
+          (u.uloId ?? u.id) === uloId ? { ...u, cloId: undefined } : u
+        )
+      );
+    } catch (error) {
+      console.error("Failed to unlink CLO from ULO:", error);
+    }
+  };
+
   return (
     <div
       className="flex h-screen relative overflow-hidden pt-16"
@@ -1356,6 +1392,8 @@ export const UnitInternalCanvas: React.FC = () => {
           linkMode={linkMode}
           setLinkMode={setLinkMode}
           setLinkSource={setLinkSource}
+          onCLOHover={(cloId) => setHoveredCLOId(cloId)}
+          onCLOLeave={() => setHoveredCLOId(null)}
         />
       </div>
 
@@ -1395,6 +1433,9 @@ export const UnitInternalCanvas: React.FC = () => {
           })}
           {uloBoxes.map((ulo) => {
             const uId = ulo.uloId ?? ulo.id!;
+            const linkedCLO = ulo.cloId
+              ? currentCLOs.find((c: CourseLearningOutcome) => c.cloId === Number(ulo.cloId)) ?? null
+              : null;
             return (
               <div
                 key={ulo.id}
@@ -1412,6 +1453,15 @@ export const UnitInternalCanvas: React.FC = () => {
                   onMouseDown={handleULOBoxMouseDown}
                   onDoubleClick={handleEditULO}
                   onDelete={deleteULO}
+                  linkedCLO={linkedCLO}
+                  onCLODrop={handleCLODropOnULO}
+                  onCLOUnlink={handleCLOUnlinkFromULO}
+                  getCLOColor={getCLOColor}
+                  isHighlighted={
+                    hoveredCLOId !== null &&
+                    ulo.cloId !== undefined &&
+                    Number(ulo.cloId) === hoveredCLOId
+                  }
                 />
               </div>
             );
