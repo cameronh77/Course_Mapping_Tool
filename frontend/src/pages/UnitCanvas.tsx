@@ -968,12 +968,12 @@ export const CanvasPage: React.FC = () => {
       setTimeout(() => setIsDragging(false), 100);
 
       // Surface the cancellation outside the React updater so it fires once.
-      if (cancelReason) {
-        setTimeout(
-          () => alert(`Move cancelled — position reset.\n\n${cancelReason}`),
-          0
-        );
-      }
+      // if (cancelReason) {
+      //   setTimeout(
+      //     () => alert(`Move cancelled — position reset.\n\n${cancelReason}`),
+      //     0
+      //   );
+      // }
     };
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleUp);
