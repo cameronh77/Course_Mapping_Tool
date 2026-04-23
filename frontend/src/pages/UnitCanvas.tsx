@@ -1003,7 +1003,13 @@ export const CanvasPage: React.FC = () => {
                     return;
                   }
 
-                  setUnit(selectedUnit);
+                  setUnit({
+                    unitId: selectedUnit.unitId || "",
+                    unitName: selectedUnit.name || "",
+                    unitDesc: selectedUnit.description || "",
+                    credits: selectedUnit.credits || 0,
+                    semestersOffered: selectedUnit.semestersOffered || [],
+                  });
                   navigate("/UnitInternalCanvas");
                 }}
               />

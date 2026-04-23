@@ -79,11 +79,17 @@ const getCLOColor = (cloId: number): string => {
 };
 
 export const UnitInternalCanvas: React.FC = () => {
+  const DEFAULT_UNIT_COLOR = "#3B82F6";
+
   const [assessmentBoxes, setAssessmentBoxes] = useState<AssessmentBoxType[]>(
     []
   );
 
   const [uloBoxes, setULOBoxes] = useState<unitLearningOutcomeBoxType[]>([]);
+  const [unitCLOs, setUnitCLOs] = useState<CourseLearningOutcome[]>([]);
+  const [currentUnitColor, setCurrentUnitColor] = useState<string>(
+    DEFAULT_UNIT_COLOR
+  );
 
   // UX State - Sidebar Navigation Tab
   const [sidebarTab, setSidebarTab] = useState<
@@ -97,8 +103,10 @@ export const UnitInternalCanvas: React.FC = () => {
   const [draggedAssessment, setDraggedAssessment] = useState<number | null>(
     null
   );
+  const [selectedAssessmentBoxId, setSelectedAssessmentBoxId] = useState<number | null>(null);
 
   const [draggedULO, setDraggedULO] = useState<number | null>(null);
+  const [selectedULOBoxId, setSelectedULOBoxId] = useState<number | null>(null);
 
   const [showULOForm, setShowULOForm] = useState<boolean>(false);
   const [showCreateULOForm, setShowCreateULOForm] = useState<boolean>(false);
@@ -232,28 +240,73 @@ export const UnitInternalCanvas: React.FC = () => {
     const loadCanvasState = async () => {
       //console.log(currentUnit?.unitId);
       if (currentUnit?.unitId) {
+        const selectedUnitId = String(currentUnit.unitId).trim().toUpperCase();
+
+        const fallbackColor =
+          typeof (currentUnit as any)?.color === "string" &&
+          (currentUnit as any).color.trim()
+            ? (currentUnit as any).color
+            : DEFAULT_UNIT_COLOR;
+        setCurrentUnitColor(fallbackColor);
+
+        // Clear old unit state immediately so previous data cannot flash or persist.
+        setTeachingActivityBoxes([]);
+
         try {
+          if (currentCourse?.courseId) {
+            const courseUnitsResponse = await axiosInstance.get(
+              `/course-unit/view?courseId=${currentCourse.courseId}`
+            );
+            const selectedCourseUnit = (courseUnitsResponse.data || []).find(
+              (cu: any) =>
+                String(cu.unitId || "").trim().toUpperCase() === selectedUnitId
+            );
+            const resolvedColor =
+              typeof selectedCourseUnit?.color === "string" &&
+              selectedCourseUnit.color.trim()
+                ? selectedCourseUnit.color
+                : fallbackColor;
+            setCurrentUnitColor(resolvedColor);
+          }
+
           // Load assessments
           const response = await axiosInstance.get(
             `/assessment/view?search=${currentUnit.unitId}`
           );
-          const assessments = response.data;
-          const loadedAssessmentBoxes = assessments.map((a: any) => ({
-            id: a.assessmentId,
-            dbID: a.assessmentId,
-            name: a.assessmentName,
-            description: a.assessmentDesc,
-            type: a.assessmentType,
-            value: a.value,
-            hurdleReq: a.hurdleReq,
-            dueWeek: a.dueWeek,
-            conditions: a.assessmentConditions,
-            feedbackWeek: a.feedbackWeek,
-            feedbackDetails: a.feedbackDetails,
-            unitId: a.unitId,
-            x: a.position?.x ?? 100,
-            y: a.position?.y ?? 100,
-          }));
+          const assessments = response.data || [];
+          const seenAssessmentIds = new Set<number>();
+          const loadedAssessmentBoxes = assessments
+            .filter((a: any) => {
+              const assessmentId = Number(a.assessmentId);
+              const assessmentUnitId = String(a.unitId || "").trim().toUpperCase();
+
+              if (!Number.isInteger(assessmentId) || assessmentUnitId !== selectedUnitId) {
+                return false;
+              }
+
+              if (seenAssessmentIds.has(assessmentId)) {
+                return false;
+              }
+
+              seenAssessmentIds.add(assessmentId);
+              return true;
+            })
+            .map((a: any) => ({
+              id: a.assessmentId,
+              dbID: a.assessmentId,
+              name: a.assessmentName,
+              description: a.assessmentDesc,
+              type: a.assessmentType,
+              value: a.value,
+              hurdleReq: a.hurdleReq,
+              dueWeek: a.dueWeek,
+              conditions: a.assessmentConditions,
+              feedbackWeek: a.feedbackWeek,
+              feedbackDetails: a.feedbackDetails,
+              unitId: a.unitId,
+              x: a.position?.x ?? 100,
+              y: a.position?.y ?? 100,
+            }));
           setAssessmentBoxes(loadedAssessmentBoxes);
 
           // Load ULOs for this unit
@@ -272,6 +325,27 @@ export const UnitInternalCanvas: React.FC = () => {
           }));
           setULOBoxes(loadedULOBoxes);
 
+          // Load CLOs that are specifically mapped to this unit through its ULOs.
+          if (currentCourse?.courseId) {
+            const cloResponse = await axiosInstance.get(
+              `/CLO/viewAll/${currentCourse.courseId}`
+            );
+            const allCourseCLOs = (cloResponse.data || []) as CourseLearningOutcome[];
+            const unitCLOIdSet = new Set<number>(
+              loadedULOBoxes
+                .map((u) => Number(u.cloId))
+                .filter((id) => Number.isInteger(id) && id > 0)
+            );
+
+            const matchedUnitCLOs = allCourseCLOs.filter(
+              (clo) => typeof clo.cloId === "number" && unitCLOIdSet.has(clo.cloId)
+            );
+
+            setUnitCLOs(matchedUnitCLOs);
+          } else {
+            setUnitCLOs([]);
+          }
+
           // Load assessment-ULO links
           const linksResponse = await axiosInstance.get(
             `/assessment-ulo/view?unitId=${currentUnit.unitId}`
@@ -282,16 +356,34 @@ export const UnitInternalCanvas: React.FC = () => {
           const taResponse = await axiosInstance.get(
             `/teaching-activity/viewAll/${currentUnit.unitId}`
           );
-          const loadedTABoxes = (taResponse.data || []).map((ta: any) => ({
-            id: ta.activityId,
-            activityId: ta.activityId,
-            name: ta.activityName,
-            description: ta.activityDesc,
-            type: ta.activityType,
-            unitId: ta.unitId,
-            x: ta.position?.x ?? 800,
-            y: ta.position?.y ?? 100,
-          }));
+
+          const seenActivityIds = new Set<number>();
+          const loadedTABoxes = (taResponse.data || [])
+            .filter((ta: any) => {
+              const taUnitId = String(ta.unitId || "").trim().toUpperCase();
+              const activityId = Number(ta.activityId);
+
+              if (!Number.isInteger(activityId) || taUnitId !== selectedUnitId) {
+                return false;
+              }
+
+              if (seenActivityIds.has(activityId)) {
+                return false;
+              }
+
+              seenActivityIds.add(activityId);
+              return true;
+            })
+            .map((ta: any) => ({
+              id: ta.activityId,
+              activityId: ta.activityId,
+              name: ta.activityName,
+              description: ta.activityDesc,
+              type: ta.activityType,
+              unitId: ta.unitId,
+              x: ta.position?.x ?? 800,
+              y: ta.position?.y ?? 100,
+            }));
           setTeachingActivityBoxes(loadedTABoxes);
 
           // Load TA-Assessment links
@@ -323,7 +415,7 @@ export const UnitInternalCanvas: React.FC = () => {
       }
     };
     loadCanvasState();
-  }, [currentUnit]);
+  }, [currentUnit?.unitId, currentCourse?.courseId]);
 
   useEffect(() => {
     const loadCLOs = async () => {
@@ -380,14 +472,14 @@ export const UnitInternalCanvas: React.FC = () => {
     }
   };
 
-  function handleMouseDown(e: React.MouseEvent, strid: string) {
+  function handleMouseDown(e: React.MouseEvent, idInput: string | number) {
     setContextMenu({ visible: false, x: 0, y: 0, unitId: undefined });
     e.preventDefault();
     e.stopPropagation();
 
-    const id = Number(strid);
+    const id = Number(idInput);
     const assessment = assessmentBoxes.find((a) => a.id === id);
-    console.log(strid);
+    console.log(idInput);
     if (!assessment || !canvasRef.current) return;
     console.log("mouse is down");
     const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
@@ -446,14 +538,17 @@ export const UnitInternalCanvas: React.FC = () => {
     document.addEventListener("mouseup", handleUp);
   }
 
-  function handleULOBoxMouseDown(e: React.MouseEvent, strid: string) {
+  function handleULOBoxMouseDown(
+    e: React.MouseEvent,
+    idInput: string | number
+  ) {
     setContextMenu({ visible: false, x: 0, y: 0, unitId: undefined });
     e.preventDefault();
     e.stopPropagation();
 
-    const id = Number(strid);
+    const id = Number(idInput);
     const ulo = uloBoxes.find((u) => u.id === id);
-    console.log(strid);
+    console.log(idInput);
     if (!ulo || !canvasRef.current) return;
     console.log("mouse is down");
     const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
@@ -602,7 +697,7 @@ export const UnitInternalCanvas: React.FC = () => {
       type: selectedAssessment.type,
       x: x,
       y: y,
-      color: color || "#3B82F6",
+      color: color || currentUnitColor,
       unitId: currentUnit.unitId,
     };
 
@@ -745,7 +840,7 @@ export const UnitInternalCanvas: React.FC = () => {
       uloDesc: selectedULO.uloDesc,
       x: x,
       y: y,
-      color: color || "#3B82F6",
+      color: color || currentUnitColor,
       unitId: currentUnit.unitId,
       id: selectedULO.id,
     };
@@ -1366,6 +1461,14 @@ export const UnitInternalCanvas: React.FC = () => {
         style={{ userSelect: "none" }}
         onContextMenu={(e) => handleRightClick(e)}
       >
+        <div className="sticky top-3 left-3 z-30 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow backdrop-blur pointer-events-none ml-3 mt-3">
+          <span className="text-slate-500">Viewing Unit:</span>
+          <span className="text-slate-900">{currentUnit?.unitId || "Not selected"}</span>
+          {currentUnit?.unitName ? (
+            <span className="text-slate-500">- {currentUnit.unitName}</span>
+          ) : null}
+        </div>
+
         <div
           className="relative bg-white"
           style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}
@@ -1377,7 +1480,6 @@ export const UnitInternalCanvas: React.FC = () => {
                 key={assessment.id}
                 onMouseEnter={() => setHoveredItem(`assessment-${aId}`)}
                 onMouseLeave={() => setHoveredItem(null)}
-                onClick={linkMode ? () => handleItemClickForConnection("assessment", aId) : undefined}
                 className={
                   linkMode && linkSource?.type === "assessment" && linkSource?.id === aId
                     ? "ring-4 ring-indigo-400 rounded"
@@ -1385,11 +1487,115 @@ export const UnitInternalCanvas: React.FC = () => {
                 }
               >
                 <AssessmentBox
-                  assessment={assessment}
-                  onClick={handleAssessmentClickForConnection}
-                  onDoubleClick={handleEditAssessment}
-                  deleteAssessment={deleteAssessment}
-                  onMouseDown={handleMouseDown}
+                  assessment={{
+                    assessmentId: aId,
+                    aDesc: assessment.description,
+                    unitId: assessment.unitId,
+                    assessmentType: assessment.type || "Project",
+                    assessmentConditions: assessment.conditions,
+                    hurdleReq: assessment.hurdleReq,
+                    unitLosIds: assessmentULOLinks
+                      .filter((link) => link.assessmentId === aId)
+                      .map((link) => link.uloId),
+                    description: assessment.description,
+                    type: assessment.type,
+                    name: assessment.name,
+                    value: assessment.value,
+                    dueWeek: assessment.dueWeek,
+                    conditions: assessment.conditions,
+                    feedbackWeek: assessment.feedbackWeek,
+                    feedbackDetails: assessment.feedbackDetails,
+                  }}
+                  x={assessment.x}
+                  y={assessment.y}
+                  width={UNIT_BOX_WIDTH}
+                  isDragging={draggedAssessment === assessment.id}
+                  isSelected={selectedAssessmentBoxId === assessment.id}
+                  color={currentUnitColor}
+                  onMouseDown={(e) => handleMouseDown(e, assessment.id)}
+                  onClick={() => {
+                    if (linkMode) {
+                      handleItemClickForConnection("assessment", aId);
+                      return;
+                    }
+                    setSelectedAssessmentBoxId((prev) =>
+                      prev === assessment.id ? null : assessment.id
+                    );
+                  }}
+                  availableUnits={
+                    currentUnit?.unitId
+                      ? [{ unitId: currentUnit.unitId, label: currentUnit.unitId }]
+                      : []
+                  }
+                  availableULOs={uloBoxes
+                    .map((ulo) => ({
+                      uloId: ulo.uloId,
+                      uloDesc: ulo.uloDesc,
+                      unitId: ulo.unitId,
+                    }))
+                    .filter(
+                      (ulo): ulo is { uloId: number; uloDesc: string; unitId: string } =>
+                        typeof ulo.uloId === "number" && !!ulo.unitId
+                    )}
+                  onUpdate={(updated) => {
+                    const dbId = assessment.dbID ?? assessment.id;
+                    const previous = assessmentBoxes.find((box) => box.id === assessment.id);
+                    if (!previous) {
+                      return;
+                    }
+
+                    const effectiveUnitId =
+                      updated.unitId || previous.unitId || currentUnit?.unitId || "";
+
+                    setAssessmentBoxes((prev) =>
+                      prev.map((box) =>
+                        box.id === assessment.id
+                          ? {
+                              ...box,
+                              description: updated.aDesc,
+                              unitId: effectiveUnitId,
+                              type: (updated.assessmentType as any) || box.type,
+                              conditions: updated.assessmentConditions,
+                              hurdleReq: updated.hurdleReq,
+                            }
+                          : box
+                      )
+                    );
+
+                    setAssessmentULOLinks((prev) => {
+                      const preserved = prev.filter((link) => link.assessmentId !== dbId);
+                      const rebuilt = (updated.unitLosIds || []).map((uloId) => ({
+                        assessmentId: dbId,
+                        uloId,
+                        unitId: effectiveUnitId,
+                        reversed: false,
+                      }));
+                      return [...preserved, ...rebuilt];
+                    });
+
+                    updateAssessment(dbId, {
+                      aDesc: updated.aDesc,
+                      description: updated.aDesc,
+                      unitId: effectiveUnitId,
+                      type: (updated.assessmentType as any) || previous.type,
+                      assessmentType: (updated.assessmentType as any) || previous.type,
+                      conditions: updated.assessmentConditions,
+                      assessmentConditions: updated.assessmentConditions,
+                      hurdleReq: updated.hurdleReq,
+                      unitLos: updated.unitLosIds,
+                      unitLosIds: updated.unitLosIds,
+                      name: previous.name,
+                      value: previous.value,
+                      dueWeek: previous.dueWeek,
+                      feedbackWeek: previous.feedbackWeek,
+                      feedbackDetails: previous.feedbackDetails,
+                      position: {
+                        x: previous.x,
+                        y: previous.y,
+                      },
+                    });
+                  }}
+                  onDelete={() => deleteAssessment(assessment.id)}
                 />
               </div>
             );
@@ -1401,7 +1607,6 @@ export const UnitInternalCanvas: React.FC = () => {
                 key={ulo.id}
                 onMouseEnter={() => setHoveredItem(`ulo-${uId}`)}
                 onMouseLeave={() => setHoveredItem(null)}
-                onClick={linkMode ? () => handleItemClickForConnection("ulo", uId) : undefined}
                 className={
                   linkMode && linkSource?.type === "ulo" && linkSource?.id === uId
                     ? "ring-4 ring-indigo-400 rounded"
@@ -1409,10 +1614,75 @@ export const UnitInternalCanvas: React.FC = () => {
                 }
               >
                 <ULOBox
-                  ulo={ulo}
-                  onMouseDown={handleULOBoxMouseDown}
-                  onDoubleClick={handleEditULO}
-                  onDelete={deleteULO}
+                  ulo={{
+                    uloId: ulo.uloId,
+                    uloDesc: ulo.uloDesc,
+                    unitId: ulo.unitId,
+                    cloId:
+                      typeof ulo.cloId === "string"
+                        ? Number(ulo.cloId)
+                        : undefined,
+                    assessmentIds: assessmentULOLinks
+                      .filter((link) => link.uloId === uId)
+                      .map((link) => link.assessmentId),
+                  }}
+                  x={ulo.x}
+                  y={ulo.y}
+                  width={UNIT_BOX_WIDTH}
+                  isDragging={draggedULO === ulo.id}
+                  isSelected={selectedULOBoxId === ulo.id}
+                  color={currentUnitColor}
+                  onMouseDown={(e: React.MouseEvent) =>
+                    handleULOBoxMouseDown(e, ulo.id!)
+                  }
+                  onClick={() => {
+                    if (linkMode) {
+                      handleItemClickForConnection("ulo", uId);
+                      return;
+                    }
+                    setSelectedULOBoxId((prev) =>
+                      prev === ulo.id ? null : ulo.id || null
+                    );
+                  }}
+                  availableUnits={
+                    currentUnit?.unitId
+                      ? [{ unitId: currentUnit.unitId, label: currentUnit.unitId }]
+                      : []
+                  }
+                  availableCLOs={(unitCLOs || []).filter(
+                    (clo): clo is CourseLearningOutcome & { cloId: number } =>
+                      typeof clo.cloId === "number"
+                  )}
+                  onUpdate={(updated) => {
+                    const dbId = ulo.uloId ?? ulo.id;
+                    if (!dbId) {
+                      return;
+                    }
+
+                    setULOBoxes((prev) =>
+                      prev.map((box) =>
+                        box.id === ulo.id
+                          ? {
+                              ...box,
+                              uloDesc: updated.uloDesc,
+                              unitId: updated.unitId,
+                              cloId:
+                                updated.cloIds.length > 0
+                                  ? String(updated.cloIds[0])
+                                  : undefined,
+                            }
+                          : box
+                      )
+                    );
+
+                    updateULO({
+                      uloId: dbId,
+                      uloDesc: updated.uloDesc,
+                      unitId: updated.unitId,
+                      cloId: updated.cloIds.length > 0 ? updated.cloIds[0] : null,
+                    });
+                  }}
+                  onDelete={() => deleteULO(ulo.id!)}
                 />
               </div>
             );
@@ -1435,6 +1705,7 @@ export const UnitInternalCanvas: React.FC = () => {
                 <TeachingActivityBox
                   activity={activity}
                   draggedActivity={draggedTeachingActivity}
+                  color={currentUnitColor}
                   onMouseDown={handleTAMouseDown}
                   onDoubleClick={handleEditTA}
                   onClick={() => handleItemClickForConnection("activity", taId)}
@@ -1699,7 +1970,10 @@ export const UnitInternalCanvas: React.FC = () => {
             width: UNIT_BOX_WIDTH,
           }}
         >
-          <div className="bg-blue-600 p-4 rounded shadow-2xl border-2 border-white text-white">
+          <div
+            className="p-4 rounded shadow-2xl border-2 border-white text-white"
+            style={{ backgroundColor: currentUnitColor }}
+          >
             <h2 className="text-lg font-bold text-center">
               {draggedNewAssessment.assessment.name || "Assessment"}
             </h2>
@@ -1716,7 +1990,10 @@ export const UnitInternalCanvas: React.FC = () => {
             width: UNIT_BOX_WIDTH,
           }}
         >
-          <div className="bg-orange-500 p-4 rounded shadow-2xl border-2 border-white text-white">
+          <div
+            className="p-4 rounded shadow-2xl border-2 border-white text-white"
+            style={{ backgroundColor: currentUnitColor }}
+          >
             <h2 className="text-lg font-bold text-center">Unit Learning Outcome</h2>
           </div>
         </div>
@@ -1731,7 +2008,10 @@ export const UnitInternalCanvas: React.FC = () => {
             width: UNIT_BOX_WIDTH,
           }}
         >
-          <div className="bg-green-600 p-4 rounded shadow-2xl border-2 border-white text-white">
+          <div
+            className="p-4 rounded shadow-2xl border-2 border-white text-white"
+            style={{ backgroundColor: currentUnitColor }}
+          >
             <h2 className="text-lg font-bold text-center">Teaching Activity</h2>
           </div>
         </div>

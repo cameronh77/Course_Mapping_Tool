@@ -17,7 +17,9 @@ export const useAssessmentStore = create((set) => ({
 
   viewAssessments: async (unitId) => {
     try {
-      const res = await axiosInstance.get("/assessment/view", unitId);
+      const res = await axiosInstance.get("/assessment/view", {
+        params: unitId ? { search: unitId } : undefined,
+      });
       console.log(res.data);
       set({ currentAssessments: res.data });
       console.log(res.data);
@@ -33,8 +35,8 @@ export const useAssessmentStore = create((set) => ({
         data
       );
       set((state) => ({
-        currentAssessments: state.existingUnits.map((assessment) =>
-          assessment.id === assessmentId
+        currentAssessments: state.currentAssessments.map((assessment) =>
+          assessment.assessmentId === assessmentId
             ? { ...assessment, ...data }
             : assessment
         ),

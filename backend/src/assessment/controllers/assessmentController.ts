@@ -15,11 +15,35 @@ const parseOptionalInt = (value: unknown): number | null => {
   return Number.isInteger(parsed) ? parsed : null;
 };
 
+const pickFirstString = (...values: unknown[]): string | undefined => {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+};
+
 export const addAssessment = async (req: Request, res: Response) => {
-  const { aDesc, unitId, assessmentType, assessmentConditions, hurdleReq, unitLos } = req.body;
+  const {
+    aDesc,
+    description,
+    assessmentDesc,
+    name,
+    unitId,
+    assessmentType,
+    type,
+    assessmentConditions,
+    conditions,
+    hurdleReq,
+    value,
+    unitLos,
+    unitLosIds,
+  } = req.body;
 
   try {
-    if (!aDesc || typeof aDesc !== "string" || !aDesc.trim()) {
+    const normalizedDesc = pickFirstString(aDesc, description, assessmentDesc, name);
+    if (!normalizedDesc) {
       return res.status(400).json({ message: "Assessment description is required" });
     }
 
@@ -38,21 +62,23 @@ export const addAssessment = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "A valid unitId is required to create an assessment" });
     }
 
-    const trimmedDesc = aDesc.trim();
-    const trimmedType = typeof assessmentType === "string" && assessmentType.trim() ? assessmentType.trim() : "General";
-    const trimmedConditions = typeof assessmentConditions === "string" ? assessmentConditions : "";
+    const trimmedDesc = normalizedDesc;
+    const trimmedType = pickFirstString(assessmentType, type) || "General";
+    const trimmedConditions = pickFirstString(assessmentConditions, conditions) || "";
     const parsedHurdleReq = parseOptionalInt(hurdleReq);
-    const unitLoIds = parseUnitLoIds(unitLos);
+    const parsedValue = parseOptionalInt(value) ?? 0;
+    const unitLoIds = parseUnitLoIds(unitLos ?? unitLosIds);
+    const assessmentName = pickFirstString(name, trimmedDesc) || trimmedDesc;
 
     const assessment = await prisma.$transaction(async (tx: any) => {
       const created = await tx.assessment.create({
         data: {
           aDesc: trimmedDesc,
-          assessmentName: trimmedDesc,
+          assessmentName,
           assessmentType: trimmedType,
           assessmentConditions: trimmedConditions,
           hurdleReq: parsedHurdleReq,
-          value: 0,
+          value: parsedValue,
           unitId: resolvedUnitId,
         },
       });
@@ -108,9 +134,14 @@ export const deleteAssessment = async (req: Request, res: Response) => {
   }
 };
 
-export const viewAssessments = async (_req: Request, res: Response) => {
+export const viewAssessments = async (req: Request, res: Response) => {
   try {
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const unitId = typeof req.query.unitId === "string" ? req.query.unitId.trim() : "";
+    const resolvedUnitId = search || unitId;
+
     const assessments = await prisma.assessment.findMany({
+      ...(resolvedUnitId ? { where: { unitId: resolvedUnitId } } : {}),
       orderBy: { assessmentId: "asc" },
       include: {
         unitLos: true,
@@ -126,7 +157,21 @@ export const viewAssessments = async (_req: Request, res: Response) => {
 
 export const updateAssessment = async (req: Request, res: Response) => {
   const { assessmentId } = req.params;
-  const { aDesc, unitId, assessmentType, assessmentConditions, hurdleReq, unitLos } = req.body;
+  const {
+    aDesc,
+    description,
+    assessmentDesc,
+    name,
+    unitId,
+    assessmentType,
+    type,
+    assessmentConditions,
+    conditions,
+    hurdleReq,
+    value,
+    unitLos,
+    unitLosIds,
+  } = req.body;
 
   try {
     const parsedId = Number(assessmentId);
@@ -134,29 +179,29 @@ export const updateAssessment = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Valid assessmentId is required" });
     }
 
-    if (!aDesc || typeof aDesc !== "string" || !aDesc.trim()) {
-      return res.status(400).json({ message: "Assessment description is required" });
-    }
-
-    const parsedUnitLoIds = parseUnitLoIds(unitLos);
+    const normalizedDesc = pickFirstString(aDesc, description, assessmentDesc);
+    const normalizedType = pickFirstString(assessmentType, type);
+    const normalizedConditions = pickFirstString(assessmentConditions, conditions);
+    const normalizedName = pickFirstString(name);
+    const parsedUnitLoIds = parseUnitLoIds(unitLos ?? unitLosIds);
     const parsedHurdleReq = parseOptionalInt(hurdleReq);
+    const parsedValue = parseOptionalInt(value);
 
     const updated = await prisma.$transaction(async (tx: any) => {
       await tx.assessment.update({
         where: { assessmentId: parsedId },
         data: {
-          aDesc: aDesc.trim(),
-          assessmentName: aDesc.trim(),
+          ...(normalizedDesc ? { aDesc: normalizedDesc } : {}),
+          ...(normalizedName ? { assessmentName: normalizedName } : {}),
           ...(typeof unitId === "string" && unitId.trim() ? { unitId: unitId.trim() } : {}),
-          ...(typeof assessmentType === "string" && assessmentType.trim()
-            ? { assessmentType: assessmentType.trim() }
-            : {}),
-          ...(typeof assessmentConditions === "string" ? { assessmentConditions } : {}),
+          ...(normalizedType ? { assessmentType: normalizedType } : {}),
+          ...(normalizedConditions !== undefined ? { assessmentConditions: normalizedConditions } : {}),
           ...(hurdleReq !== undefined ? { hurdleReq: parsedHurdleReq } : {}),
+          ...(value !== undefined ? { value: parsedValue } : {}),
         },
       });
 
-      if (Array.isArray(unitLos)) {
+      if (Array.isArray(unitLos) || Array.isArray(unitLosIds)) {
         await tx.assessmentULO.deleteMany({ where: { assessmentId: parsedId } });
 
         if (parsedUnitLoIds.length > 0) {
