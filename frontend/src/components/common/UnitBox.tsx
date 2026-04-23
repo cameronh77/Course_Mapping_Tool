@@ -2,6 +2,19 @@ import React from "react";
 import type { CourseLearningOutcome, Tag, UnitBox as UnitBoxType } from "../../types";
 
 const UNIT_BOX_WIDTH = 256;
+const BASE_CREDITS = 6;
+const BASE_HEIGHT = 80;      // height of a standard 6cp unit (also the header height)
+
+/** Extra semester slots a multi-semester unit reserves beyond its head slot.
+ *  6cp → 0, 12cp → 1, 18cp → 2. Drives linked "continues here" ghost slots. */
+export const getExtraSemesters = (credits?: number | null): number => {
+  if (credits == null || credits <= 0) return 0;
+  return Math.max(0, Math.round(credits / BASE_CREDITS) - 1);
+};
+
+/** Collapsed pixel height. Every unit renders at the standard 6cp size;
+ *  multi-semester weight is visualised via linked ghost slots on the canvas. */
+export const getUnitHeight = (_credits?: number | null): number => BASE_HEIGHT;
 
 interface UnitBoxProps {
   unit: UnitBoxType;
@@ -14,6 +27,7 @@ interface UnitBoxProps {
   unitMappings: { clos: CourseLearningOutcome[], tags: Tag[] };
   currentCLOs: CourseLearningOutcome[];
   getCLOColor: (cloId: number) => string;
+  isInvalidDrop?: boolean;
   
   // Event Handlers
   onMouseDown: (e: React.MouseEvent, id: number) => void;
@@ -39,6 +53,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   unitMappings,
   currentCLOs,
   getCLOColor,
+  isInvalidDrop = false,
   onMouseDown,
   onDoubleClick,
   onClick,
@@ -51,11 +66,14 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   deleteUnit
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
+  const collapsedHeight = getUnitHeight(unit.credits);
+  const isBeingDragged = draggedUnit === unit.id;
+  const showInvalidRing = isBeingDragged && isInvalidDrop;
 
   return (
     <div
-      className={`absolute group transition-shadow duration-200 ${draggedUnit === unit.id ? "shadow-2xl scale-105 z-50" : (isExpanded ? "z-40 shadow-xl" : "z-10 shadow-sm hover:shadow-md")}`}
-      style={{ left: `${unit.x}px`, top: `${unit.y}px`, width: `${UNIT_BOX_WIDTH}px`, height: isExpanded ? 'auto' : '80px', minHeight: '80px' }}
+      className={`absolute group transition-shadow duration-200 ${isBeingDragged ? "shadow-2xl scale-105 z-50" : (isExpanded ? "z-40 shadow-xl" : "z-10 shadow-sm hover:shadow-md")} ${showInvalidRing ? "ring-4 ring-red-500/80 rounded" : ""}`}
+      style={{ left: `${unit.x}px`, top: `${unit.y}px`, width: `${UNIT_BOX_WIDTH}px`, height: isExpanded ? 'auto' : `${collapsedHeight}px`, minHeight: `${collapsedHeight}px` }}
       onClick={connectionMode && unit.unitId ? () => onClick(unit.unitId!) : undefined}
       onMouseEnter={() => onMouseEnter(unit.unitId || null)}
       onMouseLeave={onMouseLeave}
@@ -83,7 +101,12 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
           onDoubleClick={() => onDoubleClick(unit.id)}
         >
           <div className="flex-1 truncate pr-6">
-            <h2 className="text-lg font-semibold leading-tight" title={unit.unitId || unit.name}>{unit.unitId || unit.name}</h2>
+            <h2 className="text-lg font-semibold leading-tight" title={unit.unitId || unit.name}>
+              {unit.unitId || unit.name}
+              {unit.credits != null && (
+                <span className="ml-1.5 text-xs font-normal opacity-80">({unit.credits}cp)</span>
+              )}
+            </h2>
             
             {/* Intuitive Pips & Badges for collapsed state */}
             {!isExpanded && (
@@ -132,9 +155,9 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
             )}
           </button>
 
-          <button 
-            onClick={(e) => { e.stopPropagation(); deleteUnit(unit.id); }} 
-            onMouseDown={(e) => e.stopPropagation()} 
+          <button
+            onClick={(e) => { e.stopPropagation(); deleteUnit(unit.id); }}
+            onMouseDown={(e) => e.stopPropagation()}
             className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 border-2 border-white shadow-sm text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
             title="Remove Unit"
           >
