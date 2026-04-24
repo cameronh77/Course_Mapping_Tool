@@ -37,3 +37,12 @@ export function getGroupHeight(unitCount: number): number {
   const rows = Math.max(1, Math.ceil(unitCount / CARDS_PER_ROW));
   return GROUP_HEADER_H + GROUP_PADDING + rows * (UNIT_CARD_H + CARD_GAP);
 }
+
+export function getTagColor(
+  tagId: number | undefined | null,
+  existingTags: Pick<Tag, "tagId">[]
+): typeof THEME_COLORS[number] {
+  const idx = existingTags.findIndex((t) => t.tagId === tagId);
+  const safeIdx = idx >= 0 ? idx : 0;
+  return THEME_COLORS[safeIdx % THEME_COLORS.length];
+}

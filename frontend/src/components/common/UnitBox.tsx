@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { CourseLearningOutcome, Tag, UnitBox as UnitBoxType } from "../../types";
+import { getTagColor } from "./themeViewConstants";
 
 // width is now passed as a prop (unit.width)
 
@@ -14,6 +15,7 @@ interface UnitBoxProps {
   unitMappings: { clos: CourseLearningOutcome[], tags: Tag[] };
   currentCLOs: CourseLearningOutcome[];
   getCLOColor: (cloId: number) => string;
+  existingTags?: Tag[];
   isBlocked?: boolean;
   
   // Event Handlers
@@ -50,6 +52,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   toggleExpand,
   setActiveTab,
   deleteUnit,
+  existingTags = [],
   isBlocked = false,
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
@@ -226,11 +229,22 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
 
               {activeTab === 'tags' && (
                 <div className="flex flex-wrap gap-2 content-start h-full">
-                  {(unitMappings?.tags || []).map(tag => (
-                    <span key={tag.tagId} className="bg-green-100 text-green-800 border border-green-200 font-medium text-xs px-2.5 py-1 rounded-full shadow-sm">
-                      {tag.tagName}
-                    </span>
-                  ))}
+                  {(unitMappings?.tags || []).map(tag => {
+                    const tagColors = getTagColor(tag.tagId, existingTags);
+                    return (
+                      <span
+                        key={tag.tagId}
+                        className="font-medium text-xs px-2.5 py-1 rounded-full shadow-sm border"
+                        style={{
+                          backgroundColor: tagColors.bg,
+                          borderColor: tagColors.border,
+                          color: tagColors.label,
+                        }}
+                      >
+                        {tag.tagName}
+                      </span>
+                    );
+                  })}
                   {!(unitMappings?.tags?.length) && (
                     <div className="w-full flex-1 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50/50">
                       <svg className="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>

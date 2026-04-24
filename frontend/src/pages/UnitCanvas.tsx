@@ -987,6 +987,7 @@ export const CanvasPage: React.FC = () => {
               }
               deleteUnit={deleteUnit}
               getCLOColor={getCLOColor}
+              existingTags={existingTags || []}
               isBlocked={blockedUnitId !== null && draggedUnit === unit.id}
             />
           ))}
