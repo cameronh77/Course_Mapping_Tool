@@ -17,6 +17,7 @@ interface UnitBoxProps {
   getCLOColor: (cloId: number) => string;
   existingTags?: Tag[];
   isBlocked?: boolean;
+  isHighlighted?: boolean;
   
   // Event Handlers
   onMouseDown: (e: React.MouseEvent, id: number) => void;
@@ -54,6 +55,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   deleteUnit,
   existingTags = [],
   isBlocked = false,
+  isHighlighted = false,
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
   const [hoveredCLODesc, setHoveredCLODesc] = useState<string | null>(null);
@@ -79,7 +81,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
         }
       }}
     >
-      <div className={`border bg-white rounded flex flex-col w-full h-full overflow-hidden ${isBlocked ? `border-2 border-red-500 ring-1 ring-red-800` : selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""}`}>
+      <div className={`border bg-white rounded flex flex-col w-full h-full overflow-hidden ${isBlocked ? `border-2 border-red-500 ring-1 ring-red-800` : isHighlighted ? `border-2 border-amber-400 ring-2 ring-amber-300` : selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""}`}>
         
         {/* Draggable Header */}
         <div 
@@ -89,8 +91,28 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
           onDoubleClick={() => onDoubleClick(unit.id)}
         >
           <div className="flex-1 truncate pr-6">
-            <h2 className="text-lg font-semibold leading-tight" title={unit.unitId || unit.name}>{unit.unitId || unit.name}</h2>
-            
+            <div className="flex items-center gap-2 leading-tight">
+              <h2 className="text-lg font-semibold truncate" title={unit.unitId || unit.name}>{unit.unitId || unit.name}</h2>
+              {unit.spansYear && (
+                <span
+                  className="bg-white/90 text-gray-800 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm shrink-0"
+                  title="Spans both semesters of the year"
+                >
+                  YR
+                </span>
+              )}
+              {typeof unit.credits === 'number' && unit.credits > 0 && (
+                <div
+                  className="flex gap-0.5 items-center bg-black/10 px-1.5 py-1 rounded shrink-0"
+                  title={`${unit.credits} credit point${unit.credits === 1 ? '' : 's'}`}
+                >
+                  {Array.from({ length: Math.min(3, Math.ceil(unit.credits / 6)) }).map((_, i) => (
+                    <span key={i} className="block w-2.5 h-0.5 bg-white rounded-sm" />
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Intuitive Pips & Badges for collapsed state */}
             {!isExpanded && (
               <div className="flex flex-col mt-1.5 gap-1.5">
