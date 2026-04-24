@@ -14,6 +14,7 @@ interface UnitBoxProps {
   unitMappings: { clos: CourseLearningOutcome[], tags: Tag[] };
   currentCLOs: CourseLearningOutcome[];
   getCLOColor: (cloId: number) => string;
+  isBlocked?: boolean;
   
   // Event Handlers
   onMouseDown: (e: React.MouseEvent, id: number) => void;
@@ -48,7 +49,8 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   onDrop,
   toggleExpand,
   setActiveTab,
-  deleteUnit
+  deleteUnit,
+  isBlocked = false,
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
   const [hoveredCLODesc, setHoveredCLODesc] = useState<string | null>(null);
@@ -74,7 +76,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
         }
       }}
     >
-      <div className={`border bg-white rounded flex flex-col w-full h-full overflow-hidden ${selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""}`}>
+      <div className={`border bg-white rounded flex flex-col w-full h-full overflow-hidden ${isBlocked ? `border-2 border-red-500 ring-1 ring-red-800` : selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""}`}>
         
         {/* Draggable Header */}
         <div 

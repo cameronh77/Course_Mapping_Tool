@@ -79,6 +79,9 @@ export const CanvasPage: React.FC = () => {
   // State for hover highlighting connections
   const [hoveredUnit, setHoveredUnit] = useState<string | null>(null);
 
+  // ID of unit currently being overlapped by a dragged unit (blocks the drop)
+  const [blockedUnitId, setBlockedUnitId] = useState<number | null>(null);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
   const { currentCourse } = useCourseStore();
@@ -390,6 +393,13 @@ export const CanvasPage: React.FC = () => {
       START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
     const snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
 
+    const slotTaken = unitBoxes.some(
+      (u) => Math.abs(u.x - snappedX) < 1 && Math.abs(u.y - snappedY) < 1
+    );
+    if (slotTaken) {
+      return;
+    }
+
     const newUnit = {
       id: Date.now(),
       name: selectedUnit.unitName,
@@ -541,6 +551,7 @@ export const CanvasPage: React.FC = () => {
     const unit = unitBoxes.find((u) => u.id === id);
     if (!unit || !canvasRef.current) return;
 
+    const originalPos = { x: unit.x, y: unit.y };
     const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
     const offset = { x: mouseX - unit.x, y: mouseY - unit.y };
     setDragOffset(offset);
@@ -554,29 +565,52 @@ export const CanvasPage: React.FC = () => {
         moveEvent,
         canvasRef.current
       );
-      setUnitBoxes((prevUnits) =>
-        prevUnits.map((u) =>
-          u.id === id
-            ? {
-                ...u,
-                x: Math.max(
-                  0,
-                  Math.min(
-                    newMouseX - offset.x,
-                    canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH
-                  )
-                ),
-                y: Math.max(
-                  0,
-                  Math.min(
-                    newMouseY - offset.y,
-                    canvasRef.current!.scrollHeight - 100
-                  )
-                ),
-              }
-            : u
-        )
-      );
+      setUnitBoxes((prevUnits) => {
+        const nextX = Math.max(
+          0,
+          Math.min(
+            newMouseX - offset.x,
+            canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH
+          )
+        );
+        const nextY = Math.max(
+          0,
+          Math.min(
+            newMouseY - offset.y,
+            canvasRef.current!.scrollHeight - 100
+          )
+        );
+
+        const semestersPerYear =
+          Number((currentCourse as any)?.numberTeachingPeriods) ||
+          DEFAULT_SEMESTERS;
+        const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+        const col = Math.max(0, Math.round((nextX - START_X) / COL_WIDTH));
+        let closestRow = 0;
+        let minDistance = Infinity;
+        for (let r = 0; r < totalRows; r++) {
+          const expectedY = START_Y + r * ROW_HEIGHT + 20;
+          const dist = Math.abs(nextY - expectedY);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestRow = r;
+          }
+        }
+        const snappedX =
+          START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+        const snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
+        const blocker = prevUnits.find(
+          (other) =>
+            other.id !== id &&
+            Math.abs(other.x - snappedX) < 1 &&
+            Math.abs(other.y - snappedY) < 1
+        );
+        setBlockedUnitId(blocker ? blocker.id : null);
+
+        return prevUnits.map((u) =>
+          u.id === id ? { ...u, x: nextX, y: nextY } : u
+        );
+      });
     };
 
     const handleUp = () => {
@@ -604,6 +638,17 @@ export const CanvasPage: React.FC = () => {
               snappedX =
                 START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
               snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
+
+              const occupied = prevUnits.some(
+                (other) =>
+                  other.id !== id &&
+                  Math.abs(other.x - snappedX) < 1 &&
+                  Math.abs(other.y - snappedY) < 1
+              );
+              if (occupied) {
+                snappedX = originalPos.x;
+                snappedY = originalPos.y;
+              }
             }
             return { ...u, x: snappedX, y: snappedY };
           }
@@ -611,6 +656,7 @@ export const CanvasPage: React.FC = () => {
         })
       );
       setDraggedUnit(null);
+      setBlockedUnitId(null);
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
       setTimeout(() => setIsDragging(false), 100);
@@ -941,6 +987,7 @@ export const CanvasPage: React.FC = () => {
               }
               deleteUnit={deleteUnit}
               getCLOColor={getCLOColor}
+              isBlocked={blockedUnitId !== null && draggedUnit === unit.id}
             />
           ))}
           
