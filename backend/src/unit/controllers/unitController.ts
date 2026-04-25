@@ -96,26 +96,10 @@ export const viewUnits = async (req, res) => {
     if (searchTerm) {
       const units = await prisma.unit.findMany({
         where: {
-          OR: [
-            {
-              unitName: {
-                contains: searchTerm,
-                mode: "insensitive", // Makes the search case-insensitive
-              },
-            },
-            {
-              unitId: {
-                contains: searchTerm,
-                mode: "insensitive",
-              },
-            },
-            {
-              unitDesc: {
-                contains: searchTerm,
-                mode: "insensitive",
-              },
-            },
-          ],
+            unitId: {
+              contains: searchTerm,
+              mode: "insensitive"
+          },
         },
       });
       return res.status(200).json(units);

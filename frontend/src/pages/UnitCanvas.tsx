@@ -79,6 +79,12 @@ export const CanvasPage: React.FC = () => {
   // State for hover highlighting connections
   const [hoveredUnit, setHoveredUnit] = useState<string | null>(null);
 
+  // ID of unit currently being overlapped by a dragged unit (blocks the drop)
+  const [blockedUnitId, setBlockedUnitId] = useState<number | null>(null);
+
+  // ID of year-long unit whose reserved "ghost" slot is being hovered
+  const [ghostHoverId, setGhostHoverId] = useState<number | null>(null);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
   const { currentCourse } = useCourseStore();
@@ -257,6 +263,33 @@ export const CanvasPage: React.FC = () => {
     loadCLOs();
   }, [currentCourse?.courseId]);
 
+  const companionSlotY = (snappedY: number): number | null => {
+    const row = Math.round((snappedY - START_Y - 20) / ROW_HEIGHT);
+    const companionRow =
+      row < MAX_UNITS_PER_SEM
+        ? row + MAX_UNITS_PER_SEM
+        : row - MAX_UNITS_PER_SEM;
+    if (companionRow < 0) return null;
+    return START_Y + companionRow * ROW_HEIGHT + 20;
+  };
+
+  const isSlotOccupied = (
+    x: number,
+    y: number,
+    excludeId?: number
+  ): boolean => {
+    return unitBoxes.some((u) => {
+      if (u.id === excludeId) return false;
+      if (Math.abs(u.x - x) >= 1) return false;
+      if (Math.abs(u.y - y) < 1) return true;
+      if (u.spansYear) {
+        const cy = companionSlotY(u.y);
+        if (cy !== null && Math.abs(cy - y) < 1) return true;
+      }
+      return false;
+    });
+  };
+
   const getMouseCoords = (
     e: MouseEvent | React.MouseEvent,
     container: HTMLDivElement
@@ -389,6 +422,10 @@ export const CanvasPage: React.FC = () => {
     const snappedX =
       START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
     const snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
+
+    if (isSlotOccupied(snappedX, snappedY)) {
+      return;
+    }
 
     const newUnit = {
       id: Date.now(),
@@ -541,6 +578,7 @@ export const CanvasPage: React.FC = () => {
     const unit = unitBoxes.find((u) => u.id === id);
     if (!unit || !canvasRef.current) return;
 
+    const originalPos = { x: unit.x, y: unit.y };
     const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
     const offset = { x: mouseX - unit.x, y: mouseY - unit.y };
     setDragOffset(offset);
@@ -554,29 +592,65 @@ export const CanvasPage: React.FC = () => {
         moveEvent,
         canvasRef.current
       );
-      setUnitBoxes((prevUnits) =>
-        prevUnits.map((u) =>
-          u.id === id
-            ? {
-                ...u,
-                x: Math.max(
-                  0,
-                  Math.min(
-                    newMouseX - offset.x,
-                    canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH
-                  )
-                ),
-                y: Math.max(
-                  0,
-                  Math.min(
-                    newMouseY - offset.y,
-                    canvasRef.current!.scrollHeight - 100
-                  )
-                ),
-              }
-            : u
-        )
-      );
+      setUnitBoxes((prevUnits) => {
+        const nextX = Math.max(
+          0,
+          Math.min(
+            newMouseX - offset.x,
+            canvasRef.current!.scrollWidth - UNIT_BOX_WIDTH
+          )
+        );
+        const nextY = Math.max(
+          0,
+          Math.min(
+            newMouseY - offset.y,
+            canvasRef.current!.scrollHeight - 100
+          )
+        );
+
+        const semestersPerYear =
+          Number((currentCourse as any)?.numberTeachingPeriods) ||
+          DEFAULT_SEMESTERS;
+        const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+        const col = Math.max(0, Math.round((nextX - START_X) / COL_WIDTH));
+        let closestRow = 0;
+        let minDistance = Infinity;
+        for (let r = 0; r < totalRows; r++) {
+          const expectedY = START_Y + r * ROW_HEIGHT + 20;
+          const dist = Math.abs(nextY - expectedY);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestRow = r;
+          }
+        }
+        const snappedX =
+          START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
+        const snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
+        const draggedUnitObj = prevUnits.find((pu) => pu.id === id);
+        const draggedSpans = draggedUnitObj?.spansYear === true;
+        const targetYs = [snappedY];
+        if (draggedSpans) {
+          const cy = companionSlotY(snappedY);
+          if (cy !== null) targetYs.push(cy);
+        }
+        const blocker = prevUnits.find((other) => {
+          if (other.id === id) return false;
+          if (Math.abs(other.x - snappedX) >= 1) return false;
+          const otherYs = [other.y];
+          if (other.spansYear) {
+            const cy = companionSlotY(other.y);
+            if (cy !== null) otherYs.push(cy);
+          }
+          return otherYs.some((oy) =>
+            targetYs.some((ty) => Math.abs(oy - ty) < 1)
+          );
+        });
+        setBlockedUnitId(blocker ? blocker.id : null);
+
+        return prevUnits.map((u) =>
+          u.id === id ? { ...u, x: nextX, y: nextY } : u
+        );
+      });
     };
 
     const handleUp = () => {
@@ -604,6 +678,29 @@ export const CanvasPage: React.FC = () => {
               snappedX =
                 START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
               snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
+
+              const draggedSpans = u.spansYear === true;
+              const slotBlocked = prevUnits.some((other) => {
+                if (other.id === id) return false;
+                if (Math.abs(other.x - snappedX) >= 1) return false;
+                const otherYs = [other.y];
+                if (other.spansYear) {
+                  const cy = companionSlotY(other.y);
+                  if (cy !== null) otherYs.push(cy);
+                }
+                const targetYs = [snappedY];
+                if (draggedSpans) {
+                  const cy = companionSlotY(snappedY);
+                  if (cy !== null) targetYs.push(cy);
+                }
+                return otherYs.some((oy) =>
+                  targetYs.some((ty) => Math.abs(oy - ty) < 1)
+                );
+              });
+              if (slotBlocked) {
+                snappedX = originalPos.x;
+                snappedY = originalPos.y;
+              }
             }
             return { ...u, x: snappedX, y: snappedY };
           }
@@ -611,6 +708,7 @@ export const CanvasPage: React.FC = () => {
         })
       );
       setDraggedUnit(null);
+      setBlockedUnitId(null);
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
       setTimeout(() => setIsDragging(false), 100);
@@ -892,7 +990,7 @@ export const CanvasPage: React.FC = () => {
             className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
             onClick={() => setViewMode('grid')}
           >
-            Grid View
+            Timeline View
           </button>
           <button
             className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'theme' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
@@ -908,6 +1006,38 @@ export const CanvasPage: React.FC = () => {
             expectedDuration={yearsCount}
             numberTeachingPeriods={semPerYear}
           />
+
+          {unitBoxes
+            .filter((u) => u.spansYear)
+            .map((u) => {
+              const cy = companionSlotY(u.y);
+              if (cy === null) return null;
+              const color = u.color || "#3B82F6";
+              return (
+                <div
+                  key={`ghost-${u.id}`}
+                  className="absolute rounded border-2 border-dashed flex items-center justify-center overflow-hidden"
+                  style={{
+                    left: `${u.x}px`,
+                    top: `${cy}px`,
+                    width: `${u.width ?? UNIT_BOX_WIDTH}px`,
+                    height: "80px",
+                    zIndex: 5,
+                    borderColor: color,
+                    backgroundImage: `repeating-linear-gradient(45deg, ${color}55 0, ${color}55 6px, transparent 6px, transparent 12px)`,
+                  }}
+                  onMouseEnter={() => setGhostHoverId(u.id)}
+                  onMouseLeave={() => setGhostHoverId(null)}
+                >
+                  <span
+                    className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/80"
+                    style={{ color }}
+                  >
+                    Year-long · {u.unitId || u.name}
+                  </span>
+                </div>
+              );
+            })}
 
           {unitBoxes.map((unit) => (
             <UnitBox
@@ -941,6 +1071,9 @@ export const CanvasPage: React.FC = () => {
               }
               deleteUnit={deleteUnit}
               getCLOColor={getCLOColor}
+              existingTags={existingTags || []}
+              isBlocked={blockedUnitId !== null && draggedUnit === unit.id}
+              isHighlighted={ghostHoverId === unit.id}
             />
           ))}
           
@@ -1097,6 +1230,53 @@ export const CanvasPage: React.FC = () => {
               </div>
 
               <div className="overflow-y-auto max-h-[300px] p-2 flex flex-col gap-3">
+                {(() => {
+                  const target = unitBoxes.find(
+                    (u) => u.unitId === contextMenu.unitId
+                  );
+                  if (!target) return null;
+                  const cy = companionSlotY(target.y);
+                  const companionBlocked =
+                    cy !== null &&
+                    unitBoxes.some(
+                      (o) =>
+                        o.id !== target.id &&
+                        Math.abs(o.x - target.x) < 1 &&
+                        Math.abs(o.y - cy) < 1
+                    );
+                  const disableEnable = !target.spansYear && companionBlocked;
+                  return (
+                    <button
+                      type="button"
+                      disabled={disableEnable}
+                      className={`w-full text-left text-xs font-semibold px-2 py-1.5 rounded border transition-colors ${
+                        target.spansYear
+                          ? "bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"
+                          : disableEnable
+                          ? "bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed"
+                          : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                      }`}
+                      title={
+                        disableEnable
+                          ? "Companion slot in the other semester is occupied"
+                          : undefined
+                      }
+                      onClick={() => {
+                        setUnitBoxes((prev) =>
+                          prev.map((u) =>
+                            u.id === target.id
+                              ? { ...u, spansYear: !u.spansYear }
+                              : u
+                          )
+                        );
+                      }}
+                    >
+                      {target.spansYear
+                        ? "✓ Year-long (spans both semesters)"
+                        : "Mark as Year-long"}
+                    </button>
+                  );
+                })()}
                 <div>
                   <span className="text-[10px] font-bold text-blue-600 mb-1 block uppercase tracking-wider">Mapped To This Unit</span>
                   {unitMappings[contextMenu.unitId!]?.clos?.length ? (

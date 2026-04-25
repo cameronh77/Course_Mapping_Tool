@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { CourseLearningOutcome, Tag, UnitBox as UnitBoxType } from "../../types";
+import { getTagColor } from "./themeViewConstants";
 
 // width is now passed as a prop (unit.width)
 
@@ -14,6 +15,9 @@ interface UnitBoxProps {
   unitMappings: { clos: CourseLearningOutcome[], tags: Tag[] };
   currentCLOs: CourseLearningOutcome[];
   getCLOColor: (cloId: number) => string;
+  existingTags?: Tag[];
+  isBlocked?: boolean;
+  isHighlighted?: boolean;
   
   // Event Handlers
   onMouseDown: (e: React.MouseEvent, id: number) => void;
@@ -48,7 +52,10 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   onDrop,
   toggleExpand,
   setActiveTab,
-  deleteUnit
+  deleteUnit,
+  existingTags = [],
+  isBlocked = false,
+  isHighlighted = false,
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
   const [hoveredCLODesc, setHoveredCLODesc] = useState<string | null>(null);
@@ -74,7 +81,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
         }
       }}
     >
-      <div className={`border bg-white rounded flex flex-col w-full h-full overflow-hidden ${selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""}`}>
+      <div className={`border bg-white rounded flex flex-col w-full h-full overflow-hidden ${isBlocked ? `border-2 border-red-500 ring-1 ring-red-800` : isHighlighted ? `border-2 border-amber-400 ring-2 ring-amber-300` : selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""}`}>
         
         {/* Draggable Header */}
         <div 
@@ -84,8 +91,28 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
           onDoubleClick={() => onDoubleClick(unit.id)}
         >
           <div className="flex-1 truncate pr-6">
-            <h2 className="text-lg font-semibold leading-tight" title={unit.unitId || unit.name}>{unit.unitId || unit.name}</h2>
-            
+            <div className="flex items-center gap-2 leading-tight">
+              <h2 className="text-lg font-semibold truncate" title={unit.unitId || unit.name}>{unit.unitId || unit.name}</h2>
+              {unit.spansYear && (
+                <span
+                  className="bg-white/90 text-gray-800 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm shrink-0"
+                  title="Spans both semesters of the year"
+                >
+                  YR
+                </span>
+              )}
+              {typeof unit.credits === 'number' && unit.credits > 0 && (
+                <div
+                  className="flex gap-0.5 items-center bg-black/10 px-1.5 py-1 rounded shrink-0"
+                  title={`${unit.credits} credit point${unit.credits === 1 ? '' : 's'}`}
+                >
+                  {Array.from({ length: Math.min(3, Math.ceil(unit.credits / 6)) }).map((_, i) => (
+                    <span key={i} className="block w-2.5 h-0.5 bg-white rounded-sm" />
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Intuitive Pips & Badges for collapsed state */}
             {!isExpanded && (
               <div className="flex flex-col mt-1.5 gap-1.5">
@@ -224,11 +251,22 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
 
               {activeTab === 'tags' && (
                 <div className="flex flex-wrap gap-2 content-start h-full">
-                  {(unitMappings?.tags || []).map(tag => (
-                    <span key={tag.tagId} className="bg-green-100 text-green-800 border border-green-200 font-medium text-xs px-2.5 py-1 rounded-full shadow-sm">
-                      {tag.tagName}
-                    </span>
-                  ))}
+                  {(unitMappings?.tags || []).map(tag => {
+                    const tagColors = getTagColor(tag.tagId, existingTags);
+                    return (
+                      <span
+                        key={tag.tagId}
+                        className="font-medium text-xs px-2.5 py-1 rounded-full shadow-sm border"
+                        style={{
+                          backgroundColor: tagColors.bg,
+                          borderColor: tagColors.border,
+                          color: tagColors.label,
+                        }}
+                      >
+                        {tag.tagName}
+                      </span>
+                    );
+                  })}
                   {!(unitMappings?.tags?.length) && (
                     <div className="w-full flex-1 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50/50">
                       <svg className="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
