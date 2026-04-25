@@ -3,6 +3,7 @@ import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
 import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
+import { getTagColor } from "../common/themeViewConstants";
 import type { Tag, Unit } from "../../types";
 
 interface CanvasSidebarProps {
@@ -136,15 +137,21 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
           {existingTags && existingTags.length > 0 ? (
             existingTags.map((tag: Tag) => {
               const checked = selectedTagFilters.includes(tag.tagId);
+              const tagColors = getTagColor(tag.tagId, existingTags);
               return (
                 <label key={tag.tagId} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-gray-700 hover:bg-white">
                   <input
                     type="checkbox"
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+                    className="h-3.5 w-3.5 rounded border-gray-300"
+                    style={{ accentColor: tagColors.text }}
                     checked={checked}
                     onChange={() => onToggleTagFilter(tag.tagId)}
                   />
-                  <span className="truncate">{tag.tagName}</span>
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: tagColors.text }}
+                  />
+                  <span className="truncate" style={{ color: tagColors.label }}>{tag.tagName}</span>
                 </label>
               );
             })
@@ -282,20 +289,28 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
               </div>
               <br></br>
               <div className="flex flex-wrap gap-2 mb-3 max-h-[20vh] overflow-y-auto">
-                  {existingTags && existingTags.map((tag: any) => (
-                    <div
-                      key={tag.tagId}
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("application/json", JSON.stringify({ type: 'tag', data: tag }));
-                      }}
-                      className="bg-green-50 hover:bg-green-100 text-green-800 font-medium text-xs py-1 px-2.5 rounded-full cursor-grab active:cursor-grabbing shadow-sm border border-green-200 flex items-center gap-1 transition-colors"
-                      title="Drag onto a Unit Box"
-                    >
-                      <span className="text-[10px] text-green-500">●</span>
-                      {tag.tagName}
-                    </div>
-                  ))}
+                  {existingTags && existingTags.map((tag: any) => {
+                    const tagColors = getTagColor(tag.tagId, existingTags);
+                    return (
+                      <div
+                        key={tag.tagId}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("application/json", JSON.stringify({ type: 'tag', data: tag }));
+                        }}
+                        className="font-medium text-xs py-1 px-2.5 rounded-full cursor-grab active:cursor-grabbing shadow-sm border flex items-center gap-1 transition-colors"
+                        style={{
+                          backgroundColor: tagColors.bg,
+                          borderColor: tagColors.border,
+                          color: tagColors.label,
+                        }}
+                        title="Drag onto a Unit Box"
+                      >
+                        <span className="text-[10px]" style={{ color: tagColors.text }}>●</span>
+                        {tag.tagName}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           </div>

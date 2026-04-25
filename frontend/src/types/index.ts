@@ -83,6 +83,7 @@ export interface UnitBox {
   width?: number;
   semester?: number;
   year?: number;
+  spansYear?: boolean;
 }
 
 export type AssessmentType =
