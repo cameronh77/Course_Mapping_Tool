@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import type { Tag, UnitBox as UnitBoxType, UnitMappings } from "../../types";
 import { useThemeDrag } from "../../hooks/useThemeDrag";
 import { loadThemeLayout, type ThemeViewStorage } from "../../lib/themeStorage";
+import { useTagStore } from "../../stores/useTagStore";
 import {
   THEME_COLORS,
   UNIT_CARD_W,
@@ -119,25 +120,110 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   const [freeUnits, setFreeUnits] = useState(initRef.current.freeUnits);
   const [groupPositions, setGroupPositions] = useState(initRef.current.groupPositions);
 
-  // Sync when new tags are added
+  // Tag store (for delete)
+  const deleteTagFromStore = useTagStore((s) => s.deleteTag);
+
+  // Handler to delete a tag from the UI and backend
+  const handleDeleteTag = async (tagId: number, groupKey: string) => {
+    if (!confirm("Delete this theme? This will remove the theme and unassign its units.")) return;
+    const removedUnits = groupUnits[groupKey] || [];
+
+    // Remove group locally
+    setGroupUnits((prev) => {
+      const next = { ...prev };
+      delete next[groupKey];
+      return next;
+    });
+    setGroupPositions((prev) => {
+      const next = { ...prev };
+      delete next[groupKey];
+      return next;
+    });
+
+    // Move removed units to free area
+    setFreeUnits((prev) => {
+      const next = { ...prev };
+      const freeBaseY =
+        Object.entries(groupPositions).reduce(
+          (max, [key, pos]) => Math.max(max, pos.y + getGroupHeight(groupUnits[key]?.length || 0)),
+          CANVAS_PAD
+        ) + GROUP_ROW_GAP;
+      const startIdx = Object.keys(prev).length;
+      removedUnits.forEach((key, i) => {
+        next[key] = { x: CANVAS_PAD + (startIdx + i) * (UNIT_CARD_W + CARD_GAP), y: freeBaseY };
+      });
+      return next;
+    });
+
+    // Ask store/backend to delete
+    try {
+      await deleteTagFromStore(tagId);
+    } catch (err) {
+      console.error("Failed to delete tag", err);
+    }
+  };
+
+  // Sync when tags change (additions or removals)
   useEffect(() => {
     setGroupUnits((prev) => {
       const next = { ...prev };
       let changed = false;
+      const currentKeys = new Set(existingTags.map((t) => `tag-${t.tagId}`));
+
+      // add new tags
       for (const tag of existingTags) {
-        if (!next[`tag-${tag.tagId}`]) { next[`tag-${tag.tagId}`] = []; changed = true; }
+        const key = `tag-${tag.tagId}`;
+        if (!next[key]) { next[key] = []; changed = true; }
       }
+
+      // remove stale groups
+      for (const key of Object.keys(next)) {
+        if (key.startsWith("tag-") && !currentKeys.has(key)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+
       return changed ? next : prev;
     });
+
     setGroupPositions((prev) => {
       const next = { ...prev };
       let changed = false;
       const fresh = buildFreshLayout(unitBoxes, unitMappings, existingTags);
+
       for (const tag of existingTags) {
         const key = `tag-${tag.tagId}`;
         if (!next[key]) { next[key] = fresh.groupPositions[key] ?? { x: CANVAS_PAD, y: CANVAS_PAD }; changed = true; }
       }
+
+      const currentKeys = new Set(existingTags.map((t) => `tag-${t.tagId}`));
+      for (const key of Object.keys(next)) {
+        if (key.startsWith("tag-") && !currentKeys.has(key)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+
       return changed ? next : prev;
+    });
+
+    // Ensure any orphaned units are added to freeUnits
+    setFreeUnits((prev) => {
+      const next = { ...prev };
+      const allGrouped = new Set(Object.values(groupUnits).flat());
+      const missing = unitBoxes.map((u) => u.unitId || u.id.toString()).filter((k) => !allGrouped.has(k) && !next[k]);
+      if (missing.length === 0) return prev;
+      const freeBaseY =
+        Object.entries(groupPositions).reduce(
+          (max, [key, pos]) => Math.max(max, pos.y + getGroupHeight(groupUnits[key]?.length || 0)),
+          CANVAS_PAD
+        ) + GROUP_ROW_GAP;
+      const startIdx = Object.keys(prev).length;
+      missing.forEach((key, i) => {
+        next[key] = { x: CANVAS_PAD + (startIdx + i) * (UNIT_CARD_W + CARD_GAP), y: freeBaseY };
+      });
+      return next;
     });
   }, [existingTags]);
 
@@ -266,6 +352,14 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
                 style={{ backgroundColor: colors.border + "66", color: colors.text }}>
                 {units.length}
               </span>
+              <button
+                className="ml-2 text-red-600 hover:text-red-800 p-1 rounded"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); handleDeleteTag(gm.tag.tagId, gm.key); }}
+                title="Delete theme"
+              >
+                ×
+              </button>
             </div>
 
             {/* Unit cards */}
