@@ -30,7 +30,7 @@ const Navbar = () => {
               to={"/CourseEdit"}
               className={`
                             btn btn-sm gap-2 transition-colors
-                            
+
                             `}
             >
               <span className="hidden sm: inline">Edit Course</span>
@@ -40,7 +40,7 @@ const Navbar = () => {
                 to={"/UnitCanvas"}
                 className={`
                             btn btn-sm gap-2 transition-colors
-                            
+
                             `}
               >
                 <span className="hidden sm: inline">Edit Canvas</span>
