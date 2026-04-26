@@ -105,22 +105,24 @@ export const CourseEdit = () => {
             </div>
 
             <div className="flex flex-col">
-              <label className={labelClass}>Expected Duration (years)</label>
+              <label className={labelClass}>Expected Duration</label>
+              <p className="text-xs text-gray-400 mb-1">Total length of the course in years</p>
               <input
                 type="text"
                 className={inputClass}
-                placeholder="e.g. 3"
+                placeholder="e.g. 3 years"
                 value={courseData.expectedDuration}
                 onChange={(e) => setCourseData({ ...courseData, expectedDuration: e.target.value })}
               />
             </div>
 
             <div className="flex flex-col">
-              <label className={labelClass}>Number of Teaching Periods</label>
+              <label className={labelClass}>Teaching Periods per Year</label>
+              <p className="text-xs text-gray-400 mb-1">How many teaching periods occur in a single calendar year</p>
               <input
                 type="text"
                 className={inputClass}
-                placeholder="e.g. 2"
+                placeholder="e.g. 2 (semesters per year)"
                 value={courseData.numberTeachingPeriods}
                 onChange={(e) => setCourseData({ ...courseData, numberTeachingPeriods: e.target.value })}
               />
