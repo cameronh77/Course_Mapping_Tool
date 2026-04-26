@@ -120,8 +120,9 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   const [freeUnits, setFreeUnits] = useState(initRef.current.freeUnits);
   const [groupPositions, setGroupPositions] = useState(initRef.current.groupPositions);
 
-  // Tag store (for delete)
+  // Tag store (for delete & update)
   const deleteTagFromStore = useTagStore((s) => s.deleteTag);
+  const updateTagInStore = useTagStore((s) => s.updateTag);
 
   // Handler to delete a tag from the UI and backend
   const handleDeleteTag = async (tagId: number, groupKey: string) => {
@@ -160,6 +161,17 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
       await deleteTagFromStore(tagId);
     } catch (err) {
       console.error("Failed to delete tag", err);
+    }
+  };
+
+  // Handler to edit a tag name
+  const handleEditTag = async (tagId: number) => {
+    const newName = prompt("Enter new theme name:");
+    if (!newName || newName.trim().length === 0) return;
+    try {
+      await updateTagInStore(tagId, newName.trim());
+    } catch (err) {
+      console.error("Failed to update tag", err);
     }
   };
 
@@ -353,12 +365,20 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
                 {units.length}
               </span>
               <button
+                className="ml-2 text-yellow-600 hover:text-gray-800 p-1 rounded"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); handleEditTag(gm.tag.tagId); }}
+                title="Edit theme"
+              >
+                Edit
+              </button>
+              <button
                 className="ml-2 text-red-600 hover:text-red-800 p-1 rounded"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); handleDeleteTag(gm.tag.tagId, gm.key); }}
                 title="Delete theme"
               >
-                ×
+                ✖
               </button>
             </div>
 
