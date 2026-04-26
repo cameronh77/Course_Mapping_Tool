@@ -114,12 +114,31 @@ export const deleteTag = async (req, res) => {
     const { tagId } = req.params;
     const deletedTag = await prisma.tag.delete({
       where: {
-        tagId: tagId, // Replace 1 with the ID of the user you want to delete
+        tagId: Number(tagId),
       },
     });
 
     console.log("deleted tag", deletedTag);
     res.status(200).json(deletedTag);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const updateTag = async (req, res) => {
+  try {
+    const { tagId } = req.params;
+    const { tagName } = req.body;
+    if (!tagName) return res.status(400).json({ message: "tagName is required" });
+
+    const updatedTag = await prisma.tag.update({
+      where: { tagId: Number(tagId) },
+      data: { tagName },
+    });
+
+    console.log("updated tag", updatedTag);
+    res.status(200).json(updatedTag);
   } catch (error) {
     console.error(error);
     return res.status(500).json({ message: "Server error" });
