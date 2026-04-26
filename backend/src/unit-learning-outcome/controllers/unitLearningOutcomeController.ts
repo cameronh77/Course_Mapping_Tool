@@ -1,7 +1,7 @@
 import prisma from "../../../database/prismaClient.js";
 
 export const addUnitLearningOutcome = async (req, res) => {
-  const { uloDesc, unitId, cloId, position } = req.body;
+  const { uloDesc, unitId, cloId, position, bloomsLevel } = req.body;
 
   try {
     if (!uloDesc || !unitId) {
@@ -14,6 +14,7 @@ export const addUnitLearningOutcome = async (req, res) => {
         unitId,
         cloId: cloId ? parseInt(cloId) : null,
         position: position || null,
+        bloomsLevel: bloomsLevel || null,
       },
     });
 
@@ -73,7 +74,7 @@ export const viewUnitLearningOutcomesByUnit = async (req, res) => {
 
 export const updateUnitLearningOutcome = async (req, res) => {
     const { uloId } = req.params;
-    const { uloDesc, unitId, cloId, position } = req.body;
+    const { uloDesc, unitId, cloId, position, bloomsLevel } = req.body;
 
     try {
         const updatedUnitLearningOutcome = await prisma.unitLearningOutcome.update({
@@ -83,8 +84,9 @@ export const updateUnitLearningOutcome = async (req, res) => {
             data: {
                 uloDesc,
                 unitId,
-                cloId: cloId ? parseInt(cloId) : null,
+                cloId: cloId !== undefined ? (cloId ? parseInt(cloId) : null) : undefined,
                 position: position !== undefined ? position : undefined,
+                bloomsLevel: bloomsLevel !== undefined ? (bloomsLevel || null) : undefined,
             }
         });
 

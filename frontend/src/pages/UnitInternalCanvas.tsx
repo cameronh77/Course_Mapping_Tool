@@ -320,6 +320,7 @@ export const UnitInternalCanvas: React.FC = () => {
             uloDesc: u.uloDesc,
             unitId: u.unitId,
             cloId: u.cloId,
+            bloomsLevel: u.bloomsLevel ?? null,
             x: u.position?.x ?? 500,
             y: u.position?.y ?? 100,
           }));
@@ -1337,6 +1338,24 @@ export const UnitInternalCanvas: React.FC = () => {
     setTAULOLinks((prev) => prev.filter((l) => l.activityId !== dbId));
   };
 
+  // ── CLO sidebar hover highlighting ──────────────────────────────────────
+  const [hoveredCLOId, setHoveredCLOId] = useState<number | null>(null);
+
+  // ── CLO → ULO drag-drop linking ──────────────────────────────────────────
+  const handleCLODropOnULO = async (uloId: number, clo: CourseLearningOutcome) => {
+    try {
+      await axiosInstance.put(`/ULO/update/${uloId}`, {
+        cloId: clo.cloId,
+        unitId: currentUnit?.unitId,
+      });
+      setULOBoxes((prev) =>
+        prev.map((u) => (u.uloId ?? u.id) === uloId ? { ...u, cloId: String(clo.cloId) } : u)
+      );
+    } catch (error) {
+      console.error("Failed to link CLO to ULO:", error);
+    }
+  };
+
   const createAssessmentRelationship = async (assessmentId: number, relatedId: number) => {
     if (!currentUnit?.unitId) return;
     try {
@@ -1452,6 +1471,8 @@ export const UnitInternalCanvas: React.FC = () => {
           linkMode={linkMode}
           setLinkMode={setLinkMode}
           setLinkSource={setLinkSource}
+          onCLOHover={(cloId) => setHoveredCLOId(cloId)}
+          onCLOLeave={() => setHoveredCLOId(null)}
         />
       </div>
 
@@ -1622,6 +1643,7 @@ export const UnitInternalCanvas: React.FC = () => {
                       typeof ulo.cloId === "string"
                         ? Number(ulo.cloId)
                         : undefined,
+                    bloomsLevel: ulo.bloomsLevel ?? undefined,
                     assessmentIds: assessmentULOLinks
                       .filter((link) => link.uloId === uId)
                       .map((link) => link.assessmentId),
@@ -1680,8 +1702,15 @@ export const UnitInternalCanvas: React.FC = () => {
                       uloDesc: updated.uloDesc,
                       unitId: updated.unitId,
                       cloId: updated.cloIds.length > 0 ? updated.cloIds[0] : null,
+                      bloomsLevel: (updated as any).bloomsLevel ?? undefined,
                     });
                   }}
+                  onCLODrop={(clo) => handleCLODropOnULO(uId, clo)}
+                  isHighlighted={
+                    hoveredCLOId !== null &&
+                    ulo.cloId !== undefined &&
+                    Number(ulo.cloId) === hoveredCLOId
+                  }
                   onDelete={() => deleteULO(ulo.id!)}
                 />
               </div>

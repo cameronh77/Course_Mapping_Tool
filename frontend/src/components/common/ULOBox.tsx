@@ -1,5 +1,14 @@
 import React, { useState } from "react";
-import type { CourseLearningOutcome, UnitLearningOutcome, unitLearningOutcomeBox } from "../../types";
+import type { BloomsLevel, CourseLearningOutcome, UnitLearningOutcome, unitLearningOutcomeBox } from "../../types";
+
+const BLOOMS_STYLES: Record<BloomsLevel, { badge: string; label: string }> = {
+  REMEMBER:   { badge: "bg-red-200 text-red-800",    label: "Remember" },
+  UNDERSTAND: { badge: "bg-orange-200 text-orange-800", label: "Understand" },
+  APPLY:      { badge: "bg-yellow-200 text-yellow-800", label: "Apply" },
+  ANALYSE:    { badge: "bg-green-200 text-green-800",  label: "Analyse" },
+  EVALUATE:   { badge: "bg-blue-200 text-blue-800",    label: "Evaluate" },
+  CREATE:     { badge: "bg-purple-200 text-purple-800", label: "Create" },
+};
 
 type UnitOption = {
   unitId: string;
@@ -29,6 +38,8 @@ interface WhiteboardULOBoxProps {
   availableCLOs: CourseLearningOutcome[];
   onDelete?: () => void;
   onUpdate?: (updated: ULOUpdatePayload) => void;
+  onCLODrop?: (clo: CourseLearningOutcome) => void;
+  isHighlighted?: boolean;
 }
 
 interface LegacyULOBoxProps {
@@ -95,10 +106,14 @@ export const ULOBox: React.FC<ULOBoxProps> = (props) => {
     availableCLOs,
     onDelete,
     onUpdate,
+    onCLODrop,
+    isHighlighted,
   } = props;
 
   const [isEditing, setIsEditing] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [editText, setEditText] = useState(ulo.uloDesc);
+  const [editBloomsLevel, setEditBloomsLevel] = useState<BloomsLevel | "">(ulo.bloomsLevel ?? "");
   const [selectedUnitId, setSelectedUnitId] = useState(ulo.unitId || "");
   const [selectedCloIds, setSelectedCloIds] = useState<number[]>(
     ulo.cloIds && ulo.cloIds.length > 0 ? ulo.cloIds : typeof ulo.cloId === "number" ? [ulo.cloId] : []
@@ -127,13 +142,15 @@ export const ULOBox: React.FC<ULOBoxProps> = (props) => {
         unitId: selectedUnitId,
         cloIds: selectedCloIds,
         assessmentIds: parseAssessmentIds(assessmentInput),
-      });
+        bloomsLevel: editBloomsLevel || undefined,
+      } as ULOUpdatePayload & { bloomsLevel?: BloomsLevel });
     }
     setIsEditing(false);
   };
 
   const handleCancel = () => {
     setEditText(ulo.uloDesc);
+    setEditBloomsLevel(ulo.bloomsLevel ?? "");
     setSelectedUnitId(ulo.unitId || "");
     const selected = availableUnits.find((u) => u.unitId === (ulo.unitId || ""));
     setUnitSearch(selected?.label || ulo.unitId || "");
@@ -144,13 +161,43 @@ export const ULOBox: React.FC<ULOBoxProps> = (props) => {
     setIsEditing(false);
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!onCLODrop) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes("application/json")) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (!onCLODrop) return;
+    const raw = e.dataTransfer.getData("application/json");
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.type === "clo" && parsed.data) onCLODrop(parsed.data);
+    } catch {
+      console.error("ULOBox drop parse failed");
+    }
+  };
+
+  const bloomsStyle = ulo.bloomsLevel ? BLOOMS_STYLES[ulo.bloomsLevel] : null;
   const boxHeight = 72;
 
   return (
     <div
       className={`absolute border shadow transition-shadow flex items-center justify-center text-white font-bold cursor-grab active:cursor-grabbing ${
         isDragging ? "z-50 shadow-2xl" : isSelected ? "z-40 hover:shadow-lg" : "z-20 hover:shadow-lg"
-      } ${isSelected ? "ring-2 ring-blue-300" : ""}`}
+      } ${isSelected ? "ring-2 ring-blue-300" : ""} ${
+        isHighlighted ? "ring-2 ring-purple-400 ring-offset-1" : ""
+      } ${isDragOver ? "brightness-110" : ""}`}
       style={{
         left: `${x}px`,
         top: `${y}px`,
@@ -162,11 +209,20 @@ export const ULOBox: React.FC<ULOBoxProps> = (props) => {
       onClick={onClick}
       onMouseEnter={onHoverStart}
       onMouseLeave={onHoverEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       title={ulo.uloDesc}
     >
       <span className="px-1 text-center text-[11px] leading-tight line-clamp-3 break-words select-none">
         {ulo.uloDesc || "ULO"}
       </span>
+
+      {bloomsStyle && (
+        <span className={`absolute top-1 right-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${bloomsStyle.badge}`}>
+          {bloomsStyle.label}
+        </span>
+      )}
 
       {isSelected && (
         <div
@@ -185,6 +241,21 @@ export const ULOBox: React.FC<ULOBoxProps> = (props) => {
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
               />
+              <div className="mb-2">
+                <label className="mb-1 block font-semibold text-[11px] text-gray-600">Bloom's Level</label>
+                <select
+                  value={editBloomsLevel}
+                  onChange={(e) => setEditBloomsLevel(e.target.value as BloomsLevel | "")}
+                  className="w-full rounded border border-gray-300 p-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <option value="">None</option>
+                  {(Object.keys(BLOOMS_STYLES) as BloomsLevel[]).map((level) => (
+                    <option key={level} value={level}>{BLOOMS_STYLES[level].label}</option>
+                  ))}
+                </select>
+              </div>
               <div className="mb-2">
                 <label className="mb-1 block font-semibold text-[11px] text-gray-600">Linked Unit</label>
                 <input
