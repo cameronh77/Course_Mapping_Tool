@@ -40,9 +40,10 @@ model Course {
   specialisations  Specialisation[]         
   UnitRelationship UnitRelationship[]       
 
-  existingTagsUnit CourseUnitTags[]         
-  existingTags     Tag[]                    
+  existingTagsUnit CourseUnitTags[]
+  existingTags     Tag[]
 
+  themeCategories  ThemeCategory[]
 }
 
 model Unit {
@@ -91,7 +92,33 @@ model Tag {
   course    Course @relation(fields: [courseId], references: [courseId], onDelete:Cascade)
   courseId  String
 
-  taggedUnits CourseUnitTags[] 
+  taggedUnits         CourseUnitTags[]
+  categoryAssignments ThemeCategoryTag[]
+}
+
+model ThemeCategory {
+  id          Int    @id @default(autoincrement())
+  name        String
+  indexLabel  String
+  positionX   Float
+  positionY   Float
+
+  course      Course @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
+  courseId    String
+
+  tags        ThemeCategoryTag[]
+}
+
+model ThemeCategoryTag {
+  category    ThemeCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId  Int
+
+  tag         Tag           @relation(fields: [tagId], references: [tagId], onDelete: Cascade)
+  tagId       Int
+
+  order       Int
+
+  @@id([categoryId, tagId])
 }
 
 model CourseUnitTags {

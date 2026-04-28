@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import type { Tag, UnitBox as UnitBoxType, UnitMappings } from "../../types";
 import { useThemeDrag } from "../../hooks/useThemeDrag";
-import { loadThemeLayout, type ThemeViewStorage, type ThemeCategory } from "../../lib/themeStorage";
+import { loadThemeLayout, type ThemeViewStorage } from "../../lib/themeStorage";
 import { useTagStore } from "../../stores/useTagStore";
+import { useThemeCategoryStore } from "../../stores/useThemeCategoryStore";
 import {
   THEME_COLORS,
   UNIT_CARD_W,
@@ -81,7 +82,7 @@ function buildFreshLayout(
     freeUnits[key] = { x: CANVAS_PAD + i * (UNIT_CARD_W + CARD_GAP), y: freeBaseY };
   });
 
-  return { groupUnits, freeUnits, groupPositions, categories: [] };
+  return { groupUnits, freeUnits, groupPositions };
 }
 
 function mergeWithSaved(fresh: ThemeViewStorage, saved: ThemeViewStorage): ThemeViewStorage {
@@ -97,7 +98,6 @@ function mergeWithSaved(fresh: ThemeViewStorage, saved: ThemeViewStorage): Theme
     groupUnits,
     freeUnits: saved.freeUnits,
     groupPositions,
-    categories: saved.categories ?? [],
   };
 }
 
@@ -124,10 +124,20 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   const [groupUnits, setGroupUnits] = useState(initRef.current.groupUnits);
   const [freeUnits, setFreeUnits] = useState(initRef.current.freeUnits);
   const [groupPositions, setGroupPositions] = useState(initRef.current.groupPositions);
-  const [categories, setCategories] = useState<ThemeCategory[]>(initRef.current.categories ?? []);
 
   const deleteTagFromStore = useTagStore((s) => s.deleteTag);
   const updateTagInStore = useTagStore((s) => s.updateTag);
+
+  const categories = useThemeCategoryStore((s) => s.categories);
+  const fetchCategories = useThemeCategoryStore((s) => s.fetchByCourse);
+  const createCategoryRemote = useThemeCategoryStore((s) => s.createCategory);
+  const updateCategoryRemote = useThemeCategoryStore((s) => s.updateCategory);
+  const deleteCategoryRemote = useThemeCategoryStore((s) => s.deleteCategory);
+  const setCategoriesLocal = useThemeCategoryStore((s) => s.setLocal);
+
+  useEffect(() => {
+    fetchCategories(courseId);
+  }, [courseId, fetchCategories]);
 
   // Map: tagId -> categoryId for fast lookup
   const tagToCategory = useMemo(() => {
@@ -160,7 +170,17 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
 
     setGroupUnits((prev) => { const n = { ...prev }; delete n[groupKey]; return n; });
     setGroupPositions((prev) => { const n = { ...prev }; delete n[groupKey]; return n; });
-    setCategories((prev) => prev.map((c) => ({ ...c, tagIds: c.tagIds.filter((t) => t !== tagId) })));
+
+    // Drop tag from any category locally and persist
+    const affectedCats = categories.filter((c) => c.tagIds.includes(tagId));
+    if (affectedCats.length > 0) {
+      setCategoriesLocal((prev) =>
+        prev.map((c) => ({ ...c, tagIds: c.tagIds.filter((t) => t !== tagId) }))
+      );
+      for (const c of affectedCats) {
+        await updateCategoryRemote(c.id, { tagIds: c.tagIds.filter((t) => t !== tagId) });
+      }
+    }
 
     setFreeUnits((prev) => {
       const next = { ...prev };
@@ -193,8 +213,8 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     }
   };
 
-  // Category CRUD
-  const handleAddCategory = () => {
+  // Category CRUD (backend-persisted)
+  const handleAddCategory = async () => {
     const name = prompt("Category name (e.g. Specialist Core):");
     if (!name || name.trim().length === 0) return;
     const indexLabel = prompt("Index label (e.g. 1, 2, 3):", String(categories.length + 1)) ?? String(categories.length + 1);
@@ -203,35 +223,29 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
         (max, c) => Math.max(max, c.position.y + getCategoryHeight(c.tagIds.map((t) => groupUnits[`tag-${t}`]?.length || 0))),
         CANVAS_PAD
       ) + GROUP_ROW_GAP;
-    const newCat: ThemeCategory = {
-      id: `cat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    await createCategoryRemote({
+      courseId,
       name: name.trim(),
       indexLabel: indexLabel.trim() || String(categories.length + 1),
       position: { x: CANVAS_PAD, y: baseY },
-      tagIds: [],
-    };
-    setCategories((prev) => [...prev, newCat]);
+    });
   };
 
-  const handleEditCategory = (catId: string) => {
+  const handleEditCategory = async (catId: number) => {
     const cat = categories.find((c) => c.id === catId);
     if (!cat) return;
     const newName = prompt("Category name:", cat.name);
     if (newName === null) return;
     const newIndex = prompt("Index label:", cat.indexLabel);
     if (newIndex === null) return;
-    setCategories((prev) =>
-      prev.map((c) =>
-        c.id === catId
-          ? { ...c, name: newName.trim() || c.name, indexLabel: newIndex.trim() || c.indexLabel }
-          : c
-      )
-    );
+    await updateCategoryRemote(catId, {
+      name: newName.trim() || cat.name,
+      indexLabel: newIndex.trim() || cat.indexLabel,
+    });
   };
 
-  const handleDeleteCategory = (catId: string) => {
+  const handleDeleteCategory = async (catId: number) => {
     if (!confirm("Delete this category? Nested themes will become free-floating.")) return;
-    // Place unnested tags at the category's previous position
     const cat = categories.find((c) => c.id === catId);
     if (cat) {
       setGroupPositions((prev) => {
@@ -245,7 +259,7 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
         return next;
       });
     }
-    setCategories((prev) => prev.filter((c) => c.id !== catId));
+    await deleteCategoryRemote(catId);
   };
 
   // Sync when tags change (additions or removals)
@@ -291,8 +305,8 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
       return changed ? next : prev;
     });
 
-    // Drop deleted tags from categories
-    setCategories((prev) => {
+    // Drop deleted tags from categories (local-only; backend cascades on tag delete)
+    setCategoriesLocal((prev) => {
       const validIds = new Set(existingTags.map((t) => t.tagId));
       let changed = false;
       const next = prev.map((c) => {
@@ -342,8 +356,8 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   }, [unitBoxes]);
 
   useEffect(() => {
-    if (layoutRef) layoutRef.current = { groupPositions, groupUnits, freeUnits, categories };
-  }, [layoutRef, groupPositions, groupUnits, freeUnits, categories]);
+    if (layoutRef) layoutRef.current = { groupPositions, groupUnits, freeUnits };
+  }, [layoutRef, groupPositions, groupUnits, freeUnits]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -366,7 +380,11 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     setGroupUnits,
     setFreeUnits,
     setGroupPositions,
-    setCategories,
+    setCategoriesLocal,
+    onCategoryMoveCommit: (id, position) => updateCategoryRemote(id, { position }),
+    onTagNestingCommit: (changes) => {
+      for (const c of changes) updateCategoryRemote(c.categoryId, { tagIds: c.tagIds });
+    },
     onUnitGroupChange,
   });
 
