@@ -1,7 +1,16 @@
+export type ThemeCategory = {
+  id: string;
+  name: string;
+  indexLabel: string;
+  position: { x: number; y: number };
+  tagIds: number[];
+};
+
 export type ThemeViewStorage = {
   groupPositions: Record<string, { x: number; y: number }>;
   groupUnits: Record<string, string[]>;
   freeUnits: Record<string, { x: number; y: number }>;
+  categories?: ThemeCategory[];
 };
 
 const storageKey = (courseId: string) => `themeView-${courseId}`;
