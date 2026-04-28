@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import type { Tag, UnitBox as UnitBoxType, UnitMappings } from "../../types";
 import { useThemeDrag } from "../../hooks/useThemeDrag";
-import { loadThemeLayout, type ThemeViewStorage } from "../../lib/themeStorage";
+import { loadThemeLayout, type ThemeViewStorage, type ThemeCategory } from "../../lib/themeStorage";
 import { useTagStore } from "../../stores/useTagStore";
 import {
   THEME_COLORS,
@@ -15,7 +15,13 @@ import {
   GROUP_COL_GAP,
   GROUP_ROW_GAP,
   CANVAS_PAD,
+  CATEGORY_HEADER_H,
+  CATEGORY_PAD,
+  CATEGORY_BAND_GAP,
+  CATEGORY_W,
+  CATEGORY_COLOR,
   getGroupHeight,
+  getCategoryHeight,
   type GroupKey,
   type GroupMeta,
 } from "./themeViewConstants";
@@ -27,7 +33,6 @@ export interface ThemeViewProps {
   existingTags: Tag[];
   getCLOColor: (cloId: number) => string;
   onUnitGroupChange: (unitKey: string, fromTag: Tag | null, toTag: Tag | null) => void;
-  /** Ref kept up-to-date with current layout so the parent can persist it on save. */
   layoutRef?: React.MutableRefObject<ThemeViewStorage | null>;
 }
 
@@ -76,10 +81,9 @@ function buildFreshLayout(
     freeUnits[key] = { x: CANVAS_PAD + i * (UNIT_CARD_W + CARD_GAP), y: freeBaseY };
   });
 
-  return { groupUnits, freeUnits, groupPositions };
+  return { groupUnits, freeUnits, groupPositions, categories: [] };
 }
 
-/** Merges saved layout with fresh layout — saved positions win; new tags get fresh positions. */
 function mergeWithSaved(fresh: ThemeViewStorage, saved: ThemeViewStorage): ThemeViewStorage {
   const groupUnits = { ...fresh.groupUnits, ...saved.groupUnits };
   for (const key of Object.keys(fresh.groupUnits)) {
@@ -89,12 +93,14 @@ function mergeWithSaved(fresh: ThemeViewStorage, saved: ThemeViewStorage): Theme
   for (const [key, pos] of Object.entries(fresh.groupPositions)) {
     if (!groupPositions[key]) groupPositions[key] = pos;
   }
-  return { groupUnits, freeUnits: saved.freeUnits, groupPositions };
+  return {
+    groupUnits,
+    freeUnits: saved.freeUnits,
+    groupPositions,
+    categories: saved.categories ?? [],
+  };
 }
 
-/**
- * Theme View
- */
 export const ThemeView: React.FC<ThemeViewProps> = ({
   courseId,
   unitBoxes,
@@ -108,7 +114,6 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     [existingTags]
   );
 
-  // Compute initial state exactly once via a ref — avoids calling buildFreshLayout 3x
   const initRef = useRef<ThemeViewStorage | null>(null);
   if (initRef.current === null) {
     const fresh = buildFreshLayout(unitBoxes, unitMappings, existingTags);
@@ -119,29 +124,44 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   const [groupUnits, setGroupUnits] = useState(initRef.current.groupUnits);
   const [freeUnits, setFreeUnits] = useState(initRef.current.freeUnits);
   const [groupPositions, setGroupPositions] = useState(initRef.current.groupPositions);
+  const [categories, setCategories] = useState<ThemeCategory[]>(initRef.current.categories ?? []);
 
-  // Tag store (for delete & update)
   const deleteTagFromStore = useTagStore((s) => s.deleteTag);
   const updateTagInStore = useTagStore((s) => s.updateTag);
 
-  // Handler to delete a tag from the UI and backend
+  // Map: tagId -> categoryId for fast lookup
+  const tagToCategory = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const cat of categories) for (const tagId of cat.tagIds) m.set(tagId, cat.id);
+    return m;
+  }, [categories]);
+
+  // Derived nested positions: tags inside a category get their position from the category layout,
+  // overriding any free-floating groupPositions entry.
+  const nestedPositions = useMemo(() => {
+    const positions: Record<string, { x: number; y: number }> = {};
+    for (const cat of categories) {
+      let yOffset = CATEGORY_HEADER_H + CATEGORY_PAD;
+      for (const tagId of cat.tagIds) {
+        const key = `tag-${tagId}`;
+        positions[key] = {
+          x: cat.position.x + CATEGORY_PAD,
+          y: cat.position.y + yOffset,
+        };
+        yOffset += getGroupHeight(groupUnits[key]?.length || 0) + CATEGORY_BAND_GAP;
+      }
+    }
+    return positions;
+  }, [categories, groupUnits]);
+
   const handleDeleteTag = async (tagId: number, groupKey: string) => {
     if (!confirm("Delete this theme? This will remove the theme and unassign its units.")) return;
     const removedUnits = groupUnits[groupKey] || [];
 
-    // Remove group locally
-    setGroupUnits((prev) => {
-      const next = { ...prev };
-      delete next[groupKey];
-      return next;
-    });
-    setGroupPositions((prev) => {
-      const next = { ...prev };
-      delete next[groupKey];
-      return next;
-    });
+    setGroupUnits((prev) => { const n = { ...prev }; delete n[groupKey]; return n; });
+    setGroupPositions((prev) => { const n = { ...prev }; delete n[groupKey]; return n; });
+    setCategories((prev) => prev.map((c) => ({ ...c, tagIds: c.tagIds.filter((t) => t !== tagId) })));
 
-    // Move removed units to free area
     setFreeUnits((prev) => {
       const next = { ...prev };
       const freeBaseY =
@@ -156,7 +176,6 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
       return next;
     });
 
-    // Ask store/backend to delete
     try {
       await deleteTagFromStore(tagId);
     } catch (err) {
@@ -164,7 +183,6 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     }
   };
 
-  // Handler to edit a tag name
   const handleEditTag = async (tagId: number) => {
     const newName = prompt("Enter new theme name:");
     if (!newName || newName.trim().length === 0) return;
@@ -175,6 +193,61 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     }
   };
 
+  // Category CRUD
+  const handleAddCategory = () => {
+    const name = prompt("Category name (e.g. Specialist Core):");
+    if (!name || name.trim().length === 0) return;
+    const indexLabel = prompt("Index label (e.g. 1, 2, 3):", String(categories.length + 1)) ?? String(categories.length + 1);
+    const baseY =
+      categories.reduce(
+        (max, c) => Math.max(max, c.position.y + getCategoryHeight(c.tagIds.map((t) => groupUnits[`tag-${t}`]?.length || 0))),
+        CANVAS_PAD
+      ) + GROUP_ROW_GAP;
+    const newCat: ThemeCategory = {
+      id: `cat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: name.trim(),
+      indexLabel: indexLabel.trim() || String(categories.length + 1),
+      position: { x: CANVAS_PAD, y: baseY },
+      tagIds: [],
+    };
+    setCategories((prev) => [...prev, newCat]);
+  };
+
+  const handleEditCategory = (catId: string) => {
+    const cat = categories.find((c) => c.id === catId);
+    if (!cat) return;
+    const newName = prompt("Category name:", cat.name);
+    if (newName === null) return;
+    const newIndex = prompt("Index label:", cat.indexLabel);
+    if (newIndex === null) return;
+    setCategories((prev) =>
+      prev.map((c) =>
+        c.id === catId
+          ? { ...c, name: newName.trim() || c.name, indexLabel: newIndex.trim() || c.indexLabel }
+          : c
+      )
+    );
+  };
+
+  const handleDeleteCategory = (catId: string) => {
+    if (!confirm("Delete this category? Nested themes will become free-floating.")) return;
+    // Place unnested tags at the category's previous position
+    const cat = categories.find((c) => c.id === catId);
+    if (cat) {
+      setGroupPositions((prev) => {
+        const next = { ...prev };
+        let yOffset = 0;
+        for (const tagId of cat.tagIds) {
+          const key = `tag-${tagId}`;
+          next[key] = { x: cat.position.x, y: cat.position.y + yOffset };
+          yOffset += getGroupHeight(groupUnits[key]?.length || 0) + GROUP_ROW_GAP;
+        }
+        return next;
+      });
+    }
+    setCategories((prev) => prev.filter((c) => c.id !== catId));
+  };
+
   // Sync when tags change (additions or removals)
   useEffect(() => {
     setGroupUnits((prev) => {
@@ -182,13 +255,11 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
       let changed = false;
       const currentKeys = new Set(existingTags.map((t) => `tag-${t.tagId}`));
 
-      // add new tags
       for (const tag of existingTags) {
         const key = `tag-${tag.tagId}`;
         if (!next[key]) { next[key] = []; changed = true; }
       }
 
-      // remove stale groups
       for (const key of Object.keys(next)) {
         if (key.startsWith("tag-") && !currentKeys.has(key)) {
           delete next[key];
@@ -220,7 +291,18 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
       return changed ? next : prev;
     });
 
-    // Ensure any orphaned units are added to freeUnits
+    // Drop deleted tags from categories
+    setCategories((prev) => {
+      const validIds = new Set(existingTags.map((t) => t.tagId));
+      let changed = false;
+      const next = prev.map((c) => {
+        const filtered = c.tagIds.filter((t) => validIds.has(t));
+        if (filtered.length !== c.tagIds.length) changed = true;
+        return changed ? { ...c, tagIds: filtered } : c;
+      });
+      return changed ? next : prev;
+    });
+
     setFreeUnits((prev) => {
       const next = { ...prev };
       const allGrouped = new Set(Object.values(groupUnits).flat());
@@ -239,7 +321,6 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     });
   }, [existingTags]);
 
-  // Sync when new units are added to canvas
   useEffect(() => {
     const allGrouped = new Set(Object.values(groupUnits).flat());
     const newFree = unitBoxes
@@ -260,24 +341,34 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     });
   }, [unitBoxes]);
 
-  // Keep layoutRef in sync so the parent can persist on save
   useEffect(() => {
-    if (layoutRef) layoutRef.current = { groupPositions, groupUnits, freeUnits };
-  }, [layoutRef, groupPositions, groupUnits, freeUnits]);
+    if (layoutRef) layoutRef.current = { groupPositions, groupUnits, freeUnits, categories };
+  }, [layoutRef, groupPositions, groupUnits, freeUnits, categories]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { draggingUnit, ghostViewport, dropTarget, handleUnitMouseDown, handleGroupHeaderMouseDown, handleRemoveFromGroup } =
-    useThemeDrag({
-      groupMetas,
-      groupUnits,
-      groupPositions,
-      containerRef,
-      setGroupUnits,
-      setFreeUnits,
-      setGroupPositions,
-      onUnitGroupChange,
-    });
+  const {
+    draggingUnit,
+    draggingTagKey,
+    ghostViewport,
+    dropTarget,
+    categoryDropTarget,
+    handleUnitMouseDown,
+    handleGroupHeaderMouseDown,
+    handleCategoryHeaderMouseDown,
+    handleRemoveFromGroup,
+  } = useThemeDrag({
+    groupMetas,
+    groupUnits,
+    groupPositions,
+    categories,
+    containerRef,
+    setGroupUnits,
+    setFreeUnits,
+    setGroupPositions,
+    setCategories,
+    onUnitGroupChange,
+  });
 
   const unitMap = useMemo(() => {
     const m = new Map<string, UnitBoxType>();
@@ -288,19 +379,24 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   const canvasSize = useMemo(() => {
     let maxX = 800, maxY = 600;
     for (const gm of groupMetas) {
-      const pos = groupPositions[gm.key];
+      const pos = nestedPositions[gm.key] ?? groupPositions[gm.key];
       if (!pos) continue;
       const rows = Math.max(1, Math.ceil((groupUnits[gm.key]?.length || 0) / CARDS_PER_ROW));
       const estimatedH = GROUP_HEADER_H + GROUP_PADDING + rows * (UNIT_CARD_H + CARD_GAP) + CANVAS_PAD;
       maxX = Math.max(maxX, pos.x + GROUP_W + CANVAS_PAD);
       maxY = Math.max(maxY, pos.y + estimatedH);
     }
+    for (const cat of categories) {
+      const h = getCategoryHeight(cat.tagIds.map((t) => groupUnits[`tag-${t}`]?.length || 0));
+      maxX = Math.max(maxX, cat.position.x + CATEGORY_W + CANVAS_PAD);
+      maxY = Math.max(maxY, cat.position.y + h + CANVAS_PAD);
+    }
     for (const pos of Object.values(freeUnits)) {
       maxX = Math.max(maxX, pos.x + UNIT_CARD_W + CANVAS_PAD);
       maxY = Math.max(maxY, pos.y + UNIT_CARD_H + CANVAS_PAD);
     }
     return { width: maxX, height: maxY };
-  }, [groupPositions, groupUnits, freeUnits, groupMetas]);
+  }, [groupPositions, nestedPositions, groupUnits, freeUnits, groupMetas, categories]);
 
   if (unitBoxes.length === 0) {
     return (
@@ -319,14 +415,95 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
       className="relative select-none"
       style={{ width: canvasSize.width, height: canvasSize.height, cursor: draggingUnit ? "grabbing" : "default" }}
     >
-      {/* Theme groups */}
+      {/* Toolbar */}
+      <div className="sticky top-2 left-2 z-50 inline-flex" style={{ position: "absolute", top: 8, left: 8 }}>
+        <button
+          className="px-3 py-1.5 text-xs font-medium bg-slate-800 text-slate-100 rounded-md hover:bg-slate-700 border border-slate-600 shadow"
+          onClick={handleAddCategory}
+        >
+          + Add Category
+        </button>
+      </div>
+
+      {/* Categories (outer wrappers) */}
+      {categories.map((cat) => {
+        const h = getCategoryHeight(cat.tagIds.map((t) => groupUnits[`tag-${t}`]?.length || 0));
+        const isDropTarget = categoryDropTarget === cat.id;
+        return (
+          <div
+            id={`theme-category-${cat.id}`}
+            key={cat.id}
+            className="absolute rounded-2xl border-2"
+            style={{
+              left: cat.position.x,
+              top: cat.position.y,
+              width: CATEGORY_W,
+              height: h,
+              backgroundColor: CATEGORY_COLOR.bg,
+              borderColor: isDropTarget ? "#60A5FA" : CATEGORY_COLOR.border,
+              borderStyle: isDropTarget ? "dashed" : "solid",
+              boxShadow: isDropTarget ? "0 0 0 3px #60A5FA44" : undefined,
+              transition: "border-color 0.1s, box-shadow 0.1s",
+            }}
+          >
+            <div
+              className="flex items-center gap-2 px-4 cursor-grab active:cursor-grabbing rounded-t-2xl"
+              style={{ height: CATEGORY_HEADER_H, backgroundColor: CATEGORY_COLOR.header }}
+              onMouseDown={(e) => handleCategoryHeaderMouseDown(e, cat.id)}
+            >
+              <span
+                className="text-sm font-bold px-2 py-0.5 rounded"
+                style={{ color: CATEGORY_COLOR.label, backgroundColor: "#0F172A88" }}
+              >
+                {cat.indexLabel}
+              </span>
+              <h3 className="text-sm font-semibold flex-1 text-center truncate" style={{ color: CATEGORY_COLOR.text }}>
+                {cat.name}
+              </h3>
+              <button
+                className="text-xs text-slate-300 hover:text-white p-1"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); handleEditCategory(cat.id); }}
+                title="Edit category"
+              >
+                Edit
+              </button>
+              <button
+                className="text-xs text-red-300 hover:text-red-100 p-1"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }}
+                title="Delete category"
+              >
+                ✖
+              </button>
+            </div>
+            {cat.tagIds.length === 0 && (
+              <div
+                className="absolute inset-x-4 flex items-center justify-center text-xs italic rounded-lg border-2 border-dashed"
+                style={{
+                  top: CATEGORY_HEADER_H + CATEGORY_PAD,
+                  bottom: CATEGORY_PAD,
+                  borderColor: CATEGORY_COLOR.border,
+                  color: CATEGORY_COLOR.label,
+                }}
+              >
+                Drag a theme here to nest it
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Theme groups (rendered after categories so they sit on top) */}
       {groupMetas.map((gm) => {
-        const pos = groupPositions[gm.key];
+        const nested = nestedPositions[gm.key];
+        const pos = nested ?? groupPositions[gm.key];
         if (!pos) return null;
         const colors = THEME_COLORS[gm.colorIdx % THEME_COLORS.length];
         const unitKeys = groupUnits[gm.key] || [];
         const units = unitKeys.map((k) => unitMap.get(k)).filter(Boolean) as UnitBoxType[];
         const isDropTarget = dropTarget === gm.key && !unitKeys.includes(draggingUnit?.unitKey ?? "");
+        const isDraggingThis = draggingTagKey === gm.key;
 
         return (
           <div
@@ -341,14 +518,15 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
               borderColor: isDropTarget ? colors.label : colors.border,
               borderStyle: isDropTarget ? "dashed" : "solid",
               boxShadow: isDropTarget ? `0 0 0 3px ${colors.border}44` : undefined,
-              transition: "border-color 0.1s, box-shadow 0.1s",
+              opacity: isDraggingThis ? 0.85 : 1,
+              zIndex: isDraggingThis ? 100 : nested ? 10 : 1,
+              transition: isDraggingThis ? "none" : "border-color 0.1s, box-shadow 0.1s",
             }}
           >
-            {/* Drag handle header */}
             <div
               className="flex items-center gap-2 px-4 rounded-t-2xl cursor-grab active:cursor-grabbing"
               style={{ height: GROUP_HEADER_H, backgroundColor: colors.border + "55" }}
-              onMouseDown={(e) => handleGroupHeaderMouseDown(e, gm.key)}
+              onMouseDown={(e) => handleGroupHeaderMouseDown(e, gm.key, pos)}
             >
               <svg className="w-3 h-3 flex-shrink-0 opacity-50" viewBox="0 0 12 12" fill="none" style={{ color: colors.label }}>
                 <circle cx="3.5" cy="3.5" r="1.2" fill="currentColor" />
@@ -382,7 +560,6 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
               </button>
             </div>
 
-            {/* Unit cards */}
             <div className="flex flex-wrap px-4 pt-2 pb-3" style={{ gap: CARD_GAP }}>
               {units.map((unit) => {
                 const unitKey = unit.unitId || unit.id.toString();
@@ -429,7 +606,6 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
         );
       })}
 
-      {/* Free-floating units (no theme assigned) */}
       {Object.entries(freeUnits).map(([unitKey, pos]) => {
         const unit = unitMap.get(unitKey);
         if (!unit) return null;
@@ -457,7 +633,6 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
         );
       })}
 
-      {/* Ghost card */}
       {draggingUnit && ghostViewport && (() => {
         const unit = unitMap.get(draggingUnit.unitKey);
         if (!unit) return null;
