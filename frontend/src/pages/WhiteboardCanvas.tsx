@@ -215,6 +215,7 @@ export const WhiteboardCanvas: React.FC = () => {
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [canvasTool, setCanvasTool] = useState<"hand" | "in" | "out" | null>(null);
   const [zoomPaletteOpen, setZoomPaletteOpen] = useState<boolean>(false);
+  const [showColumnLines, setShowColumnLines] = useState<boolean>(true);
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [searchResults, setSearchResults] = useState<Unit[]>([]);
@@ -1782,6 +1783,7 @@ export const WhiteboardCanvas: React.FC = () => {
           selectedTagFilters={selectedTagFilters}
           onToggleTagFilter={handleToggleTagFilter}
           onClearTagFilters={handleClearTagFilters}
+          showTagFilterSection={true}
         />
       </div>
 
@@ -1846,6 +1848,17 @@ export const WhiteboardCanvas: React.FC = () => {
               >
                 Reset
               </button>
+              <button
+                className={`h-10 rounded-full border px-3 text-xs font-bold transition-colors ${
+                  showColumnLines
+                    ? "bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+                }`}
+                onClick={() => setShowColumnLines(!showColumnLines)}
+                title={showColumnLines ? "Hide columns" : "Show columns"}
+              >
+                Columns
+              </button>
             </div>
           )}
           <button
@@ -1890,14 +1903,64 @@ export const WhiteboardCanvas: React.FC = () => {
             backgroundPosition: '0 0',
           }}
         >
+          {/* Column headers */}
+          {showColumnLines && (
+            <div
+              style={{
+                position: 'sticky',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '40px',
+                backgroundColor: '#f3f4f6',
+                borderBottom: '2px solid #d1d5db',
+                display: 'flex',
+                zIndex: 50,
+                pointerEvents: 'none',
+              }}
+            >
+              {[
+                'Semester 1\nUnits',
+                'Teaching\nActivities',
+                'Assessments\n',
+                'Unit Learning\nOutcomes (ULOs)',
+                'Course Learning\nOutcomes (CLOs)',
+                'Unit Learning\nOutcomes (ULOs)',
+                'Assessments\n',
+                'Teaching\nActivities',
+                'Semester 2\nUnits',
+              ].map((title, i) => (
+                <div
+                  key={`col-header-${i}`}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: '#4b5563',
+                    borderRight: i < 8 ? '1px solid #d1d5db' : 'none',
+                    padding: '4px',
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: '1.2',
+                  }}
+                >
+                  {title}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 9 column separators matching canvas width */}
-          {Array.from({ length: 8 }).map((_, i) => (
+          {showColumnLines && Array.from({ length: 8 }).map((_, i) => (
             <div
               key={`col-separator-${i}`}
               style={{
                 position: 'absolute',
                 left: `calc(${((i + 1) / 9) * 100}% )`,
-                top: 0,
+                top: 40,
                 bottom: 0,
                 width: '1px',
                 background: 'rgba(128,128,128,0.25)',
@@ -2457,8 +2520,17 @@ export const WhiteboardCanvas: React.FC = () => {
         </div>
 
         {showForm && editingId && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm"
+            onMouseDown={() => {
+              setEditingId(null);
+              setShowForm(false);
+            }}
+          >
+            <div
+              className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Edit Unit</h2>
                 <button
@@ -2487,8 +2559,14 @@ export const WhiteboardCanvas: React.FC = () => {
         )}
 
         {showCreateForm && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm"
+            onMouseDown={() => setShowCreateForm(false)}
+          >
+            <div
+              className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-black text-xl font-bold">Create Unit</h2>
                 <button
