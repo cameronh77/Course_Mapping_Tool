@@ -4,6 +4,7 @@ export type ThemeCategory = {
   indexLabel: string;
   position: { x: number; y: number };
   tagIds: number[];
+  courseId: string;
 };
 
 export type ThemeViewStorage = {

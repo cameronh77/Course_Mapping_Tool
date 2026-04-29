@@ -139,30 +139,31 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     fetchCategories(courseId);
   }, [courseId, fetchCategories]);
 
-  // Map: tagId -> categoryId for fast lookup
-  const tagToCategory = useMemo(() => {
-    const m = new Map<number, string>();
-    for (const cat of categories) for (const tagId of cat.tagIds) m.set(tagId, cat.id);
-    return m;
-  }, [categories]);
-
-  // Derived nested positions: tags inside a category get their position from the category layout,
-  // overriding any free-floating groupPositions entry.
-  const nestedPositions = useMemo(() => {
-    const positions: Record<string, { x: number; y: number }> = {};
+  // Tags can appear in multiple categories. Compute every (category, tagId) instance and its position.
+  type TagInstance = { catId: number; tagKey: GroupKey; position: { x: number; y: number } };
+  const nestedInstances = useMemo<TagInstance[]>(() => {
+    const out: TagInstance[] = [];
     for (const cat of categories) {
       let yOffset = CATEGORY_HEADER_H + CATEGORY_PAD;
       for (const tagId of cat.tagIds) {
         const key = `tag-${tagId}`;
-        positions[key] = {
-          x: cat.position.x + CATEGORY_PAD,
-          y: cat.position.y + yOffset,
-        };
+        out.push({
+          catId: cat.id,
+          tagKey: key,
+          position: { x: cat.position.x + CATEGORY_PAD, y: cat.position.y + yOffset },
+        });
         yOffset += getGroupHeight(groupUnits[key]?.length || 0) + CATEGORY_BAND_GAP;
       }
     }
-    return positions;
+    return out;
   }, [categories, groupUnits]);
+
+  // Tags not in any category render as free-floating singletons
+  const freeTagKeys = useMemo<GroupKey[]>(() => {
+    const nestedTagIds = new Set<number>();
+    for (const cat of categories) for (const t of cat.tagIds) nestedTagIds.add(t);
+    return groupMetas.filter((gm) => !nestedTagIds.has(gm.tag.tagId)).map((gm) => gm.key);
+  }, [categories, groupMetas]);
 
   const handleDeleteTag = async (tagId: number, groupKey: string) => {
     if (!confirm("Delete this theme? This will remove the theme and unassign its units.")) return;
@@ -361,6 +362,35 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Right-click context menu on category headers
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    catId: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const dismiss = () => setContextMenu(null);
+    window.addEventListener("click", dismiss);
+    window.addEventListener("scroll", dismiss, true);
+    return () => {
+      window.removeEventListener("click", dismiss);
+      window.removeEventListener("scroll", dismiss, true);
+    };
+  }, [contextMenu]);
+
+  const duplicateCategoryRefAction = useThemeCategoryStore((s) => s.duplicateCategoryReference);
+  const handleDuplicateCategoryRef = async (catId: number) => {
+    const source = categories.find((c) => c.id === catId);
+    if (!source) return;
+    const offset = 60;
+    await duplicateCategoryRefAction(catId, {
+      x: source.position.x + offset,
+      y: source.position.y + offset,
+    });
+  };
+
   const {
     draggingUnit,
     draggingTagKey,
@@ -396,10 +426,10 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
 
   const canvasSize = useMemo(() => {
     let maxX = 800, maxY = 600;
-    for (const gm of groupMetas) {
-      const pos = nestedPositions[gm.key] ?? groupPositions[gm.key];
+    for (const key of freeTagKeys) {
+      const pos = groupPositions[key];
       if (!pos) continue;
-      const rows = Math.max(1, Math.ceil((groupUnits[gm.key]?.length || 0) / CARDS_PER_ROW));
+      const rows = Math.max(1, Math.ceil((groupUnits[key]?.length || 0) / CARDS_PER_ROW));
       const estimatedH = GROUP_HEADER_H + GROUP_PADDING + rows * (UNIT_CARD_H + CARD_GAP) + CANVAS_PAD;
       maxX = Math.max(maxX, pos.x + GROUP_W + CANVAS_PAD);
       maxY = Math.max(maxY, pos.y + estimatedH);
@@ -414,7 +444,7 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
       maxY = Math.max(maxY, pos.y + UNIT_CARD_H + CANVAS_PAD);
     }
     return { width: maxX, height: maxY };
-  }, [groupPositions, nestedPositions, groupUnits, freeUnits, groupMetas, categories]);
+  }, [groupPositions, freeTagKeys, groupUnits, freeUnits, categories]);
 
   if (unitBoxes.length === 0) {
     return (
@@ -468,6 +498,10 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
               className="flex items-center gap-2 px-4 cursor-grab active:cursor-grabbing rounded-t-2xl"
               style={{ height: CATEGORY_HEADER_H, backgroundColor: CATEGORY_COLOR.header }}
               onMouseDown={(e) => handleCategoryHeaderMouseDown(e, cat.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu({ x: e.clientX, y: e.clientY, catId: cat.id });
+              }}
             >
               <span
                 className="text-sm font-bold px-2 py-0.5 rounded"
@@ -479,7 +513,15 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
                 {cat.name}
               </h3>
               <button
-                className="text-xs text-slate-300 hover:text-white p-1"
+                className="inline-flex items-center justify-center w-7 h-7 text-2xl leading-none text-sky-300 hover:text-sky-100 rounded"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); handleDuplicateCategoryRef(cat.id); }}
+                title="Duplicate (linked themes)"
+              >
+                ⎘
+              </button>
+              <button
+                className="inline-flex items-center justify-center w-7 h-7 text-l leading-none text-yellow-400 hover:text-yellow-200 rounded"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); handleEditCategory(cat.id); }}
                 title="Edit category"
@@ -487,7 +529,7 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
                 Edit
               </button>
               <button
-                className="text-xs text-red-300 hover:text-red-100 p-1"
+                className="inline-flex items-center justify-center w-7 h-7 text-l leading-none text-red-300 hover:text-red-500 rounded"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); handleDeleteCategory(cat.id); }}
                 title="Delete category"
@@ -512,21 +554,30 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
         );
       })}
 
-      {/* Theme groups (rendered after categories so they sit on top) */}
-      {groupMetas.map((gm) => {
-        const nested = nestedPositions[gm.key];
-        const pos = nested ?? groupPositions[gm.key];
-        if (!pos) return null;
+      {/* Theme groups: render once per (category, tagId) instance, plus one per free tag. */}
+      {(() => {
+        const instances: { tagKey: GroupKey; container: number | "free"; position: { x: number; y: number } }[] = [
+          ...freeTagKeys
+            .filter((key) => !!groupPositions[key])
+            .map((key) => ({ tagKey: key, container: "free" as const, position: groupPositions[key] })),
+          ...nestedInstances.map((ni) => ({ tagKey: ni.tagKey, container: ni.catId, position: ni.position })),
+        ];
+        return instances.map(({ tagKey, container, position: pos }) => {
+        const gm = groupMetas.find((g) => g.key === tagKey);
+        if (!gm) return null;
         const colors = THEME_COLORS[gm.colorIdx % THEME_COLORS.length];
         const unitKeys = groupUnits[gm.key] || [];
         const units = unitKeys.map((k) => unitMap.get(k)).filter(Boolean) as UnitBoxType[];
         const isDropTarget = dropTarget === gm.key && !unitKeys.includes(draggingUnit?.unitKey ?? "");
         const isDraggingThis = draggingTagKey === gm.key;
+        const nested = container !== "free";
+        const instanceKey = `${gm.key}@${container}`;
 
         return (
           <div
-            id={`theme-group-${gm.key}`}
-            key={gm.key}
+            data-tag-key={gm.key}
+            data-category-id={nested ? container : undefined}
+            key={instanceKey}
             className="absolute rounded-2xl border-2"
             style={{
               left: pos.x,
@@ -544,7 +595,7 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
             <div
               className="flex items-center gap-2 px-4 rounded-t-2xl cursor-grab active:cursor-grabbing"
               style={{ height: GROUP_HEADER_H, backgroundColor: colors.border + "55" }}
-              onMouseDown={(e) => handleGroupHeaderMouseDown(e, gm.key, pos)}
+              onMouseDown={(e) => handleGroupHeaderMouseDown(e, gm.key, container, pos)}
             >
               <svg className="w-3 h-3 flex-shrink-0 opacity-50" viewBox="0 0 12 12" fill="none" style={{ color: colors.label }}>
                 <circle cx="3.5" cy="3.5" r="1.2" fill="currentColor" />
@@ -622,7 +673,8 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
             </div>
           </div>
         );
-      })}
+        });
+      })()}
 
       {Object.entries(freeUnits).map(([unitKey, pos]) => {
         const unit = unitMap.get(unitKey);
@@ -675,6 +727,48 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
           </div>
         );
       })()}
+
+      {contextMenu && (
+        <div
+          className="bg-slate-800 text-slate-100 rounded-md shadow-xl border border-slate-600 text-xs"
+          style={{
+            position: "fixed",
+            left: contextMenu.x,
+            top: contextMenu.y,
+            zIndex: 10000,
+            minWidth: 200,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-slate-700"
+            onClick={() => {
+              handleDuplicateCategoryRef(contextMenu.catId);
+              setContextMenu(null);
+            }}
+          >
+            Duplicate (linked themes)
+          </button>
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-slate-700"
+            onClick={() => {
+              handleEditCategory(contextMenu.catId);
+              setContextMenu(null);
+            }}
+          >
+            Edit category…
+          </button>
+          <button
+            className="block w-full text-left px-3 py-2 hover:bg-slate-700 text-red-300"
+            onClick={() => {
+              handleDeleteCategory(contextMenu.catId);
+              setContextMenu(null);
+            }}
+          >
+            Delete category
+          </button>
+        </div>
+      )}
     </div>
   );
 };
