@@ -39,7 +39,12 @@ export interface UseThemeDragResult {
   dropTarget: GroupKey | null;
   categoryDropTarget: number | null;
   handleUnitMouseDown: (e: React.MouseEvent, unitKey: string, fromGroup: GroupKey | null) => void;
-  handleGroupHeaderMouseDown: (e: React.MouseEvent, groupKey: GroupKey, seedPos?: { x: number; y: number }) => void;
+  handleGroupHeaderMouseDown: (
+    e: React.MouseEvent,
+    groupKey: GroupKey,
+    fromContainer: number | "free",
+    seedPos?: { x: number; y: number }
+  ) => void;
   handleCategoryHeaderMouseDown: (e: React.MouseEvent, categoryId: number) => void;
   handleRemoveFromGroup: (e: React.MouseEvent, unitKey: string, groupKey: GroupKey) => void;
 }
@@ -68,6 +73,7 @@ export function useThemeDrag({
   const draggingUnitRef = useRef<{ unitKey: string; fromGroup: GroupKey | null } | null>(null);
   const draggingGroupRef = useRef<{
     groupKey: GroupKey;
+    fromContainer: number | "free";
     originX: number;
     originY: number;
     startMouseX: number;
@@ -91,12 +97,12 @@ export function useThemeDrag({
   useEffect(() => { categoriesRef.current = categories; }, [categories]);
 
   const findDropTarget = useCallback((clientX: number, clientY: number): GroupKey | null => {
-    for (const gm of groupMetasRef.current) {
-      const el = document.getElementById(`theme-group-${gm.key}`);
-      if (!el) continue;
+    // Tags can render in multiple instances (free + per-category). Hit-test all.
+    const els = document.querySelectorAll<HTMLElement>("[data-tag-key]");
+    for (const el of Array.from(els)) {
       const rect = el.getBoundingClientRect();
       if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
-        return gm.key;
+        return el.dataset.tagKey || null;
       }
     }
     return null;
@@ -122,7 +128,9 @@ export function useThemeDrag({
       let idx = 0;
       for (const tagId of cat.tagIds) {
         if (tagId === draggedTagId) continue;
-        const el = document.getElementById(`theme-group-tag-${tagId}`);
+        const el = document.querySelector<HTMLElement>(
+          `[data-tag-key="tag-${tagId}"][data-category-id="${categoryId}"]`
+        );
         if (!el) { idx++; continue; }
         const rect = el.getBoundingClientRect();
         const mid = rect.top + rect.height / 2;
@@ -209,42 +217,42 @@ export function useThemeDrag({
       }
 
       if (draggingGroupRef.current) {
-        const { groupKey } = draggingGroupRef.current;
+        const { groupKey, fromContainer } = draggingGroupRef.current;
         const tagIdNum = Number(groupKey.replace(/^tag-/, ""));
         const targetCatId = findCategoryDropTarget(e.clientX, e.clientY);
-        const prevCat = categoriesRef.current.find((c) => c.tagIds.includes(tagIdNum));
-        const prevCatId = prevCat?.id ?? null;
 
         const affected: { categoryId: number; tagIds: number[] }[] = [];
-        const noChange =
-          targetCatId === prevCatId &&
-          (targetCatId == null ||
-            // same-category drop: still recompute index — only "no change" if order would be identical
-            false);
+        let removedFromCat: ThemeCategory | null = null;
+        let updatedTargetCat: ThemeCategory | null = null;
 
-        if (!noChange) {
-          // Compute new tagIds for affected categories
-          let removedFromPrev: ThemeCategory | null = null;
-          let updatedTarget: ThemeCategory | null = null;
+        // Determine if anything actually changes
+        const sameContainer = fromContainer === (targetCatId ?? "free");
 
+        if (!sameContainer || (targetCatId != null && fromContainer === targetCatId)) {
           setCategoriesLocal((prev) => {
-            // First pass: remove dragged tag from any category
-            let next = prev.map((c) => {
-              if (!c.tagIds.includes(tagIdNum)) return c;
-              const filtered = { ...c, tagIds: c.tagIds.filter((t) => t !== tagIdNum) };
-              if (c.id === prevCatId) removedFromPrev = filtered;
-              return filtered;
-            });
+            let next = prev;
 
-            // Second pass: insert into target at computed index (if there is a target)
+            // Remove this specific instance from its source category (if from a category)
+            if (fromContainer !== "free") {
+              next = next.map((c) => {
+                if (c.id !== fromContainer) return c;
+                const filtered = { ...c, tagIds: c.tagIds.filter((t) => t !== tagIdNum) };
+                removedFromCat = filtered;
+                return filtered;
+              });
+            }
+
+            // Insert into target category at the cursor-derived index
             if (targetCatId != null) {
               next = next.map((c) => {
                 if (c.id !== targetCatId) return c;
+                // Avoid duplicate within the same category
+                const without = c.tagIds.filter((t) => t !== tagIdNum);
                 const insertIdx = computeInsertIndex(targetCatId, tagIdNum, e.clientY);
-                const tagIds = [...c.tagIds];
+                const tagIds = [...without];
                 tagIds.splice(insertIdx, 0, tagIdNum);
                 const updated = { ...c, tagIds };
-                updatedTarget = updated;
+                updatedTargetCat = updated;
                 return updated;
               });
             }
@@ -252,11 +260,21 @@ export function useThemeDrag({
             return next;
           });
 
-          if (prevCatId != null && prevCatId !== targetCatId && removedFromPrev) {
-            affected.push({ categoryId: prevCatId, tagIds: (removedFromPrev as ThemeCategory).tagIds });
+          if (
+            fromContainer !== "free" &&
+            fromContainer !== targetCatId &&
+            removedFromCat
+          ) {
+            affected.push({
+              categoryId: fromContainer,
+              tagIds: (removedFromCat as ThemeCategory).tagIds,
+            });
           }
-          if (targetCatId != null && updatedTarget) {
-            affected.push({ categoryId: targetCatId, tagIds: (updatedTarget as ThemeCategory).tagIds });
+          if (targetCatId != null && updatedTargetCat) {
+            affected.push({
+              categoryId: targetCatId,
+              tagIds: (updatedTargetCat as ThemeCategory).tagIds,
+            });
           }
           if (affected.length > 0) onTagNestingCommit(affected);
         }
@@ -307,7 +325,12 @@ export function useThemeDrag({
   );
 
   const handleGroupHeaderMouseDown = useCallback(
-    (e: React.MouseEvent, groupKey: GroupKey, seedPos?: { x: number; y: number }) => {
+    (
+      e: React.MouseEvent,
+      groupKey: GroupKey,
+      fromContainer: number | "free",
+      seedPos?: { x: number; y: number }
+    ) => {
       e.preventDefault();
       e.stopPropagation();
       const pos = seedPos ?? groupPositionsRef.current[groupKey];
@@ -317,6 +340,7 @@ export function useThemeDrag({
       }
       draggingGroupRef.current = {
         groupKey,
+        fromContainer,
         originX: pos.x,
         originY: pos.y,
         startMouseX: e.clientX,

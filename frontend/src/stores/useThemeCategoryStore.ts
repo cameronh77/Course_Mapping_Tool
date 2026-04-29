@@ -17,6 +17,8 @@ interface ThemeCategoryState {
     patch: Partial<Pick<ThemeCategory, "name" | "indexLabel" | "position" | "tagIds">>
   ) => Promise<void>;
   deleteCategory: (id: number) => Promise<void>;
+  /** Create a new category that references the same tagIds — edits to those tags propagate. */
+  duplicateCategoryReference: (id: number, position: { x: number; y: number }) => Promise<ThemeCategory | null>;
   /** Update local state only (used for live drag); backend updated on commit. */
   setLocal: (updater: (prev: ThemeCategory[]) => ThemeCategory[]) => void;
 }
@@ -66,6 +68,34 @@ export const useThemeCategoryStore = create<ThemeCategoryState>((set, get) => ({
       await axiosInstance.delete(`/theme-category/${id}`);
     } catch (err) {
       console.error("Failed to delete theme category", err);
+    }
+  },
+
+  duplicateCategoryReference: async (id, position) => {
+    const source = get().categories.find((c) => c.id === id);
+    if (!source) return null;
+    try {
+      const createRes = await axiosInstance.post(`/theme-category/create`, {
+        courseId: source.courseId,
+        name: `${source.name} (copy)`,
+        indexLabel: source.indexLabel,
+        position,
+      });
+      const created: ThemeCategory = createRes.data;
+      // Attach same tagIds — shared references, not duplicated tags
+      if (source.tagIds.length > 0) {
+        const updateRes = await axiosInstance.put(`/theme-category/${created.id}`, {
+          tagIds: source.tagIds,
+        });
+        const updated: ThemeCategory = updateRes.data;
+        set((state) => ({ categories: [...state.categories, updated] }));
+        return updated;
+      }
+      set((state) => ({ categories: [...state.categories, created] }));
+      return created;
+    } catch (err) {
+      console.error("Failed to duplicate theme category", err);
+      return null;
     }
   },
 
