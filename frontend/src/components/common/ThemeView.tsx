@@ -204,45 +204,72 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
     }
   };
 
-  const handleEditTag = async (tagId: number) => {
-    const newName = prompt("Enter new theme name:");
-    if (!newName || newName.trim().length === 0) return;
+  const [themeModal, setThemeModal] = useState<{ tagId: number; initialName: string } | null>(null);
+
+  const handleEditTag = (tagId: number) => {
+    const tag = existingTags.find((t) => t.tagId === tagId);
+    if (!tag) return;
+    setThemeModal({ tagId, initialName: tag.tagName });
+  };
+
+  const submitThemeModal = async (name: string) => {
+    if (!themeModal) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
     try {
-      await updateTagInStore(tagId, newName.trim());
+      await updateTagInStore(themeModal.tagId, trimmed);
     } catch (err) {
       console.error("Failed to update tag", err);
     }
+    setThemeModal(null);
   };
 
-  // Category CRUD (backend-persisted)
-  const handleAddCategory = async () => {
-    const name = prompt("Category name (e.g. Specialist Core):");
-    if (!name || name.trim().length === 0) return;
-    const indexLabel = prompt("Index label (e.g. 1, 2, 3):", String(categories.length + 1)) ?? String(categories.length + 1);
-    const baseY =
-      categories.reduce(
-        (max, c) => Math.max(max, c.position.y + getCategoryHeight(c.tagIds.map((t) => groupUnits[`tag-${t}`]?.length || 0))),
-        CANVAS_PAD
-      ) + GROUP_ROW_GAP;
-    await createCategoryRemote({
-      courseId,
-      name: name.trim(),
-      indexLabel: indexLabel.trim() || String(categories.length + 1),
-      position: { x: CANVAS_PAD, y: baseY },
-    });
-  };
+  // Category CRUD (backend-persisted) — uses a shared modal for name + index
+  const [categoryModal, setCategoryModal] = useState<
+    | { mode: "add" }
+    | { mode: "edit"; catId: number; initialName: string; initialIndex: string }
+    | null
+  >(null);
 
-  const handleEditCategory = async (catId: number) => {
+  const handleAddCategory = () => setCategoryModal({ mode: "add" });
+
+  const handleEditCategory = (catId: number) => {
     const cat = categories.find((c) => c.id === catId);
     if (!cat) return;
-    const newName = prompt("Category name:", cat.name);
-    if (newName === null) return;
-    const newIndex = prompt("Index label:", cat.indexLabel);
-    if (newIndex === null) return;
-    await updateCategoryRemote(catId, {
-      name: newName.trim() || cat.name,
-      indexLabel: newIndex.trim() || cat.indexLabel,
+    setCategoryModal({
+      mode: "edit",
+      catId,
+      initialName: cat.name,
+      initialIndex: cat.indexLabel,
     });
+  };
+
+  const submitCategoryModal = async (name: string, indexLabel: string) => {
+    if (!categoryModal) return;
+    const trimmedName = name.trim();
+    const trimmedIndex = indexLabel.trim();
+    if (categoryModal.mode === "add") {
+      if (!trimmedName) return;
+      const baseY =
+        categories.reduce(
+          (max, c) => Math.max(max, c.position.y + getCategoryHeight(c.tagIds.map((t) => groupUnits[`tag-${t}`]?.length || 0))),
+          CANVAS_PAD
+        ) + GROUP_ROW_GAP;
+      await createCategoryRemote({
+        courseId,
+        name: trimmedName,
+        indexLabel: trimmedIndex || String(categories.length + 1),
+        position: { x: CANVAS_PAD, y: baseY },
+      });
+    } else {
+      const cat = categories.find((c) => c.id === categoryModal.catId);
+      if (!cat) return;
+      await updateCategoryRemote(categoryModal.catId, {
+        name: trimmedName || cat.name,
+        indexLabel: trimmedIndex || cat.indexLabel,
+      });
+    }
+    setCategoryModal(null);
   };
 
   const handleDeleteCategory = async (catId: number) => {
@@ -769,6 +796,165 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
           </button>
         </div>
       )}
+
+      {categoryModal && (
+        <CategoryModal
+          title={categoryModal.mode === "add" ? "Add category" : "Edit category"}
+          initialName={categoryModal.mode === "edit" ? categoryModal.initialName : ""}
+          initialIndex={
+            categoryModal.mode === "edit"
+              ? categoryModal.initialIndex
+              : String(categories.length + 1)
+          }
+          onCancel={() => setCategoryModal(null)}
+          onSubmit={submitCategoryModal}
+        />
+      )}
+
+      {themeModal && (
+        <ThemeModal
+          initialName={themeModal.initialName}
+          onCancel={() => setThemeModal(null)}
+          onSubmit={submitThemeModal}
+        />
+      )}
+    </div>
+  );
+};
+
+interface CategoryModalProps {
+  title: string;
+  initialName: string;
+  initialIndex: string;
+  onCancel: () => void;
+  onSubmit: (name: string, indexLabel: string) => void;
+}
+
+const CategoryModal: React.FC<CategoryModalProps> = ({
+  title,
+  initialName,
+  initialIndex,
+  onCancel,
+  onSubmit,
+}) => {
+  const [name, setName] = useState(initialName);
+  const [indexLabel, setIndexLabel] = useState(initialIndex);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSubmit(name, indexLabel);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-black/50"
+      style={{ zIndex: 10001 }}
+      onClick={onCancel}
+    >
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-slate-800 text-slate-100 rounded-lg shadow-2xl border border-slate-600 p-5 w-80"
+      >
+        <h2 className="text-base font-semibold mb-4">{title}</h2>
+        <label className="block text-xs text-slate-300 mb-1" htmlFor="cat-name">
+          Name
+        </label>
+        <input
+          id="cat-name"
+          autoFocus
+          className="w-full mb-3 px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Specialist Core"
+        />
+        <label className="block text-xs text-slate-300 mb-1" htmlFor="cat-index">
+          Index label
+        </label>
+        <input
+          id="cat-index"
+          className="w-full mb-4 px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
+          value={indexLabel}
+          onChange={(e) => setIndexLabel(e.target.value)}
+          placeholder="e.g. 1"
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            className="px-3 py-1.5 text-xs rounded bg-slate-700 hover:bg-slate-600"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50"
+            disabled={!name.trim()}
+          >
+            Save
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+interface ThemeModalProps {
+  initialName: string;
+  onCancel: () => void;
+  onSubmit: (name: string) => void;
+}
+
+const ThemeModal: React.FC<ThemeModalProps> = ({ initialName, onCancel, onSubmit }) => {
+  const [name, setName] = useState(initialName);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSubmit(name);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-black/50"
+      style={{ zIndex: 10001 }}
+      onClick={onCancel}
+    >
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-slate-800 text-slate-100 rounded-lg shadow-2xl border border-slate-600 p-5 w-80"
+      >
+        <h2 className="text-base font-semibold mb-4">Edit theme</h2>
+        <label className="block text-xs text-slate-300 mb-1" htmlFor="theme-name">
+          Name
+        </label>
+        <input
+          id="theme-name"
+          autoFocus
+          className="w-full mb-4 px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Theme name"
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            className="px-3 py-1.5 text-xs rounded bg-slate-700 hover:bg-slate-600"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50"
+            disabled={!name.trim()}
+          >
+            Save
+          </button>
+        </div>
+      </form>
     </div>
   );
 };
