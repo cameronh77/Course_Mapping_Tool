@@ -11,8 +11,14 @@ type CourseUnitCanvasEntry = {
   elective?: boolean;
 };
 
+type UnitMappingEntry = {
+  tags?: Array<{ tagId?: number | string }>;
+  clos?: Array<{ cloId?: number | string }>;
+};
+
 type SaveCanvasBody = {
   units?: CourseUnitCanvasEntry[];
+  unitMappings?: Record<string, UnitMappingEntry>;
 };
 
 const toFiniteNumber = (value: unknown, fallback: number): number => {
@@ -99,7 +105,7 @@ export const deleteCourseUnit = async (req: Request, res: Response) => {
 
 export const saveCanvasState = async (req: Request, res: Response) => {
   const { courseId } = req.params;
-  const { units } = req.body as SaveCanvasBody;
+  const { units, unitMappings } = req.body as SaveCanvasBody;
 
   try {
     if (!courseId) {
@@ -129,6 +135,24 @@ export const saveCanvasState = async (req: Request, res: Response) => {
       color: unit.color || null,
     }));
 
+    const unitIdsOnCanvas = Array.from(normalizedUnits.keys());
+
+    // Build desired (unitId, tagId) set from the payload, scoped to units on the canvas.
+    const desiredTagPairs: Array<{ unitId: string; tagId: number }> = [];
+    if (unitMappings && typeof unitMappings === "object") {
+      for (const unitId of unitIdsOnCanvas) {
+        const mapping = unitMappings[unitId];
+        const tags = Array.isArray(mapping?.tags) ? mapping!.tags : [];
+        const seen = new Set<number>();
+        for (const tag of tags) {
+          const tagId = typeof tag?.tagId === "number" ? tag.tagId : Number(tag?.tagId);
+          if (!Number.isFinite(tagId) || seen.has(tagId)) continue;
+          seen.add(tagId);
+          desiredTagPairs.push({ unitId, tagId });
+        }
+      }
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.courseUnit.deleteMany({
         where: { courseId },
@@ -139,6 +163,34 @@ export const saveCanvasState = async (req: Request, res: Response) => {
           data: courseUnitsData,
           skipDuplicates: false,
         });
+      }
+
+      // Reconcile tag associations only for units present in the payload.
+      // Tags for units not on the canvas are left untouched.
+      if (unitIdsOnCanvas.length > 0) {
+        await tx.courseUnitTags.deleteMany({
+          where: { courseId, unitId: { in: unitIdsOnCanvas } },
+        });
+
+        if (desiredTagPairs.length > 0) {
+          // Drop stale tagIds (e.g. tags deleted elsewhere) so a single bad id
+          // doesn't fail the whole save. FK violation would otherwise roll back
+          // the entire canvas write.
+          const referencedTagIds = Array.from(new Set(desiredTagPairs.map((p) => p.tagId)));
+          const existingTags = await tx.tag.findMany({
+            where: { courseId, tagId: { in: referencedTagIds } },
+            select: { tagId: true },
+          });
+          const validTagIds = new Set(existingTags.map((t) => t.tagId));
+          const validPairs = desiredTagPairs.filter((p) => validTagIds.has(p.tagId));
+
+          if (validPairs.length > 0) {
+            await tx.courseUnitTags.createMany({
+              data: validPairs.map(({ unitId, tagId }) => ({ courseId, unitId, tagId })),
+              skipDuplicates: true,
+            });
+          }
+        }
       }
     });
 
