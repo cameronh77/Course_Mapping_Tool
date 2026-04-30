@@ -18,6 +18,7 @@ interface UnitBoxProps {
   existingTags?: Tag[];
   isBlocked?: boolean;
   isHighlighted?: boolean;
+  pathwayColor?: string;
   
   // Event Handlers
   onMouseDown: (e: React.MouseEvent, id: number) => void;
@@ -56,6 +57,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   existingTags = [],
   isBlocked = false,
   isHighlighted = false,
+  pathwayColor,
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
   const [hoveredCLODesc, setHoveredCLODesc] = useState<string | null>(null);
@@ -81,7 +83,10 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
         }
       }}
     >
-      <div className={`border bg-white rounded flex flex-col w-full h-full overflow-hidden ${isBlocked ? `border-2 border-red-500 ring-1 ring-red-800` : isHighlighted ? `border-2 border-amber-400 ring-2 ring-amber-300` : selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""}`}>
+      <div
+      className={`border bg-white rounded flex flex-col w-full h-full overflow-hidden ${isBlocked ? `border-2 border-red-500 ring-1 ring-red-800` : isHighlighted ? `border-2 border-amber-400 ring-2 ring-amber-300` : selectedUnits.includes(unit.unitId!) ? `border-4 border-blue-400 ring-4 ring-blue-300` : `border-gray-300`} ${connectionMode && connectionSource === unit.unitId ? "ring-4 ring-purple-400" : ""}`}
+      style={pathwayColor ? { borderLeftColor: pathwayColor, borderLeftWidth: 4 } : undefined}
+    >
         
         {/* Draggable Header */}
         <div 

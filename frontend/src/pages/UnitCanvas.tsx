@@ -12,6 +12,7 @@ import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
 import { useTagStore } from "../stores/useTagStore";
+import { usePathwayStore } from "../stores/usePathwayStore";
 import { useNavigate } from "react-router-dom";
 import type {
   Unit,
@@ -58,7 +59,7 @@ export const CanvasPage: React.FC = () => {
 
   // UX State - View Mode & Sidebar Navigation Tab
   const [viewMode, setViewMode] = useState<'grid' | 'theme'>('grid');
-  const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
+  const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping' | 'pathways'>('units');
 
   // State for editing
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -89,6 +90,7 @@ export const CanvasPage: React.FC = () => {
   const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
+  const { pathways, loadPathways } = usePathwayStore();
 
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
@@ -150,6 +152,12 @@ export const CanvasPage: React.FC = () => {
       }
     };
     loadUnits();
+  }, [currentCourse?.courseId]);
+
+  useEffect(() => {
+    if (currentCourse?.courseId) {
+      loadPathways(currentCourse.courseId);
+    }
   }, [currentCourse?.courseId]);
 
   useEffect(() => {
@@ -934,6 +942,13 @@ export const CanvasPage: React.FC = () => {
     Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
   const semPerYear =
     Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+
+  // Build a map of unitId -> pathway color for UnitBox indicators
+  const unitPathwayColorMap = Object.fromEntries(
+    pathways.flatMap((p) =>
+      p.courseUnits.map((cu) => [cu.unitId, p.color ?? "#6366F1"])
+    )
+  );
   const innerWidth = Math.max(1200, START_X + yearsCount * COL_WIDTH + 100);
   const innerHeight = Math.max(
     800,
@@ -980,6 +995,7 @@ export const CanvasPage: React.FC = () => {
           selectedRelationType={selectedRelationType}
           setSelectedRelationType={setSelectedRelationType}
           getCLOColor={getCLOColor}
+          unitBoxes={unitBoxes}
         />
       </div>
 
@@ -1005,6 +1021,7 @@ export const CanvasPage: React.FC = () => {
           <GridBackground
             expectedDuration={yearsCount}
             numberTeachingPeriods={semPerYear}
+            pathways={pathways}
           />
 
           {unitBoxes
@@ -1074,6 +1091,7 @@ export const CanvasPage: React.FC = () => {
               existingTags={existingTags || []}
               isBlocked={blockedUnitId !== null && draggedUnit === unit.id}
               isHighlighted={ghostHoverId === unit.id}
+              pathwayColor={unit.unitId ? unitPathwayColorMap[unit.unitId] : undefined}
             />
           ))}
           

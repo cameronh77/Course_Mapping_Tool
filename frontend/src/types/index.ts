@@ -191,3 +191,39 @@ export interface TARelationship {
   targetId: number;
   unitId: string;
 }
+
+// ─── Pathway / Entry Requirements ────────────────────────────────────────────
+
+export type RequirementType =
+  | "COMPLETE_UNIT"
+  | "MIN_CREDITS"
+  | "COMPLETE_N_FROM"
+  | "CUSTOM";
+
+export interface PathwayReqUnit {
+  reqId: number;
+  unitId: string;
+  unit: Unit;
+}
+
+export interface PathwayRequirement {
+  reqId: number;
+  sId: number;
+  type: RequirementType;
+  label: string;
+  targetValue: string | null;
+  logicGroup: string | null;
+  unitOptions: PathwayReqUnit[];
+}
+
+export interface Pathway {
+  sId: number;
+  sName: string;
+  courseId: string;
+  color: string | null;
+  entryYear: number | null;
+  entrySemester: number | null;
+  description: string | null;
+  requirements: PathwayRequirement[];
+  courseUnits: { courseId: string; unitId: string }[];
+}

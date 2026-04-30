@@ -4,11 +4,12 @@ import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
 import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
 import { getTagColor } from "../common/themeViewConstants";
-import type { Tag, Unit } from "../../types";
+import { PathwaysPanel } from "../common/PathwaysPanel";
+import type { Tag, Unit, UnitBox as UnitBoxType } from "../../types";
 
 interface CanvasSidebarProps {
-  sidebarTab: 'units' | 'connections' | 'mapping';
-  setSidebarTab: (tab: 'units' | 'connections' | 'mapping') => void;
+  sidebarTab: 'units' | 'connections' | 'mapping' | 'pathways';
+  setSidebarTab: (tab: 'units' | 'connections' | 'mapping' | 'pathways') => void;
   handleSaveCanvas: () => void;
   setShowCreateForm: (show: boolean) => void;
   searchTerm: string;
@@ -26,6 +27,7 @@ interface CanvasSidebarProps {
   selectedTagFilters?: number[];
   onToggleTagFilter?: (tagId: number) => void;
   onClearTagFilters?: () => void;
+  unitBoxes?: UnitBoxType[];
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
@@ -48,6 +50,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   selectedTagFilters = [],
   onToggleTagFilter = () => {},
   onClearTagFilters = () => {},
+  unitBoxes = [],
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore() as any;
@@ -163,23 +166,29 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
 
       {/* Phase Navigation Tabs */}
       <div className="flex w-full mb-5 bg-gray-100 rounded-lg p-1 border border-gray-200 shadow-inner">
-        <button 
-          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${sidebarTab === 'units' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-800'}`} 
+        <button
+          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${sidebarTab === 'units' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-800'}`}
           onClick={() => { setSidebarTab('units'); setConnectionMode(false); }}
         >
           📚 Units
         </button>
-        <button 
-          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${sidebarTab === 'connections' ? 'bg-white shadow-sm text-red-500' : 'text-gray-500 hover:text-gray-800'}`} 
+        <button
+          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${sidebarTab === 'connections' ? 'bg-white shadow-sm text-red-500' : 'text-gray-500 hover:text-gray-800'}`}
           onClick={() => setSidebarTab('connections')}
         >
           🔗 Links
         </button>
-        <button 
-          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${sidebarTab === 'mapping' ? 'bg-white shadow-sm text-purple-600' : 'text-gray-500 hover:text-gray-800'}`} 
+        <button
+          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${sidebarTab === 'mapping' ? 'bg-white shadow-sm text-purple-600' : 'text-gray-500 hover:text-gray-800'}`}
           onClick={() => { setSidebarTab('mapping'); setConnectionMode(false); }}
         >
           🎯 Mapping
+        </button>
+        <button
+          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${sidebarTab === 'pathways' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-800'}`}
+          onClick={() => { setSidebarTab('pathways'); setConnectionMode(false); }}
+        >
+          🛤 Paths
         </button>
       </div>
 
@@ -240,6 +249,25 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Phase 4: PATHWAYS */}
+        {sidebarTab === 'pathways' && (
+          <div className="animate-fade-in">
+            <h2 className="text-sm font-bold mb-3 text-indigo-800 border-b border-indigo-100 pb-1">
+              Entry Pathways
+            </h2>
+            {currentCourse?.courseId ? (
+              <PathwaysPanel
+                courseId={currentCourse.courseId}
+                expectedDuration={currentCourse.expectedDuration ?? 3}
+                numberTeachingPeriods={currentCourse.numberTeachingPeriods ?? 2}
+                unitBoxes={unitBoxes}
+              />
+            ) : (
+              <p className="text-xs text-gray-400 italic">No course selected.</p>
+            )}
           </div>
         )}
 
