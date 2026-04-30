@@ -70,7 +70,9 @@ const Navbar = () => {
               {isInternal && currentUnit?.unitId && (
                 <>
                   <ChevronRight className="size-3 shrink-0" />
-                  <span className="text-white truncate">{currentUnit.unitId}</span>
+                  <span className="text-white truncate">
+                    {currentUnit.unitId}
+                  </span>
                 </>
               )}
             </nav>

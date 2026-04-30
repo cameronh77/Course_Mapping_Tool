@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useLocation } from "react-router-dom";
 //import { useAuthStore } from "./store/useAuthStore"
 //import { Loader } from "lucide-react"
 import { HomePage } from "./pages/HomePage";
@@ -11,10 +11,12 @@ import UnitInternalCanvas from "./pages/UnitInternalCanvas";
 
 const App = () => {
   const { currentCourse } = useCourseStore();
+  const location = useLocation();
+  const isHome = location.pathname === "/";
 
   return (
     <div>
-      {currentCourse && <Navbar />}
+      {currentCourse && !isHome && <Navbar />}
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/UnitCanvas" element={<CanvasPage />} />
