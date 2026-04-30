@@ -1,17 +1,6 @@
 import { useEffect, useState } from "react";
 import { useCourseStore } from "../stores/useCourseStore";
-import {
-  Eye,
-  EyeOff,
-  Loader2,
-  Lock,
-  Mail,
-  MessageSquare,
-  Trash2,
-  User,
-} from "lucide-react";
-import { Link } from "react-router-dom";
-import Navbar from "../components/navbar";
+import { Trash2 } from "lucide-react";
 import { useCLOStore } from "../stores/useCLOStore";
 import CLOForm from "../components/common/CLOForm";
 
@@ -29,6 +18,14 @@ export interface CourseLearningOutcome {
   courseId: string | undefined;
 }
 
+const inputClass =
+  "w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm text-black focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent";
+
+const labelClass = "text-sm font-medium text-gray-700 mb-1";
+
+const btnOutline =
+  "bg-transparent hover:bg-blue-500 text-blue-600 font-semibold hover:text-white py-2 px-6 border border-blue-500 hover:border-transparent rounded-lg transition-colors text-sm";
+
 export const CourseEdit = () => {
   const [courseData, setCourseData] = useState({
     courseId: "",
@@ -41,17 +38,8 @@ export const CourseEdit = () => {
   const [addingCLO, setAddingCLO] = useState<boolean>();
   const [cloEdit, setCLOEdit] = useState<CourseLearningOutcome | null>(null);
 
-  const {
-    currentCourse,
-    existingCourses,
-    createCourse,
-    viewCourses,
-    setCurrentCourse,
-    updateCourse,
-  } = useCourseStore();
-
-  const { currentCLOs, createCLO, viewCLOsByCourse, updateCLO, deleteCLO } =
-    useCLOStore();
+  const { currentCourse, existingCourses, createCourse, viewCourses, setCurrentCourse, updateCourse } = useCourseStore();
+  const { currentCLOs, createCLO, viewCLOsByCourse, updateCLO, deleteCLO } = useCLOStore();
 
   useEffect(() => {
     setCourseData(currentCourse);
@@ -64,10 +52,9 @@ export const CourseEdit = () => {
 
   useEffect(() => {
     setLoadedCLOs(currentCLOs);
-    console.log(currentCLOs);
   }, [currentCLOs]);
 
-  const handleUpdate = (e) => {
+  const handleUpdate = () => {
     updateCourse(courseData);
     setLoadedCLOs(currentCLOs);
   };
@@ -75,9 +62,7 @@ export const CourseEdit = () => {
   const handleAddClo = (clo: CourseLearningOutcome) => {
     const addAndRefresh = async (clo: CourseLearningOutcome) => {
       await createCLO(clo);
-      //await viewCLOsByCourse(courseData.courseId);
     };
-    console.log("Adding CLO", clo);
     addAndRefresh(clo);
     setCLOEdit(null);
   };
@@ -85,164 +70,129 @@ export const CourseEdit = () => {
   const handleUpdateClo = (clo: CourseLearningOutcome) => {
     const updateAndRefresh = async (clo: CourseLearningOutcome) => {
       await updateCLO(clo);
-      //await viewCLOsByCourse(courseData.courseId);
     };
-    console.log("course data", courseData);
-    console.log("Updating CLO", clo);
     updateAndRefresh(clo);
     setCLOEdit(null);
   };
 
   const handleDeleteClo = (clo: CourseLearningOutcome) => {
-    const deleteAndRefresh = async (clo: CourseLearningOutcome) => {
-      await deleteCLO(clo);
-    };
-    console.log("deleting clo", clo);
-    deleteAndRefresh(clo);
+    deleteCLO(clo);
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2">
-      <div className="flex flex-col justify-center items-center p-6 sm:p-12">
-        <div className="w-full max-w-md space-y-8">
-          <div className="text center mb-8">
-            <div className="flex flex-col items-center gap-2 group">
-              <h1 className="text-2xl font-bold mt-2">
-                {courseData.courseId}:{courseData.courseName}
-              </h1>
-            </div>
+    <div className="min-h-screen bg-gray-100">
+      <div className="max-w-5xl mx-auto px-6 py-10 grid lg:grid-cols-2 gap-8">
+
+        {/* Left — Course Details */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 flex flex-col gap-6">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">
+              {courseData.courseId}{courseData.courseName ? `: ${courseData.courseName}` : ""}
+            </h1>
+            <p className="text-sm text-gray-500 mt-1">Edit course details</p>
           </div>
 
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Course Description</span>
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="size-5 text-base-content/40" />
-              </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col">
+              <label className={labelClass}>Course Description</label>
               <input
                 type="text"
-                className={`input input-bordered w-full pl-10`}
+                className={inputClass}
                 placeholder="A course about accounting."
                 value={courseData.courseDesc}
-                onChange={(e) =>
-                  setCourseData({ ...courseData, courseDesc: e.target.value })
-                }
+                onChange={(e) => setCourseData({ ...courseData, courseDesc: e.target.value })}
               />
             </div>
-          </div>
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">Expected Duration</span>
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="size-5 text-base-content/40" />
-              </div>
+
+            <div className="flex flex-col">
+              <label className={labelClass}>Expected Duration</label>
+              <p className="text-xs text-gray-400 mb-1">Total length of the course in years</p>
               <input
                 type="text"
-                className={`input input-bordered w-full pl-10`}
-                placeholder="5"
+                className={inputClass}
+                placeholder="e.g. 3 years"
                 value={courseData.expectedDuration}
-                onChange={(e) =>
-                  setCourseData({
-                    ...courseData,
-                    expectedDuration: e.target.value,
-                  })
-                }
+                onChange={(e) => setCourseData({ ...courseData, expectedDuration: e.target.value })}
               />
             </div>
-          </div>
-          <div className="form-control">
-            <label className="label">
-              <span className="label-text font-medium">
-                Number of Teaching Periods
-              </span>
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="size-5 text-base-content/40" />
-              </div>
+
+            <div className="flex flex-col">
+              <label className={labelClass}>Teaching Periods per Year</label>
+              <p className="text-xs text-gray-400 mb-1">How many teaching periods occur in a single calendar year</p>
               <input
                 type="text"
-                className={`input input-bordered w-full pl-10`}
-                placeholder="2"
+                className={inputClass}
+                placeholder="e.g. 2 (semesters per year)"
                 value={courseData.numberTeachingPeriods}
-                onChange={(e) =>
-                  setCourseData({
-                    ...courseData,
-                    numberTeachingPeriods: e.target.value,
-                  })
-                }
+                onChange={(e) => setCourseData({ ...courseData, numberTeachingPeriods: e.target.value })}
               />
             </div>
           </div>
 
-          <button
-            type="submit"
-            className="btn btn-primary w-full"
-            onClick={handleUpdate}
-          >
+          <button className={btnOutline} onClick={handleUpdate}>
             Save Changes
           </button>
         </div>
-      </div>
-      <div className="flex flex-col justify-center items-center p-6 sm:p-12">
-        <div className="text center mb-8">
-          <div className="flex flex-col items-center gap-2 group">
-            <h1 className="text-2xl font-bold mt-2">
-              Current Course Learning Outcomes
-            </h1>
+
+        {/* Right — Course Learning Outcomes */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 flex flex-col gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Course Learning Outcomes</h2>
+            <p className="text-sm text-gray-500 mt-1">{loadedCLOs.length} outcome{loadedCLOs.length !== 1 ? "s" : ""}</p>
           </div>
-        </div>
-        <div className="w-full max-w-md outline-solid max-h-[50vh] overflow-y-auto">
-          {loadedCLOs.map((clo) => (
-            <div className="card card-dash bg-base-100 w-96">
-              <div className="card-body">
-                <h2 className="card-title">{clo.cloId}</h2>
-                <p>{clo.cloDesc}</p>
-                <div className="card-actions justify-end">
-                  <button onClick={() => handleDeleteClo(clo)}>
-                    <Trash2 />
-                  </button>
+
+          <div className="flex flex-col gap-3 overflow-y-auto max-h-[50vh] pr-1">
+            {loadedCLOs.map((clo) => (
+              <div
+                key={clo.cloId}
+                className="flex items-start justify-between gap-3 p-4 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-mono text-gray-400 mb-0.5">CLO {clo.cloId}</p>
+                  <p className="text-sm text-gray-800 break-words">{clo.cloDesc}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
                   <button
-                    className="btn btn-primary"
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
                     onClick={() => setCLOEdit(clo)}
                   >
-                    View Outcome
+                    Edit
+                  </button>
+                  <button
+                    className="text-gray-400 hover:text-red-500 transition-colors"
+                    onClick={() => handleDeleteClo(clo)}
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-        <div className="flex flex-col justify-center items-center p-6 sm:p-12">
+            ))}
+
+            {loadedCLOs.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-8">No outcomes yet. Add one below.</p>
+            )}
+          </div>
+
           <button
-            className="btn btn-xs sm:btn-sm md:btn-md lg:btn-lg xl:btn-xl"
-            onClick={() =>
-              setCLOEdit({
-                cloDesc: "",
-                courseId: "",
-              })
-            }
+            className={btnOutline}
+            onClick={() => setCLOEdit({ cloDesc: "", courseId: "" })}
           >
-            Add Course Learning Outcome
+            + Add Learning Outcome
           </button>
         </div>
       </div>
+
+      {/* CLO Modal */}
       {cloEdit && (
-        <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full max-h-96 overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-black text-xl font-bold">
-                {!cloEdit.cloId
-                  ? "New Learning Outcome"
-                  : `Learning Outcome ${cloEdit.cloId}`}
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-bold text-gray-900">
+                {!cloEdit.cloId ? "New Learning Outcome" : `Learning Outcome ${cloEdit.cloId}`}
               </h2>
               <button
                 onClick={() => setCLOEdit(null)}
-                className="text-gray-500 hover:text-gray-700 text-xl"
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none transition-colors"
               >
                 ×
               </button>

@@ -1,2 +1,6 @@
 @import "tailwindcss";
 @plugin "daisyui";
+
+@theme {
+  --color-grey: #1e1e1e;
+}
