@@ -12,6 +12,7 @@ import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
 import { useTagStore } from "../stores/useTagStore";
+import { usePathwayStore } from "../stores/usePathwayStore";
 import { useNavigate } from "react-router-dom";
 import type {
   Unit,
@@ -90,6 +91,19 @@ export const CanvasPage: React.FC = () => {
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
 
+  const {
+    pathways,
+    activePathwayId,
+    fetchPathways,
+    setActivePathway,
+    createPathway,
+    deletePathway,
+  } = usePathwayStore();
+
+  const [showPathwayModal, setShowPathwayModal] = useState(false);
+  const [newPathwayName, setNewPathwayName] = useState("");
+  const [newPathwayType, setNewPathwayType] = useState<"MAJOR" | "MINOR" | "ENTRY_POINT">("MAJOR");
+
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
   // States for unit search
@@ -147,6 +161,7 @@ export const CanvasPage: React.FC = () => {
       if (currentCourse?.courseId) {
         await viewCourseTags(currentCourse.courseId);
         await viewUnitTagsByCourse(currentCourse.courseId);
+        await fetchPathways(currentCourse.courseId);
       }
     };
     loadUnits();
@@ -170,21 +185,25 @@ export const CanvasPage: React.FC = () => {
 
   useEffect(() => {
     const loadCanvasState = async () => {
-      if (currentCourse?.courseId) {
+      if (currentCourse?.courseId && activePathwayId !== null) {
         try {
           const response = await axiosInstance.get(
             `/course-unit/view?courseId=${currentCourse.courseId}`
           );
-          const courseUnits = response.data;
+          const allCourseUnits = response.data;
+          const courseUnits = allCourseUnits.filter(
+            (cu: any) => cu.pathwayId === activePathwayId
+          );
           const loadedUnitBoxes = courseUnits.map((cu: any) => ({
             id: Date.now() + Math.random(),
             name: cu.unit.unitName,
             unitId: cu.unitId,
+            pathwayId: cu.pathwayId,
             description: cu.unit.unitDesc,
             credits: cu.unit.credits,
             semestersOffered: cu.unit.semestersOffered,
-            x: cu.position.x,
-            y: cu.position.y,
+            x: cu.position?.x ?? 0,
+            y: cu.position?.y ?? 0,
             color: cu.color || "#3B82F6",
           }));
           setUnitBoxes(loadedUnitBoxes);
@@ -252,7 +271,7 @@ export const CanvasPage: React.FC = () => {
       }
     };
     loadCanvasState();
-  }, [currentCourse]);
+  }, [currentCourse, activePathwayId]);
 
   useEffect(() => {
     const loadCLOs = async () => {
@@ -368,8 +387,9 @@ export const CanvasPage: React.FC = () => {
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
           {
+            pathwayId: activePathwayId,
             units: unitsWithSemester,
-            unitMappings: cleanedUnitMappings
+            unitMappings: cleanedUnitMappings,
           }
         );
 
@@ -396,9 +416,11 @@ export const CanvasPage: React.FC = () => {
     y: number,
     color?: string
   ) => {
-    const unitExists = unitBoxes.some((u) => u.unitId === selectedUnit.unitId);
+    const unitExists = unitBoxes.some(
+      (u) => u.unitId === selectedUnit.unitId && u.pathwayId === activePathwayId
+    );
     if (unitExists) {
-      alert("This unit has already been added.");
+      alert("This unit has already been added to this pathway.");
       return;
     }
 
@@ -431,6 +453,7 @@ export const CanvasPage: React.FC = () => {
       id: Date.now(),
       name: selectedUnit.unitName,
       unitId: selectedUnit.unitId,
+      pathwayId: activePathwayId ?? undefined,
       description: selectedUnit.unitDesc,
       credits: selectedUnit.credits,
       semestersOffered: selectedUnit.semestersOffered,
@@ -984,8 +1007,9 @@ export const CanvasPage: React.FC = () => {
       </div>
 
       <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
-        {/* View Mode Toggle */}
+        {/* Toolbar: View Mode + Pathway Toggle */}
         <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
+          {/* View mode buttons */}
           <button
             className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
             onClick={() => setViewMode('grid')}
@@ -998,7 +1022,97 @@ export const CanvasPage: React.FC = () => {
           >
             Theme View
           </button>
+
+          {/* Divider */}
+          <div className="w-px h-5 bg-gray-200 mx-1" />
+
+          {/* Pathway tabs */}
+          <span className="text-xs text-gray-400 font-medium mr-1">Pathway:</span>
+          {pathways.map((pathway) => (
+            <button
+              key={pathway.pathwayId}
+              onClick={() => setActivePathway(pathway.pathwayId)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${
+                activePathwayId === pathway.pathwayId
+                  ? 'bg-indigo-100 text-indigo-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
+              }`}
+            >
+              {pathway.type === 'CORE' && <span className="text-[10px]">◆</span>}
+              {pathway.type === 'MAJOR' && <span className="text-[10px]">▲</span>}
+              {pathway.type === 'MINOR' && <span className="text-[10px]">●</span>}
+              {pathway.type === 'ENTRY_POINT' && <span className="text-[10px]">→</span>}
+              {pathway.name}
+              {pathway.type !== 'CORE' && (
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); deletePathway(pathway.pathwayId); }}
+                  className="ml-1 text-gray-400 hover:text-red-500 leading-none"
+                  title="Delete pathway"
+                >
+                  ×
+                </span>
+              )}
+            </button>
+          ))}
+
+          {/* Add pathway button */}
+          <button
+            onClick={() => setShowPathwayModal(true)}
+            className="px-2 py-1.5 text-xs font-bold rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-all"
+            title="Add pathway"
+          >
+            + Pathway
+          </button>
         </div>
+
+        {/* Add Pathway Modal */}
+        {showPathwayModal && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[200] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-lg shadow-2xl w-80">
+              <h3 className="text-sm font-bold text-gray-800 mb-4">Add Pathway</h3>
+              <div className="flex flex-col gap-3">
+                <input
+                  type="text"
+                  placeholder="Pathway name (e.g. Software Engineering)"
+                  value={newPathwayName}
+                  onChange={(e) => setNewPathwayName(e.target.value)}
+                  className="input input-bordered input-sm w-full"
+                />
+                <select
+                  value={newPathwayType}
+                  onChange={(e) => setNewPathwayType(e.target.value as "MAJOR" | "MINOR" | "ENTRY_POINT")}
+                  className="select select-bordered select-sm w-full"
+                >
+                  <option value="MAJOR">Major</option>
+                  <option value="MINOR">Minor</option>
+                  <option value="ENTRY_POINT">Entry Point</option>
+                </select>
+                <div className="flex gap-2 justify-end mt-1">
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => { setShowPathwayModal(false); setNewPathwayName(""); }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={!newPathwayName.trim()}
+                    onClick={async () => {
+                      if (!newPathwayName.trim() || !currentCourse?.courseId) return;
+                      const pathway = await createPathway(newPathwayName.trim(), newPathwayType, currentCourse.courseId);
+                      setActivePathway(pathway.pathwayId);
+                      setShowPathwayModal(false);
+                      setNewPathwayName("");
+                    }}
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {viewMode === 'grid' ? (
         <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
