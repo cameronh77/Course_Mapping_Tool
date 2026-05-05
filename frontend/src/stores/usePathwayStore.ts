@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import axios from "../lib/axiosConfig";
+import { axiosInstance as axios } from "../lib/axios";
 import type { Pathway } from "../types";
 
 interface PathwayState {
