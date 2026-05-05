@@ -1,3 +1,12 @@
+export type ThemeCategory = {
+  id: number;
+  name: string;
+  indexLabel: string;
+  position: { x: number; y: number };
+  tagIds: number[];
+  courseId: string;
+};
+
 export type ThemeViewStorage = {
   groupPositions: Record<string, { x: number; y: number }>;
   groupUnits: Record<string, string[]>;
