@@ -41,6 +41,15 @@ export const addCourse = async (req, res) => {
         numberTeachingPeriods: parseInt(numberTeachingPeriods),
       },
     });
+
+    await prisma.pathway.create({
+      data: {
+        name: "Core",
+        type: "CORE",
+        courseId: courseId,
+      },
+    });
+
     return res.status(201).json(newCourse);
   } catch (error) {
     console.error(error);

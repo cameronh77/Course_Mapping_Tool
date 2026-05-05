@@ -1,14 +1,14 @@
+import type { Request, Response } from "express";
 import prisma from "../../../database/prismaClient.js";
 
-export const createRelationship = async (req, res) => {
-  const { unitId, relatedId, relationshipType, courseId, sId, entryType } = req.body;
+export const createRelationship = async (req: Request, res: Response) => {
+  const { unitId, relatedId, relationshipType, courseId, pathwayId, entryType } = req.body;
 
   try {
     if (!unitId || !relatedId || !relationshipType) {
       return res.status(400).json({ message: "unitId, relatedId, and relationshipType are required" });
     }
 
-    // Check if relationship already exists
     const existingRelationship = await prisma.unitRelationship.findFirst({
       where: {
         unitId,
@@ -27,7 +27,7 @@ export const createRelationship = async (req, res) => {
         relatedId,
         relationshipType,
         courseId: courseId || null,
-        sId: sId || null,
+        pathwayId: pathwayId || null,
         entryType: entryType || 0,
       },
     });
@@ -39,14 +39,12 @@ export const createRelationship = async (req, res) => {
   }
 };
 
-export const deleteRelationship = async (req, res) => {
+export const deleteRelationship = async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
     const deletedRelationship = await prisma.unitRelationship.delete({
-      where: {
-        id: parseInt(id),
-      },
+      where: { id: parseInt(id as string) },
     });
 
     return res.status(200).json(deletedRelationship);
@@ -56,14 +54,12 @@ export const deleteRelationship = async (req, res) => {
   }
 };
 
-export const viewRelationshipsByCourse = async (req, res) => {
+export const viewRelationshipsByCourse = async (req: Request, res: Response) => {
   const { courseId } = req.query;
 
   try {
     const relationships = await prisma.unitRelationship.findMany({
-      where: {
-        courseId: courseId as string,
-      },
+      where: { courseId: courseId as string },
       include: {
         unit: true,
         related: true,
@@ -77,7 +73,7 @@ export const viewRelationshipsByCourse = async (req, res) => {
   }
 };
 
-export const viewAllRelationships = async (req, res) => {
+export const viewAllRelationships = async (_req: Request, res: Response) => {
   try {
     const relationships = await prisma.unitRelationship.findMany({
       include: {
