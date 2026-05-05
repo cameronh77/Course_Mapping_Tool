@@ -27,6 +27,13 @@ enum BloomsLevel {
   CREATE
 }
 
+enum PathwayType {
+  CORE
+  MAJOR
+  MINOR
+  ENTRY_POINT
+}
+
 model Course {
   courseId              String @id
   courseName            String
@@ -34,16 +41,27 @@ model Course {
   expectedDuration      Int //The expected duration of the course
   numberTeachingPeriods Int //How many teaching periods in a year
 
-  unitsOffered     CourseUnit[]             
-  themes           CourseTheme[]            
-  learningOutcomes CourseLearningOutcome[]  
-  specialisations  Specialisation[]         
-  UnitRelationship UnitRelationship[]       
+  unitsOffered     CourseUnit[]
+  themes           CourseTheme[]
+  learningOutcomes CourseLearningOutcome[]
+  pathways         Pathway[]
+  UnitRelationship UnitRelationship[]
 
   existingTagsUnit CourseUnitTags[]
   existingTags     Tag[]
 
   themeCategories  ThemeCategory[]
+}
+
+model Pathway {
+  pathwayId   Int          @id @default(autoincrement())
+  name        String
+  type        PathwayType
+  courseId    String
+
+  course        Course         @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
+  courseUnits   CourseUnit[]
+  relationships UnitRelationship[]
 }
 
 model Unit {
@@ -53,9 +71,9 @@ model Unit {
   credits          Int
   semestersOffered Int[]
 
-  courseUnits      CourseUnit[]           
-  themes           UnitTheme[]            
-  learningOutcomes UnitLearningOutcome[]  
+  courseUnits      CourseUnit[]
+  themes           UnitTheme[]
+  learningOutcomes UnitLearningOutcome[]
   relationships    UnitRelationship[]     @relation("UnitRelations")
   relatedTo        UnitRelationship[]     @relation("RelatedUnits")
   AssessmentULO    AssessmentULO[]
@@ -66,23 +84,22 @@ model Unit {
 }
 
 model CourseUnit {
-  course   Course @relation(fields: [courseId], references: [courseId], onDelete:Cascade)
-  courseId String
+  id        Int     @id @default(autoincrement())
+  courseId  String
+  unitId    String
+  pathwayId Int
 
-  unit   Unit   @relation(fields: [unitId], references: [unitId], onDelete:Cascade)
-  unitId String
+  semester  Int
+  year      Int
+  elective  Boolean
+  position  Json?
+  color     String?
 
-  semester          Int //The reccomended semester for the unit in the course  
-  year              Int //The reccomended year for the unit in the course
-  elective          Boolean //Whether or not the unit is an elective in the course
-  position          Json?
-  color             String?
-  Specialisation    Specialisation? @relation(fields: [specialisationSId], references: [sId])
-  specialisationSId Int?
+  course   Course   @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
+  unit     Unit     @relation(fields: [unitId], references: [unitId], onDelete: Cascade)
+  pathway  Pathway  @relation(fields: [pathwayId], references: [pathwayId], onDelete: Cascade)
 
-  
-
-  @@id([courseId, unitId])
+  @@unique([courseId, unitId, pathwayId])
 }
 
 model Tag {
@@ -138,8 +155,8 @@ model Theme {
   themeId   Int    @id @default(autoincrement())
   themeName String
 
-  courses CourseTheme[]   
-  units   UnitTheme[]     
+  courses CourseTheme[]
+  units   UnitTheme[]
 }
 
 model CourseTheme {
@@ -168,7 +185,7 @@ model CourseLearningOutcome {
   courseId String
 
   course  Course                @relation(fields: [courseId], references: [courseId], onDelete:Cascade)
-  unitLos UnitLearningOutcome[] 
+  unitLos UnitLearningOutcome[]
 }
 
 model UnitLearningOutcome {
@@ -238,16 +255,6 @@ model AssessmentRelationship {
   @@id([assessmentId, relatedId])
 }
 
-model Specialisation {
-  sId      Int    @id @default(autoincrement())
-  sName    String
-  courseId String
-
-  course           Course             @relation(fields: [courseId], references: [courseId])
-  courseUnits      CourseUnit[]
-  UnitRelationship UnitRelationship[]
-}
-
 enum RelationshipType {
   PREREQUISITE
   COREQUISITE
@@ -261,13 +268,13 @@ model UnitRelationship {
   relatedId        String
   relationshipType RelationshipType
   courseId         String?
-  sId              Int?
+  pathwayId        Int?
   entryType        Int
 
-  unit           Unit            @relation("UnitRelations", fields: [unitId], references: [unitId])
-  related        Unit            @relation("RelatedUnits", fields: [relatedId], references: [unitId])
-  course         Course?         @relation(fields: [courseId], references: [courseId])
-  specialisation Specialisation? @relation(fields: [sId], references: [sId])
+  unit     Unit     @relation("UnitRelations", fields: [unitId], references: [unitId])
+  related  Unit     @relation("RelatedUnits", fields: [relatedId], references: [unitId])
+  course   Course?  @relation(fields: [courseId], references: [courseId])
+  pathway  Pathway? @relation(fields: [pathwayId], references: [pathwayId])
 }
 
 model TeachingActivity {

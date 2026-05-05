@@ -17,6 +17,7 @@ type UnitMappingEntry = {
 };
 
 type SaveCanvasBody = {
+  pathwayId?: number;
   units?: CourseUnitCanvasEntry[];
   unitMappings?: Record<string, UnitMappingEntry>;
 };
@@ -35,7 +36,7 @@ const sendServerError = (res: Response, error: unknown) => {
 };
 
 export const addCourseUnit = async (req: Request, res: Response) => {
-  const { courseId, unitId, semester, year, elective, specialisationSId, color } = req.body;
+  const { courseId, unitId, semester, year, elective, pathwayId, color } = req.body;
 
   try {
     if (!courseId || !unitId) {
@@ -46,17 +47,22 @@ export const addCourseUnit = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "semester, year, and elective are required" });
     }
 
+    if (!pathwayId) {
+      return res.status(400).json({ message: "pathwayId is required" });
+    }
+
     const existingCourseUnit = await prisma.courseUnit.findUnique({
       where: {
-        courseId_unitId: {
+        courseId_unitId_pathwayId: {
           courseId,
           unitId,
+          pathwayId: toFiniteNumber(pathwayId, 0),
         },
       },
     });
 
     if (existingCourseUnit) {
-      return res.status(400).json({ message: "CourseUnit already exists" });
+      return res.status(400).json({ message: "CourseUnit already exists in this pathway" });
     }
 
     const newCourseUnit = await prisma.courseUnit.create({
@@ -66,10 +72,7 @@ export const addCourseUnit = async (req: Request, res: Response) => {
         semester: toFiniteNumber(semester, 0),
         year: toFiniteNumber(year, 0),
         elective: Boolean(elective),
-        specialisationSId:
-          specialisationSId === undefined || specialisationSId === null || specialisationSId === ""
-            ? null
-            : toFiniteNumber(specialisationSId, 0),
+        pathwayId: toFiniteNumber(pathwayId, 0),
         color: color || null,
       },
     });
@@ -81,20 +84,15 @@ export const addCourseUnit = async (req: Request, res: Response) => {
 };
 
 export const deleteCourseUnit = async (req: Request, res: Response) => {
-  const { courseId, unitId } = req.body;
+  const { id } = req.body;
 
   try {
-    if (!courseId || !unitId) {
-      return res.status(400).json({ message: "courseId and unitId are required" });
+    if (!id) {
+      return res.status(400).json({ message: "id is required" });
     }
 
     const deletedCourseUnit = await prisma.courseUnit.delete({
-      where: {
-        courseId_unitId: {
-          courseId,
-          unitId,
-        },
-      },
+      where: { id: toFiniteNumber(id, 0) },
     });
 
     return res.status(200).json(deletedCourseUnit);
@@ -105,11 +103,15 @@ export const deleteCourseUnit = async (req: Request, res: Response) => {
 
 export const saveCanvasState = async (req: Request, res: Response) => {
   const { courseId } = req.params;
-  const { units, unitMappings } = req.body as SaveCanvasBody;
+  const { pathwayId, units, unitMappings } = req.body as SaveCanvasBody;
 
   try {
     if (!courseId) {
       return res.status(400).json({ message: "courseId is required" });
+    }
+
+    if (!pathwayId) {
+      return res.status(400).json({ message: "pathwayId is required" });
     }
 
     const normalizedUnits = new Map<string, CourseUnitCanvasEntry>();
@@ -125,6 +127,7 @@ export const saveCanvasState = async (req: Request, res: Response) => {
     const courseUnitsData = Array.from(normalizedUnits.values()).map((unit) => ({
       courseId,
       unitId: unit.unitId as string,
+      pathwayId: toFiniteNumber(pathwayId, 0),
       semester: toFiniteNumber(unit.semester, 0),
       year: toFiniteNumber(unit.year, 0),
       elective: Boolean(unit.elective),
@@ -153,9 +156,10 @@ export const saveCanvasState = async (req: Request, res: Response) => {
       }
     }
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: typeof prisma) => {
+      // Delete only the units for this specific pathway
       await tx.courseUnit.deleteMany({
-        where: { courseId },
+        where: { courseId, pathwayId: toFiniteNumber(pathwayId, 0) },
       });
 
       if (courseUnitsData.length > 0) {
@@ -166,22 +170,18 @@ export const saveCanvasState = async (req: Request, res: Response) => {
       }
 
       // Reconcile tag associations only for units present in the payload.
-      // Tags for units not on the canvas are left untouched.
       if (unitIdsOnCanvas.length > 0) {
         await tx.courseUnitTags.deleteMany({
           where: { courseId, unitId: { in: unitIdsOnCanvas } },
         });
 
         if (desiredTagPairs.length > 0) {
-          // Drop stale tagIds (e.g. tags deleted elsewhere) so a single bad id
-          // doesn't fail the whole save. FK violation would otherwise roll back
-          // the entire canvas write.
           const referencedTagIds = Array.from(new Set(desiredTagPairs.map((p) => p.tagId)));
           const existingTags = await tx.tag.findMany({
             where: { courseId, tagId: { in: referencedTagIds } },
             select: { tagId: true },
           });
-          const validTagIds = new Set(existingTags.map((t) => t.tagId));
+          const validTagIds = new Set(existingTags.map((t: { tagId: number }) => t.tagId));
           const validPairs = desiredTagPairs.filter((p) => validTagIds.has(p.tagId));
 
           if (validPairs.length > 0) {
@@ -212,12 +212,8 @@ export const viewCourseUnits = async (req: Request, res: Response) => {
     }
 
     const courseUnits = await prisma.courseUnit.findMany({
-      where: {
-        courseId,
-      },
-      include: {
-        unit: true,
-      },
+      where: { courseId },
+      include: { unit: true },
       orderBy: [{ courseId: "asc" }, { unitId: "asc" }],
     });
 
@@ -228,29 +224,21 @@ export const viewCourseUnits = async (req: Request, res: Response) => {
 };
 
 export const updateCourseUnit = async (req: Request, res: Response) => {
-  const { courseId, unitId } = req.params;
-  const { semester, year, elective, specialisationSId, color } = req.body;
+  const { id } = req.params;
+  const { semester, year, elective, pathwayId, color } = req.body;
 
   try {
-    if (!courseId || !unitId) {
-      return res.status(400).json({ message: "courseId and unitId are required" });
+    if (!id) {
+      return res.status(400).json({ message: "id is required" });
     }
 
     const updatedCourseUnit = await prisma.courseUnit.update({
-      where: {
-        courseId_unitId: {
-          courseId,
-          unitId,
-        },
-      },
+      where: { id: toFiniteNumber(id, 0) },
       data: {
         semester: semester === undefined ? undefined : toFiniteNumber(semester, 0),
         year: year === undefined ? undefined : toFiniteNumber(year, 0),
         elective: elective === undefined ? undefined : Boolean(elective),
-        specialisationSId:
-          specialisationSId === undefined || specialisationSId === null || specialisationSId === ""
-            ? null
-            : toFiniteNumber(specialisationSId, 0),
+        pathwayId: pathwayId === undefined ? undefined : toFiniteNumber(pathwayId, 0),
         color: color || null,
       },
     });

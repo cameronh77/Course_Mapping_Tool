@@ -56,6 +56,15 @@ export interface Tag {
   courseId: string;
 }
 
+export type PathwayType = "CORE" | "MAJOR" | "MINOR" | "ENTRY_POINT";
+
+export interface Pathway {
+  pathwayId: number;
+  name: string;
+  type: PathwayType;
+  courseId: string;
+}
+
 export interface UnitRelationship {
   id: number;
   unitId: string;
@@ -66,7 +75,7 @@ export interface UnitRelationship {
     | "PROGRESSION"
     | "CONNECTED";
   courseId: string | null;
-  sId: number | null;
+  pathwayId: number | null;
   entryType: number;
 }
 
@@ -74,6 +83,7 @@ export interface UnitBox {
   id: number;
   name: string;
   unitId?: string;
+  pathwayId?: number;
   description?: string;
   credits?: number;
   semestersOffered?: number[];

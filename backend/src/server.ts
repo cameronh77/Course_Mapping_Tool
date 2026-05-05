@@ -13,6 +13,7 @@ import assessmentULORoutes from "./assessment-ulo/routes/assessmentULORoutes.js"
 import teachingActivityRoutes from "./teaching-activity/routes/teachingActivityRoutes.js";
 import teachingActivityLinksRoutes from "./teaching-activity-links/routes/teachingActivityLinksRoutes.js";
 import themeCategoryRoutes from "./theme-category/routes/themeCategoryRoutes.js";
+import pathwayRoutes from "./pathway/routes/pathwayRoutes.js";
 import cors from "cors";
 
 dotenv.config();
@@ -50,6 +51,7 @@ app.use("/api/assessment-ulo", assessmentULORoutes);
 app.use("/api/teaching-activity", teachingActivityRoutes);
 app.use("/api/teaching-activity-links", teachingActivityLinksRoutes);
 app.use("/api/theme-category", themeCategoryRoutes);
+app.use("/api/pathway", pathwayRoutes);
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
