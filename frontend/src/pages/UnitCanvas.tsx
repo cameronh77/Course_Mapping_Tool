@@ -90,14 +90,6 @@ export const CanvasPage: React.FC = () => {
   const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
-  const { activePathwayId, fetchPathways } = usePathwayStore();
-
-  useEffect(() => {
-    if (currentCourse?.courseId) {
-      fetchPathways(currentCourse.courseId);
-    }
-  }, [currentCourse?.courseId, fetchPathways]);
-
   const {
     pathways,
     activePathwayId,
@@ -106,6 +98,12 @@ export const CanvasPage: React.FC = () => {
     createPathway,
     deletePathway,
   } = usePathwayStore();
+
+  useEffect(() => {
+    if (currentCourse?.courseId) {
+      fetchPathways(currentCourse.courseId);
+    }
+  }, [currentCourse?.courseId, fetchPathways]);
 
   const [showPathwayModal, setShowPathwayModal] = useState(false);
   const [newPathwayName, setNewPathwayName] = useState("");
