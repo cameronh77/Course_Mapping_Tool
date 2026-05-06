@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
@@ -138,7 +138,7 @@ export const CanvasPage: React.FC = () => {
   }>({ visible: false, x: 0, y: 0 });
 
   const [viewingTagMenu, setViewingTagMenu] = useState<boolean>(false);
-  const [tagData, setTagData] = useState<CourseLearningOutcome[] | null>(null);
+  const [tagData, setTagData] = useState<{ name: string; id: number }[] | null>(null);
 
   const {
     existingTags,
@@ -148,6 +148,8 @@ export const CanvasPage: React.FC = () => {
     viewCourseTags,
     viewUnitTagsByCourse,
   } = useTagStore();
+
+  const [selectedTagFilters, setSelectedTagFilters] = useState<number[]>([]);
 
   const [connectionMode, setConnectionMode] = useState<boolean>(false);
   const [connectionSource, setConnectionSource] = useState<string | null>(null);
@@ -161,6 +163,28 @@ export const CanvasPage: React.FC = () => {
     Record<number, "info" | "clos" | "tags">
   >({});
   const [unitMappings, setUnitMappings] = useState<UnitMappings>({});
+
+  const tagFilteredUnitIds = useMemo<Set<string> | null>(() => {
+    if (selectedTagFilters.length === 0) return null;
+    const filterSet = new Set(selectedTagFilters);
+    const matched = new Set<string>();
+    for (const [unitId, mapping] of Object.entries(unitMappings)) {
+      const tags = mapping?.tags || [];
+      if (tags.some((t) => filterSet.has(t.tagId))) {
+        matched.add(unitId);
+      }
+    }
+    return matched;
+  }, [selectedTagFilters, unitMappings]);
+
+  const isUnitVisible = (unitId: string | undefined) =>
+    tagFilteredUnitIds === null || (unitId ? tagFilteredUnitIds.has(unitId) : false);
+
+  const toggleTagFilter = (tagId: number) =>
+    setSelectedTagFilters((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
+  const clearTagFilters = () => setSelectedTagFilters([]);
 
   useEffect(() => {
     const loadUnits = async () => {
@@ -1146,6 +1170,9 @@ export const CanvasPage: React.FC = () => {
           selectedRelationType={selectedRelationType}
           setSelectedRelationType={setSelectedRelationType}
           getCLOColor={getCLOColor}
+          selectedTagFilters={selectedTagFilters}
+          onToggleTagFilter={toggleTagFilter}
+          onClearTagFilters={clearTagFilters}
           unallocatedUnits={unitBoxes
             .filter((u) => u.unallocated && u.unitId)
             .map((u) => ({
@@ -1274,7 +1301,7 @@ export const CanvasPage: React.FC = () => {
           />
 
           {unitBoxes
-            .filter((u) => u.spansYear && !u.unallocated)
+            .filter((u) => u.spansYear && !u.unallocated && isUnitVisible(u.unitId))
             .map((u) => {
               const cy = companionSlotY(u.y);
               if (cy === null) return null;
@@ -1305,7 +1332,7 @@ export const CanvasPage: React.FC = () => {
               );
             })}
 
-          {unitBoxes.filter((u) => !u.unallocated).map((unit) => (
+          {unitBoxes.filter((unit) => !unit.unallocated && isUnitVisible(unit.unitId)).map((unit) => (
             <UnitBox
               key={unit.id}
               unit={unit}
@@ -1345,7 +1372,9 @@ export const CanvasPage: React.FC = () => {
           
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
             <ConnectionLines
-              relationships={relationships}
+              relationships={relationships.filter(
+                (r) => isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
+              )}
               unitBoxes={unitBoxes}
               numberTeachingPeriods={semPerYear}
               hoveredUnit={hoveredUnit}
@@ -1667,7 +1696,7 @@ export const CanvasPage: React.FC = () => {
         <AddTagMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          data={tagData}
+          data={tagData ?? []}
           onClose={() => setViewingTagMenu(false)}
           onSave={handleAddTagToUnits}
         />
