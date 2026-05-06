@@ -14,6 +14,7 @@ export const createRelationship = async (req: Request, res: Response) => {
         unitId,
         relatedId,
         courseId: courseId || null,
+        pathwayId: pathwayId ?? null,
       },
     });
 
@@ -55,11 +56,15 @@ export const deleteRelationship = async (req: Request, res: Response) => {
 };
 
 export const viewRelationshipsByCourse = async (req: Request, res: Response) => {
-  const { courseId } = req.query;
+  const { courseId, pathwayId } = req.query;
+  const pathwayIdNum = typeof pathwayId === "string" ? Number(pathwayId) : null;
 
   try {
     const relationships = await prisma.unitRelationship.findMany({
-      where: { courseId: courseId as string },
+      where: {
+        courseId: courseId as string,
+        ...(pathwayIdNum && Number.isFinite(pathwayIdNum) ? { pathwayId: pathwayIdNum } : {}),
+      },
       include: {
         unit: true,
         related: true,

@@ -205,6 +205,8 @@ export const saveCanvasState = async (req: Request, res: Response) => {
 
 export const viewCourseUnits = async (req: Request, res: Response) => {
   const courseId = typeof req.query.courseId === "string" ? req.query.courseId : null;
+  const pathwayIdRaw = typeof req.query.pathwayId === "string" ? req.query.pathwayId : null;
+  const pathwayId = pathwayIdRaw ? Number(pathwayIdRaw) : null;
 
   try {
     if (!courseId) {
@@ -212,7 +214,10 @@ export const viewCourseUnits = async (req: Request, res: Response) => {
     }
 
     const courseUnits = await prisma.courseUnit.findMany({
-      where: { courseId },
+      where: {
+        courseId,
+        ...(pathwayId && Number.isFinite(pathwayId) ? { pathwayId } : {}),
+      },
       include: { unit: true },
       orderBy: [{ courseId: "asc" }, { unitId: "asc" }],
     });
