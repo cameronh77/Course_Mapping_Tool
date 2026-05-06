@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import type { UnitRelationship, UnitBox as UnitBoxType } from "../../types";
 
 // Grid Layout Constants
@@ -81,6 +81,7 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({
   hoveredUnit,
   onDeleteRelationship
 }) => {
+  const [hoveredRelId, setHoveredRelId] = useState<number | null>(null);
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
       {relationships.map((rel) => {
@@ -95,30 +96,43 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({
         
         // Determine if this connection is related to the hovered unit
         const isRelated = hoveredUnit && (rel.unitId === hoveredUnit || rel.relatedId === hoveredUnit);
-        
+        const isLineHovered = hoveredRelId === rel.id;
+        const isHighlighted = isLineHovered || (isRelated && !!hoveredUnit);
+
+        const opacity = isLineHovered
+          ? 1
+          : hoveredUnit
+            ? (isRelated ? 1 : 0.15)
+            : 0.5;
+        const strokeWidth = isLineHovered ? 5.5 : isHighlighted ? 4.5 : 3;
+        const filter = isLineHovered
+          ? `drop-shadow(0 0 6px ${color}AA)`
+          : isHighlighted
+            ? 'drop-shadow(0 0 4px rgba(0,0,0,0.3))'
+            : 'drop-shadow(0 0 1px rgba(0,0,0,0.1))';
+
         return (
-          <g 
-            key={rel.id} 
-            className="cursor-pointer pointer-events-auto transition-all duration-200" 
-            style={{
-              opacity: hoveredUnit ? (isRelated ? 1 : 0.15) : 0.5,
-              filter: isRelated && hoveredUnit ? 'drop-shadow(0 0 4px rgba(0,0,0,0.3))' : 'drop-shadow(0 0 1px rgba(0,0,0,0.1))',
-            }}
+          <g
+            key={rel.id}
+            className="cursor-pointer pointer-events-auto transition-all duration-200"
+            style={{ opacity, filter }}
             onClick={() => onDeleteRelationship(rel.id)}
+            onMouseEnter={() => setHoveredRelId(rel.id)}
+            onMouseLeave={() => setHoveredRelId((prev) => (prev === rel.id ? null : prev))}
           >
-            <path 
-              d={d} 
-              stroke={color} 
-              strokeWidth={isRelated && hoveredUnit ? "4.5" : "3"} 
-              fill="none" 
+            <path
+              d={d}
+              stroke={color}
+              strokeWidth={strokeWidth}
+              fill="none"
               className="transition-all duration-200"
             />
-            <polygon 
-              points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`} 
+            <polygon
+              points={`${endX},${endY} ${endX - arrowLength * Math.cos(angle - arrowAngle)},${endY - arrowLength * Math.sin(angle - arrowAngle)} ${endX - arrowLength * Math.cos(angle + arrowAngle)},${endY - arrowLength * Math.sin(angle + arrowAngle)}`}
               fill={color}
               className="transition-all duration-200"
             />
-            {/* Transparent hit area for easier clicking */}
+            {/* Transparent hit area for easier clicking/hovering */}
             <path d={d} stroke="transparent" strokeWidth="16" fill="none" />
           </g>
         );
