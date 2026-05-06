@@ -1,8 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
+import { usePathwayStore } from "../../stores/usePathwayStore";
 import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
+import { PathwayManagerModal } from "../common/PathwayManagerModal";
 import { getTagColor } from "../common/themeViewConstants";
 import type { Tag, Unit } from "../../types";
 
@@ -53,17 +55,167 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   const { currentCourse } = useCourseStore() as any;
   const { currentCLOs } = useCLOStore() as any;
   const { existingTags, createTag } = useTagStore() as any;
+  const { pathways, activePathwayId, setActivePathway } = usePathwayStore();
 
   // Local state purely for the sidebar
   const [newTag, setNewTag] = useState<string>("");
   const [addDropdownOpen, setAddDropdownOpen] = useState(false);
+  const [pathwayManagerOpen, setPathwayManagerOpen] = useState(false);
+  const [pathwayDropdownOpen, setPathwayDropdownOpen] = useState(false);
+  const pathwayDropdownRef = useRef<HTMLDivElement>(null);
   const handlers = getWhiteboardHandlers();
+
+  useEffect(() => {
+    if (!pathwayDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (pathwayDropdownRef.current && !pathwayDropdownRef.current.contains(e.target as Node)) {
+        setPathwayDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [pathwayDropdownOpen]);
+
+  const activePathway = pathways.find((p) => p.pathwayId === activePathwayId) ?? null;
+  const pathwayTypeBadge: Record<string, string> = {
+    CORE: "bg-blue-100 text-blue-700",
+    MAJOR: "bg-purple-100 text-purple-700",
+    MINOR: "bg-amber-100 text-amber-700",
+    ENTRY_POINT: "bg-emerald-100 text-emerald-700",
+  };
 
   return (
     <div className="bg-white p-4 w-full h-full flex flex-col">
       <button className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4 shadow-sm transition-colors" onClick={handleSaveCanvas}>
         Save Canvas
       </button>
+
+      <div className="mb-4" ref={pathwayDropdownRef}>
+        <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+          Pathway
+        </label>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setPathwayDropdownOpen((o) => !o)}
+            disabled={pathways.length === 0}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md text-sm text-left hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+            aria-haspopup="listbox"
+            aria-expanded={pathwayDropdownOpen}
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              {activePathway ? (
+                <>
+                  <span className="truncate font-medium text-gray-800">{activePathway.name}</span>
+                  <span
+                    className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${
+                      pathwayTypeBadge[activePathway.type] ?? "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {activePathway.type}
+                  </span>
+                </>
+              ) : (
+                <span className="text-gray-400">
+                  {pathways.length === 0 ? "No pathways" : "Select pathway"}
+                </span>
+              )}
+            </span>
+            <svg
+              className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${
+                pathwayDropdownOpen ? "rotate-180" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {pathwayDropdownOpen && (
+            <div
+              className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 overflow-hidden"
+              role="listbox"
+            >
+              <div className="max-h-60 overflow-y-auto py-1">
+                {pathways.map((p) => {
+                  const isActive = p.pathwayId === activePathwayId;
+                  return (
+                    <button
+                      type="button"
+                      key={p.pathwayId}
+                      role="option"
+                      aria-selected={isActive}
+                      onClick={() => {
+                        setActivePathway(p.pathwayId);
+                        setPathwayDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                        isActive ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="w-4 shrink-0">
+                          {isActive && (
+                            <svg
+                              className="w-4 h-4 text-blue-600"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                          )}
+                        </span>
+                        <span className="truncate">{p.name}</span>
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${
+                          pathwayTypeBadge[p.type] ?? "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {p.type}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPathwayDropdownOpen(false);
+                  setPathwayManagerOpen(true);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 border-t border-gray-200 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Manage pathways
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {pathwayManagerOpen && currentCourse?.courseId && (
+        <PathwayManagerModal
+          courseId={currentCourse.courseId}
+          onClose={() => setPathwayManagerOpen(false)}
+        />
+      )}
 
       <div className="relative mb-4">
         <button

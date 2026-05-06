@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
@@ -90,6 +90,13 @@ export const CanvasPage: React.FC = () => {
   const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
+  const { activePathwayId, fetchPathways } = usePathwayStore();
+
+  useEffect(() => {
+    if (currentCourse?.courseId) {
+      fetchPathways(currentCourse.courseId);
+    }
+  }, [currentCourse?.courseId, fetchPathways]);
 
   const {
     pathways,
@@ -142,6 +149,8 @@ export const CanvasPage: React.FC = () => {
     viewUnitTagsByCourse,
   } = useTagStore();
 
+  const [selectedTagFilters, setSelectedTagFilters] = useState<number[]>([]);
+
   const [connectionMode, setConnectionMode] = useState<boolean>(false);
   const [connectionSource, setConnectionSource] = useState<string | null>(null);
   const [relationships, setRelationships] = useState<UnitRelationship[]>([]);
@@ -154,6 +163,28 @@ export const CanvasPage: React.FC = () => {
     Record<number, "info" | "clos" | "tags">
   >({});
   const [unitMappings, setUnitMappings] = useState<UnitMappings>({});
+
+  const tagFilteredUnitIds = useMemo<Set<string> | null>(() => {
+    if (selectedTagFilters.length === 0) return null;
+    const filterSet = new Set(selectedTagFilters);
+    const matched = new Set<string>();
+    for (const [unitId, mapping] of Object.entries(unitMappings)) {
+      const tags = mapping?.tags || [];
+      if (tags.some((t) => filterSet.has(t.tagId))) {
+        matched.add(unitId);
+      }
+    }
+    return matched;
+  }, [selectedTagFilters, unitMappings]);
+
+  const isUnitVisible = (unitId: string | undefined) =>
+    tagFilteredUnitIds === null || (unitId ? tagFilteredUnitIds.has(unitId) : false);
+
+  const toggleTagFilter = (tagId: number) =>
+    setSelectedTagFilters((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
+  const clearTagFilters = () => setSelectedTagFilters([]);
 
   useEffect(() => {
     const loadUnits = async () => {
@@ -169,10 +200,10 @@ export const CanvasPage: React.FC = () => {
 
   useEffect(() => {
     const loadRelationships = async () => {
-      if (currentCourse?.courseId) {
+      if (currentCourse?.courseId && activePathwayId) {
         try {
           const response = await axiosInstance.get(
-            `/unit-relationship/view?courseId=${currentCourse.courseId}`
+            `/unit-relationship/view?courseId=${currentCourse.courseId}&pathwayId=${activePathwayId}`
           );
           setRelationships(response.data);
         } catch (error) {
@@ -181,14 +212,14 @@ export const CanvasPage: React.FC = () => {
       }
     };
     loadRelationships();
-  }, [currentCourse?.courseId]);
+  }, [currentCourse?.courseId, activePathwayId]);
 
   useEffect(() => {
     const loadCanvasState = async () => {
       if (currentCourse?.courseId && activePathwayId !== null) {
         try {
           const response = await axiosInstance.get(
-            `/course-unit/view?courseId=${currentCourse.courseId}`
+            `/course-unit/view?courseId=${currentCourse.courseId}&pathwayId=${activePathwayId}`
           );
           const allCourseUnits = response.data;
           const courseUnits = allCourseUnits.filter(
@@ -383,6 +414,11 @@ export const CanvasPage: React.FC = () => {
               return [unitId, { clos: dedupClos, tags: dedupTags }];
             })
         ) as UnitMappings;
+
+        if (!activePathwayId) {
+          alert("No pathway selected. Please create or select a pathway before saving.");
+          return;
+        }
 
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
@@ -801,12 +837,17 @@ export const CanvasPage: React.FC = () => {
       setConnectionSource(null);
       return;
     }
+    if (!activePathwayId) {
+      alert("Select a pathway before creating connections.");
+      return;
+    }
     try {
       const response = await axiosInstance.post("/unit-relationship/create", {
         unitId: connectionSource,
         relatedId: targetUnitId,
         relationshipType: selectedRelationType,
         courseId: currentCourse.courseId,
+        pathwayId: activePathwayId,
         entryType: 0,
       });
       setRelationships([...relationships, response.data]);
@@ -819,6 +860,9 @@ export const CanvasPage: React.FC = () => {
   };
 
   const handleDeleteRelationship = async (relationshipId: number) => {
+    const rel = relationships.find((r) => r.id === relationshipId);
+    const label = rel ? `${rel.unitId} → ${rel.relatedId}` : "this connection";
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
     try {
       await axiosInstance.delete(`/unit-relationship/delete/${relationshipId}`);
       setRelationships(relationships.filter((r) => r.id !== relationshipId));
@@ -1003,6 +1047,9 @@ export const CanvasPage: React.FC = () => {
           selectedRelationType={selectedRelationType}
           setSelectedRelationType={setSelectedRelationType}
           getCLOColor={getCLOColor}
+          selectedTagFilters={selectedTagFilters}
+          onToggleTagFilter={toggleTagFilter}
+          onClearTagFilters={clearTagFilters}
         />
       </div>
 
@@ -1122,7 +1169,7 @@ export const CanvasPage: React.FC = () => {
           />
 
           {unitBoxes
-            .filter((u) => u.spansYear)
+            .filter((u) => u.spansYear && isUnitVisible(u.unitId))
             .map((u) => {
               const cy = companionSlotY(u.y);
               if (cy === null) return null;
@@ -1153,7 +1200,7 @@ export const CanvasPage: React.FC = () => {
               );
             })}
 
-          {unitBoxes.map((unit) => (
+          {unitBoxes.filter((unit) => isUnitVisible(unit.unitId)).map((unit) => (
             <UnitBox
               key={unit.id}
               unit={unit}
@@ -1193,7 +1240,9 @@ export const CanvasPage: React.FC = () => {
           
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
             <ConnectionLines
-              relationships={relationships}
+              relationships={relationships.filter(
+                (r) => isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
+              )}
               unitBoxes={unitBoxes}
               numberTeachingPeriods={semPerYear}
               hoveredUnit={hoveredUnit}
