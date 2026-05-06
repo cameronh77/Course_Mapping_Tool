@@ -815,6 +815,9 @@ export const CanvasPage: React.FC = () => {
   };
 
   const handleDeleteRelationship = async (relationshipId: number) => {
+    const rel = relationships.find((r) => r.id === relationshipId);
+    const label = rel ? `${rel.unitId} → ${rel.relatedId}` : "this connection";
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
     try {
       await axiosInstance.delete(`/unit-relationship/delete/${relationshipId}`);
       setRelationships(relationships.filter((r) => r.id !== relationshipId));
