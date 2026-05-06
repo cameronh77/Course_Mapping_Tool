@@ -90,6 +90,13 @@ export const CanvasPage: React.FC = () => {
   const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
+  const { activePathwayId, fetchPathways } = usePathwayStore();
+
+  useEffect(() => {
+    if (currentCourse?.courseId) {
+      fetchPathways(currentCourse.courseId);
+    }
+  }, [currentCourse?.courseId, fetchPathways]);
 
   const {
     pathways,
@@ -169,10 +176,10 @@ export const CanvasPage: React.FC = () => {
 
   useEffect(() => {
     const loadRelationships = async () => {
-      if (currentCourse?.courseId) {
+      if (currentCourse?.courseId && activePathwayId) {
         try {
           const response = await axiosInstance.get(
-            `/unit-relationship/view?courseId=${currentCourse.courseId}`
+            `/unit-relationship/view?courseId=${currentCourse.courseId}&pathwayId=${activePathwayId}`
           );
           setRelationships(response.data);
         } catch (error) {
@@ -181,14 +188,14 @@ export const CanvasPage: React.FC = () => {
       }
     };
     loadRelationships();
-  }, [currentCourse?.courseId]);
+  }, [currentCourse?.courseId, activePathwayId]);
 
   useEffect(() => {
     const loadCanvasState = async () => {
-      if (currentCourse?.courseId && activePathwayId !== null) {
+      if (currentCourse?.courseId && activePathwayId) {
         try {
           const response = await axiosInstance.get(
-            `/course-unit/view?courseId=${currentCourse.courseId}`
+            `/course-unit/view?courseId=${currentCourse.courseId}&pathwayId=${activePathwayId}`
           );
           const allCourseUnits = response.data;
           const courseUnits = allCourseUnits.filter(
@@ -384,6 +391,11 @@ export const CanvasPage: React.FC = () => {
               return [unitId, { clos: dedupClos, tags: dedupTags }];
             })
         ) as UnitMappings;
+
+        if (!activePathwayId) {
+          alert("No pathway selected. Please create or select a pathway before saving.");
+          return;
+        }
 
         await axiosInstance.post(
           `/course-unit/canvas/${currentCourse.courseId}`,
@@ -924,12 +936,17 @@ export const CanvasPage: React.FC = () => {
       setConnectionSource(null);
       return;
     }
+    if (!activePathwayId) {
+      alert("Select a pathway before creating connections.");
+      return;
+    }
     try {
       const response = await axiosInstance.post("/unit-relationship/create", {
         unitId: connectionSource,
         relatedId: targetUnitId,
         relationshipType: selectedRelationType,
         courseId: currentCourse.courseId,
+        pathwayId: activePathwayId,
         entryType: 0,
       });
       setRelationships([...relationships, response.data]);
