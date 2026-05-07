@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "PathwayType" ADD VALUE 'SPECIALISATION';

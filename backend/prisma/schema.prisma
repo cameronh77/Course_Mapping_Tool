@@ -31,6 +31,7 @@ enum PathwayType {
   CORE
   MAJOR
   MINOR
+  SPECIALISATION
   ENTRY_POINT
 }
 

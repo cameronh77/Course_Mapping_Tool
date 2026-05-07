@@ -18,6 +18,7 @@ interface UnitBoxProps {
   existingTags?: Tag[];
   isBlocked?: boolean;
   isHighlighted?: boolean;
+  pathwayBadge?: { name: string; type: string };
   
   // Event Handlers
   onMouseDown: (e: React.MouseEvent, id: number) => void;
@@ -56,6 +57,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   existingTags = [],
   isBlocked = false,
   isHighlighted = false,
+  pathwayBadge,
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
   const [hoveredCLODesc, setHoveredCLODesc] = useState<string | null>(null);
@@ -113,7 +115,13 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
               )}
             </div>
 
-            {/* Intuitive Pips & Badges for collapsed state */}
+            {pathwayBadge && (
+              <span className="absolute bottom-1 left-2 text-[8px] font-bold px-1.5 py-0.5 rounded bg-black/25 text-white/90 leading-tight">
+                {pathwayBadge.type === 'CORE' ? '◆' : pathwayBadge.type === 'MAJOR' ? '▲' : pathwayBadge.type === 'MINOR' ? '●' : pathwayBadge.type === 'SPECIALISATION' ? '★' : '→'} {pathwayBadge.name}
+              </span>
+            )}
+
+          {/* Intuitive Pips & Badges for collapsed state */}
             {!isExpanded && (
               <div className="flex flex-col mt-1.5 gap-1.5">
                 {/* CLO Pipeline Visualization */}

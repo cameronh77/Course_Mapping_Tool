@@ -6,7 +6,7 @@ import { usePathwayStore } from "../../stores/usePathwayStore";
 import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
 import { PathwayManagerModal } from "../common/PathwayManagerModal";
 import { getTagColor } from "../common/themeViewConstants";
-import type { Tag, Unit } from "../../types";
+import type { Tag, Unit, PlaceholderType } from "../../types";
 
 interface CanvasSidebarProps {
   sidebarTab: 'units' | 'connections' | 'mapping';
@@ -28,6 +28,7 @@ interface CanvasSidebarProps {
   selectedTagFilters?: number[];
   onToggleTagFilter?: (tagId: number) => void;
   onClearTagFilters?: () => void;
+  handlePlaceholderMouseDown?: (e: React.MouseEvent, type: PlaceholderType) => void;
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
@@ -50,6 +51,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   selectedTagFilters = [],
   onToggleTagFilter = () => {},
   onClearTagFilters = () => {},
+  handlePlaceholderMouseDown,
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore() as any;
@@ -81,6 +83,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
     CORE: "bg-blue-100 text-blue-700",
     MAJOR: "bg-purple-100 text-purple-700",
     MINOR: "bg-amber-100 text-amber-700",
+    SPECIALISATION: "bg-rose-100 text-rose-700",
     ENTRY_POINT: "bg-emerald-100 text-emerald-700",
   };
 
@@ -343,6 +346,31 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
             <button className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-6 shadow-sm transition-colors" onClick={() => setShowCreateForm(true)}>
               Create New Unit
             </button>
+
+            {/* Placeholder blocks */}
+            <div className="mb-4">
+              <label className="block text-gray-500 text-xs font-bold mb-2 uppercase tracking-wide">Placeholders</label>
+              <div className="flex flex-col gap-2">
+                {(
+                  [
+                    { type: 'CORE' as const,     icon: '◆', label: 'Core Unit',  border: 'border-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-800'   },
+                    { type: 'ELECTIVE' as const,  icon: '✦', label: 'Elective',   border: 'border-amber-400',  bg: 'bg-amber-50',  text: 'text-amber-800'  },
+                    { type: 'JUNCTION' as const,  icon: '⑂', label: 'OR Junction', border: 'border-purple-400', bg: 'bg-purple-50', text: 'text-purple-800' },
+                  ]
+                ).map(({ type, icon, label, border, bg, text }) => (
+                  <div
+                    key={type}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed ${border} ${bg} ${text} text-xs font-semibold cursor-grab active:cursor-grabbing select-none transition-opacity hover:opacity-80`}
+                    onMouseDown={handlePlaceholderMouseDown ? (e) => handlePlaceholderMouseDown(e, type) : undefined}
+                    title={`Drag onto canvas to place a ${label} placeholder`}
+                  >
+                    <span className="text-sm">{icon}</span>
+                    {label}
+                    <span className="ml-auto text-[10px] opacity-50">drag</span>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             <div className="relative mb-4">
               <label className="block text-gray-500 text-xs font-bold mb-2 uppercase tracking-wide">Search & Drag Existing Units</label>
