@@ -217,6 +217,7 @@ export interface JunctionUnit {
 
 export interface PlaceholderBox {
   id: number;
+  pathwayId?: number | null;
   placeholderType: PlaceholderType;
   x: number;
   y: number;

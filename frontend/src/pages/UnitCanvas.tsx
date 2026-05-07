@@ -68,6 +68,7 @@ export const CanvasPage: React.FC = () => {
   // State for editing
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState<boolean>(false);
+  const [editingJunctionUnit, setEditingJunctionUnit] = useState<JunctionUnit | null>(null);
 
   // State for dragging existing units
   const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
@@ -111,6 +112,7 @@ export const CanvasPage: React.FC = () => {
     togglePathwayVisibility,
     createPathway,
     deletePathway,
+    duplicatePathway,
   } = usePathwayStore();
 
   useEffect(() => {
@@ -122,6 +124,10 @@ export const CanvasPage: React.FC = () => {
   const [showPathwayModal, setShowPathwayModal] = useState(false);
   const [newPathwayName, setNewPathwayName] = useState("");
   const [newPathwayType, setNewPathwayType] = useState<"MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION">("MAJOR");
+
+  const [duplicatingPathway, setDuplicatingPathway] = useState<{ id: number; name: string; type: string } | null>(null);
+  const [dupName, setDupName] = useState("");
+  const [dupType, setDupType] = useState<"MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION">("MAJOR");
 
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
@@ -247,14 +253,16 @@ export const CanvasPage: React.FC = () => {
         const loadedPlaceholders: PlaceholderBox[] = phRes.data || [];
         setPlaceholderBoxes(loadedPlaceholders);
 
-        // Collect courseUnitIds that are currently parked inside a junction
-        const parkedIds = new Set<number>(
-          loadedPlaceholders.flatMap((p) =>
-            (p.unitOptions ?? [])
-              .map((u) => u.courseUnitId)
-              .filter((id): id is number => id != null)
-          )
-        );
+        // Collect courseUnitIds that are currently parked inside a junction.
+        // Union DB data with local state so in-flight persists don't cause leaks.
+        const extractParked = (boxes: PlaceholderBox[]) =>
+          boxes.flatMap((p) =>
+            (p.unitOptions ?? []).map((u) => u.courseUnitId).filter((id): id is number => id != null)
+          );
+        const parkedIds = new Set<number>([
+          ...extractParked(loadedPlaceholders),
+          ...extractParked(placeholderBoxesRef.current),
+        ]);
 
         if (visiblePathwayIds.length === 0) {
           setUnitBoxes([]);
@@ -579,17 +587,16 @@ export const CanvasPage: React.FC = () => {
   };
 
   // ── Drag unit OUT of a junction ────────────────────────────────────────────
+  // Uses a movement threshold so that a click/double-click never accidentally
+  // removes the unit — the drag only commits once the mouse has moved 5px.
   const handleDragUnitOut = (junctionId: number, unit: JunctionUnit, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Remove from junction immediately
-    const removedOptions = (placeholderBoxesRef.current.find((p) => p.id === junctionId)?.unitOptions ?? [])
-      .filter((u) => u.unitId !== unit.unitId);
-    setPlaceholderBoxes((prev) =>
-      prev.map((p) => p.id === junctionId ? { ...p, unitOptions: removedOptions } : p)
-    );
-    persistPlaceholderUpdate(junctionId, { unitOptions: removedOptions });
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const DRAG_THRESHOLD = 5;
+    let dragCommitted = false;
 
     const asUnit: Unit = {
       unitId: unit.unitId,
@@ -599,15 +606,37 @@ export const CanvasPage: React.FC = () => {
       semestersOffered: unit.semestersOffered ?? [],
     };
 
-    setDraggedNewUnit({ unit: asUnit, x: e.clientX, y: e.clientY });
+    // Options after removing this unit — computed lazily when drag commits
+    let removedOptions: JunctionUnit[] = [];
 
     const handleMove = (me: MouseEvent) => {
-      setDraggedNewUnit((prev) => prev ? { ...prev, x: me.clientX, y: me.clientY } : null);
+      const dx = me.clientX - startX;
+      const dy = me.clientY - startY;
+
+      if (!dragCommitted && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
+        // Commit the drag: remove from junction state + persist
+        dragCommitted = true;
+        removedOptions = (placeholderBoxesRef.current.find((p) => p.id === junctionId)?.unitOptions ?? [])
+          .filter((u) => u.unitId !== unit.unitId);
+        setPlaceholderBoxes((prev) =>
+          prev.map((p) => p.id === junctionId ? { ...p, unitOptions: removedOptions } : p)
+        );
+        persistPlaceholderUpdate(junctionId, { unitOptions: removedOptions });
+        setDraggedNewUnit({ unit: asUnit, x: me.clientX, y: me.clientY });
+      } else if (dragCommitted) {
+        setDraggedNewUnit((prev) => prev ? { ...prev, x: me.clientX, y: me.clientY } : null);
+      }
     };
 
     const handleUp = (ue: MouseEvent) => {
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
+
+      if (!dragCommitted) {
+        // Mouse never moved enough — treat as a click, do nothing
+        setDraggedNewUnit(null);
+        return;
+      }
 
       if (canvasRef.current) {
         const rect = canvasRef.current.getBoundingClientRect();
@@ -629,11 +658,14 @@ export const CanvasPage: React.FC = () => {
           });
 
           if (otherJunction) {
-            const newOptions = [...(otherJunction.unitOptions ?? []), unit];
-            setPlaceholderBoxes((prev) =>
-              prev.map((p) => p.id === otherJunction.id ? { ...p, unitOptions: newOptions } : p)
-            );
-            persistPlaceholderUpdate(otherJunction.id, { unitOptions: newOptions });
+            const alreadyIn = (otherJunction.unitOptions ?? []).some((u) => u.unitId === unit.unitId);
+            const newOptions = alreadyIn ? (otherJunction.unitOptions ?? []) : [...(otherJunction.unitOptions ?? []), unit];
+            if (!alreadyIn) {
+              setPlaceholderBoxes((prev) =>
+                prev.map((p) => p.id === otherJunction.id ? { ...p, unitOptions: newOptions } : p)
+              );
+              persistPlaceholderUpdate(otherJunction.id, { unitOptions: newOptions });
+            }
           } else {
             restoreOrPlaceUnit(unit, asUnit, canvasCoords.x - UNIT_BOX_WIDTH / 2, canvasCoords.y - 40);
           }
@@ -721,11 +753,14 @@ export const CanvasPage: React.FC = () => {
               credits: unit.credits,
               semestersOffered: unit.semestersOffered,
             };
-            const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
-            setPlaceholderBoxes((prev) =>
-              prev.map((p) => p.id === junctionHit.id ? { ...p, unitOptions: newUnitOptions } : p)
-            );
-            persistPlaceholderUpdate(junctionHit.id, { unitOptions: newUnitOptions });
+            const alreadyInJunction = (junctionHit.unitOptions ?? []).some((u) => u.unitId === unit.unitId);
+            if (!alreadyInJunction) {
+              const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
+              setPlaceholderBoxes((prev) =>
+                prev.map((p) => p.id === junctionHit.id ? { ...p, unitOptions: newUnitOptions } : p)
+              );
+              persistPlaceholderUpdate(junctionHit.id, { unitOptions: newUnitOptions });
+            }
           } else {
             addUnitToCanvasAtPos(
               unit,
@@ -766,6 +801,7 @@ export const CanvasPage: React.FC = () => {
           const tempId = Date.now();
           const newBox: PlaceholderBox = {
             id: tempId,
+            pathwayId: activePathwayId,
             placeholderType: type,
             x: snapped.x,
             y: snapped.y,
@@ -778,7 +814,7 @@ export const CanvasPage: React.FC = () => {
 
           if (currentCourse?.courseId) {
             axiosInstance
-              .post('/canvas-placeholder', { courseId: currentCourse.courseId, ...newBox })
+              .post('/canvas-placeholder', { courseId: currentCourse.courseId, pathwayId: activePathwayId, ...newBox })
               .then((res) => {
                 setPlaceholderBoxes((prev) =>
                   prev.map((p) => p.id === tempId ? { ...p, id: res.data.id } : p)
@@ -854,7 +890,7 @@ export const CanvasPage: React.FC = () => {
         updateUnit(editedUnit.unitId!, {
           unitName: formData.unitName || editedUnit.name,
           unitDesc: formData.unitDesc || editedUnit.description,
-          credits: formData.credits || editedUnit.credits,
+          credits: formData.credits ?? editedUnit.credits,
           semestersOffered:
             formData.semestersOffered || editedUnit.semestersOffered,
         })
@@ -867,7 +903,7 @@ export const CanvasPage: React.FC = () => {
                       name: formData.unitName || unit.name,
                       unitId: formData.unitId || unit.unitId,
                       description: formData.unitDesc || unit.description,
-                      credits: formData.credits || unit.credits,
+                      credits: formData.credits ?? unit.credits,
                       semestersOffered:
                         formData.semestersOffered || unit.semestersOffered,
                       color: formData.color || unit.color,
@@ -886,6 +922,42 @@ export const CanvasPage: React.FC = () => {
   function cancelEdit() {
     setEditingId(null);
     setShowForm(false);
+  }
+
+  async function handleJunctionUnitFormSave(formData: UnitFormData) {
+    if (!editingJunctionUnit) return;
+    try {
+      await updateUnit(editingJunctionUnit.unitId, {
+        unitName: formData.unitName ?? editingJunctionUnit.unitName,
+        unitDesc: formData.unitDesc ?? editingJunctionUnit.unitDesc ?? '',
+        credits: formData.credits ?? editingJunctionUnit.credits ?? 0,
+        semestersOffered: formData.semestersOffered ?? editingJunctionUnit.semestersOffered ?? [],
+      });
+      // Update the unit data inside every junction that contains it
+      setPlaceholderBoxes((prev) =>
+        prev.map((p) => {
+          const updated = (p.unitOptions ?? []).map((u) =>
+            u.unitId === editingJunctionUnit.unitId
+              ? {
+                  ...u,
+                  unitName: formData.unitName ?? u.unitName,
+                  unitDesc: formData.unitDesc ?? u.unitDesc,
+                  credits: formData.credits ?? u.credits,
+                  semestersOffered: formData.semestersOffered ?? u.semestersOffered,
+                  color: formData.color ?? u.color,
+                }
+              : u
+          );
+          if (updated === p.unitOptions) return p;
+          persistPlaceholderUpdate(p.id, { unitOptions: updated });
+          return { ...p, unitOptions: updated };
+        })
+      );
+      setEditingJunctionUnit(null);
+    } catch (err) {
+      console.error('Error updating junction unit:', err);
+      alert('Failed to save unit.');
+    }
   }
 
   function handleMouseDownCanvas(e: React.MouseEvent) {
@@ -1036,22 +1108,25 @@ export const CanvasPage: React.FC = () => {
             pathwayId: unit.pathwayId,
             courseUnitId: id, // preserve DB id so we can restore without re-creating
           };
-          const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
-          setPlaceholderBoxes((prev) =>
-            prev.map((p) => p.id === junctionHit.id ? { ...p, unitOptions: newUnitOptions } : p)
-          );
-          persistPlaceholderUpdate(junctionHit.id, { unitOptions: newUnitOptions });
-          // Hide from canvas state only — keep the DB record so we can restore it later
-          setUnitBoxes((prev) => prev.filter((u) => u.id !== id));
-          setUnitMappings((prev) => {
-            const next = { ...prev };
-            delete next[unit.unitId!];
-            return next;
-          });
-          setDraggedUnit(null);
-          setBlockedUnitId(null);
-          setTimeout(() => setIsDragging(false), 100);
-          return;
+          const alreadyInJunction = (junctionHit.unitOptions ?? []).some((u) => u.unitId === unit.unitId!);
+          if (!alreadyInJunction) {
+            const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
+            setPlaceholderBoxes((prev) =>
+              prev.map((p) => p.id === junctionHit.id ? { ...p, unitOptions: newUnitOptions } : p)
+            );
+            persistPlaceholderUpdate(junctionHit.id, { unitOptions: newUnitOptions });
+            // Hide from canvas state only — keep the DB record so we can restore it later
+            setUnitBoxes((prev) => prev.filter((u) => u.id !== id));
+            setUnitMappings((prev) => {
+              const next = { ...prev };
+              delete next[unit.unitId!];
+              return next;
+            });
+            setDraggedUnit(null);
+            setBlockedUnitId(null);
+            setTimeout(() => setIsDragging(false), 100);
+            return;
+          }
         }
       }
 
@@ -1455,9 +1530,7 @@ export const CanvasPage: React.FC = () => {
                 key={pathway.pathwayId}
                 onClick={() => togglePathwayVisibility(pathway.pathwayId)}
                 title={
-                  pathway.type === 'CORE'
-                    ? isActive ? 'Core pathway (always visible, currently editing)' : 'Core pathway (always visible) — click to set as editing target'
-                    : isActive
+                  isActive
                     ? 'Currently visible & editing — click again to hide'
                     : isVisible
                     ? 'Visible — click to set as editing target, click again to hide'
@@ -1488,11 +1561,25 @@ export const CanvasPage: React.FC = () => {
                 {pathway.type === 'ENTRY_POINT' && <span className="text-[10px]">→</span>}
                 {pathway.name}
                 {isActive && <span className="text-[9px] ml-0.5 opacity-75">✏</span>}
+                <span
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const srcType = pathway.type === 'CORE' ? 'MAJOR' : pathway.type as "MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION";
+                    setDuplicatingPathway({ id: pathway.pathwayId, name: pathway.name, type: srcType });
+                    setDupName(`Copy of ${pathway.name}`);
+                    setDupType(srcType);
+                  }}
+                  className="ml-1 opacity-60 hover:opacity-100 leading-none"
+                  title="Duplicate pathway"
+                >
+                  ⧉
+                </span>
                 {pathway.type !== 'CORE' && (
                   <span
                     role="button"
                     onClick={(e) => { e.stopPropagation(); deletePathway(pathway.pathwayId); }}
-                    className="ml-1 opacity-60 hover:opacity-100 hover:text-red-300 leading-none"
+                    className="ml-0.5 opacity-60 hover:opacity-100 hover:text-red-300 leading-none"
                     title="Delete pathway"
                   >
                     ×
@@ -1554,6 +1641,57 @@ export const CanvasPage: React.FC = () => {
                     }}
                   >
                     Create
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Duplicate Pathway Modal */}
+        {duplicatingPathway && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[200] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-lg shadow-2xl w-80">
+              <h3 className="text-sm font-bold text-gray-800 mb-1">Duplicate Pathway</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                All units from <span className="font-semibold text-gray-700">"{duplicatingPathway.name}"</span> will be copied into the new pathway.
+              </p>
+              <div className="flex flex-col gap-3">
+                <input
+                  type="text"
+                  placeholder="New pathway name"
+                  value={dupName}
+                  onChange={(e) => setDupName(e.target.value)}
+                  className="input input-bordered input-sm w-full"
+                  autoFocus
+                />
+                <select
+                  value={dupType}
+                  onChange={(e) => setDupType(e.target.value as "MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION")}
+                  className="select select-bordered select-sm w-full"
+                >
+                  <option value="MAJOR">Major</option>
+                  <option value="MINOR">Minor</option>
+                  <option value="SPECIALISATION">Specialisation</option>
+                  <option value="ENTRY_POINT">Entry Point</option>
+                </select>
+                <div className="flex gap-2 justify-end mt-1">
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => setDuplicatingPathway(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={!dupName.trim()}
+                    onClick={async () => {
+                      if (!dupName.trim()) return;
+                      await duplicatePathway(duplicatingPathway.id, dupName.trim(), dupType);
+                      setDuplicatingPathway(null);
+                    }}
+                  >
+                    Duplicate
                   </button>
                 </div>
               </div>
@@ -1639,8 +1777,10 @@ export const CanvasPage: React.FC = () => {
             />
           ))}
 
-          {/* Placeholder boxes */}
-          {placeholderBoxes.map((box) => (
+          {/* Placeholder boxes — only show those belonging to a visible pathway */}
+          {placeholderBoxes.filter((box) =>
+            box.pathwayId == null || visiblePathwayIds.includes(box.pathwayId)
+          ).map((box) => (
             <CanvasPlaceholder
               key={box.id}
               box={box}
@@ -1656,6 +1796,7 @@ export const CanvasPage: React.FC = () => {
                 persistPlaceholderUpdate(id, changes);
               }}
               onDragUnitOut={handleDragUnitOut}
+              onEditUnit={(unit) => setEditingJunctionUnit(unit)}
             />
           ))}
 
@@ -1728,6 +1869,45 @@ export const CanvasPage: React.FC = () => {
                     semestersOffered: selectedUnit.semestersOffered || [],
                   });
                   navigate("/UnitInternalCanvas");
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Edit Junction Unit */}
+        {editingJunctionUnit && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-black text-xl font-bold">Edit Unit</h2>
+                <button
+                  onClick={() => setEditingJunctionUnit(null)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors"
+                >
+                  &times;
+                </button>
+              </div>
+              <UnitForm
+                onSave={handleJunctionUnitFormSave}
+                initialData={{
+                  unitId: editingJunctionUnit.unitId,
+                  unitName: editingJunctionUnit.unitName,
+                  unitDesc: editingJunctionUnit.unitDesc ?? null,
+                  credits: editingJunctionUnit.credits ?? null,
+                  semestersOffered: editingJunctionUnit.semestersOffered ?? null,
+                  color: editingJunctionUnit.color ?? null,
+                }}
+                onView={() => {
+                  setUnit({
+                    unitId: editingJunctionUnit.unitId,
+                    unitName: editingJunctionUnit.unitName,
+                    unitDesc: editingJunctionUnit.unitDesc ?? '',
+                    credits: editingJunctionUnit.credits ?? 0,
+                    semestersOffered: editingJunctionUnit.semestersOffered ?? [],
+                  });
+                  setEditingJunctionUnit(null);
+                  navigate('/UnitInternalCanvas');
                 }}
               />
             </div>

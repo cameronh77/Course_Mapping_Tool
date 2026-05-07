@@ -56,6 +56,7 @@ model Course {
 model CanvasPlaceholder {
   id              Int     @id @default(autoincrement())
   courseId        String
+  pathwayId       Int?
   placeholderType String  // CORE | ELECTIVE | JUNCTION | AND
   x               Float
   y               Float
@@ -68,7 +69,8 @@ model CanvasPlaceholder {
   // AND junction: max sum of all unit credits
   maxTotalCredits Float?
 
-  course Course @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
+  course  Course   @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
+  pathway Pathway? @relation(fields: [pathwayId], references: [pathwayId], onDelete: SetNull)
 }
 
 model Pathway {
@@ -77,9 +79,10 @@ model Pathway {
   type        PathwayType
   courseId    String
 
-  course        Course         @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
-  courseUnits   CourseUnit[]
-  relationships UnitRelationship[]
+  course               Course               @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
+  courseUnits          CourseUnit[]
+  relationships        UnitRelationship[]
+  canvasPlaceholders   CanvasPlaceholder[]
 }
 
 model Unit {

@@ -24,6 +24,7 @@ interface Props {
   onMouseDown: (e: React.MouseEvent, id: number) => void;
   onUpdate: (id: number, changes: Partial<PlaceholderBox>) => void;
   onDragUnitOut: (junctionId: number, unit: JunctionUnit, e: React.MouseEvent) => void;
+  onEditUnit: (unit: JunctionUnit) => void;
 }
 
 const OrDivider = () => (
@@ -42,7 +43,7 @@ const AndDivider = () => (
   </div>
 );
 
-export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown, onUpdate, onDragUnitOut }) => {
+export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown, onUpdate, onDragUnitOut, onEditUnit }) => {
   const isOrJunction  = box.placeholderType === "JUNCTION";
   const isAndJunction = box.placeholderType === "AND";
   const isJunctionLike = isOrJunction || isAndJunction;
@@ -206,9 +207,9 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
               </p>
             ) : (
               unitOptions.map((unit, idx) => (
-                <React.Fragment key={unit.unitId}>
+                <React.Fragment key={unit.courseUnitId ?? unit.unitId}>
                   {idx > 0 && <OrDivider />}
-                  <UnitCard unit={unit} onDragOut={(e) => onDragUnitOut(box.id, unit, e)} onRemove={(e) => removeUnitOption(e, unit.unitId)} />
+                  <UnitCard unit={unit} onDragOut={(e) => onDragUnitOut(box.id, unit, e)} onRemove={(e) => removeUnitOption(e, unit.unitId)} onEdit={() => onEditUnit(unit)} />
                 </React.Fragment>
               ))
             )}
@@ -241,9 +242,9 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
               </p>
             ) : (
               unitOptions.map((unit, idx) => (
-                <React.Fragment key={unit.unitId}>
+                <React.Fragment key={unit.courseUnitId ?? unit.unitId}>
                   {idx > 0 && <AndDivider />}
-                  <UnitCard unit={unit} onDragOut={(e) => onDragUnitOut(box.id, unit, e)} onRemove={(e) => removeUnitOption(e, unit.unitId)} />
+                  <UnitCard unit={unit} onDragOut={(e) => onDragUnitOut(box.id, unit, e)} onRemove={(e) => removeUnitOption(e, unit.unitId)} onEdit={() => onEditUnit(unit)} />
                 </React.Fragment>
               ))
             )}
@@ -259,12 +260,14 @@ const UnitCard: React.FC<{
   unit: JunctionUnit;
   onDragOut: (e: React.MouseEvent) => void;
   onRemove: (e: React.MouseEvent) => void;
-}> = ({ unit, onDragOut, onRemove }) => (
+  onEdit: () => void;
+}> = ({ unit, onDragOut, onRemove, onEdit }) => (
   <div
     className="rounded overflow-hidden shadow-sm cursor-grab active:cursor-grabbing group/card"
     style={{ backgroundColor: unit.color || "#3B82F6" }}
     onMouseDown={(e) => { e.stopPropagation(); onDragOut(e); }}
-    title="Drag to move out of junction"
+    onDoubleClick={(e) => { e.stopPropagation(); onEdit(); }}
+    title="Drag to move · double-click to edit"
   >
     <div className="px-2.5 py-1.5 flex items-start gap-1.5 text-white">
       <svg className="w-3 h-3 mt-0.5 shrink-0 opacity-40 group-hover/card:opacity-70" fill="currentColor" viewBox="0 0 20 20">
