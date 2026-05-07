@@ -21,7 +21,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData, onView }) => {
     unitId: initialData?.unitId || null,
     unitName: initialData?.unitName || null,
     unitDesc: initialData?.unitDesc || null,
-    credits: initialData?.credits || null,
+    credits: initialData?.credits ?? null,
     semestersOffered: initialData?.semestersOffered || null,
     color: initialData?.color || "#3B82F6", // Default blue
   });
@@ -112,7 +112,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData, onView }) => {
           <input
             type="number"
             name="credits"
-            value={form.credits || ""}
+            value={form.credits ?? ""}
             onChange={handleChange}
             min={0}
             max={20}

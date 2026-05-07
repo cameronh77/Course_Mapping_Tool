@@ -45,9 +45,12 @@ function buildFreshLayout(
   const groupUnits: Record<GroupKey, string[]> = {};
   for (const tag of existingTags) groupUnits[`tag-${tag.tagId}`] = [];
 
+  const seenKeys = new Set<string>();
   const freeUnitKeys: string[] = [];
   for (const unit of unitBoxes) {
     const key = unit.unitId || unit.id.toString();
+    if (seenKeys.has(key)) continue; // skip duplicate unitIds (same unit in multiple pathways)
+    seenKeys.add(key);
     const tags = unitMappings[key]?.tags || [];
     let addedToAny = false;
     for (const tag of tags) {

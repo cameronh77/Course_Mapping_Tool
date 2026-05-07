@@ -27,7 +27,7 @@ export const getCanvasPlaceholders = async (req: Request, res: Response) => {
 
 // POST /api/canvas-placeholder
 export const createCanvasPlaceholder = async (req: Request, res: Response) => {
-  const { courseId, placeholderType, x, y, label, options, unitOptions, minCredits, maxCredits, maxTotalCredits } = req.body;
+  const { courseId, pathwayId, placeholderType, x, y, label, options, unitOptions, minCredits, maxCredits, maxTotalCredits } = req.body;
   if (!courseId || !placeholderType) {
     return res.status(400).json({ message: "courseId and placeholderType are required" });
   }
@@ -35,6 +35,7 @@ export const createCanvasPlaceholder = async (req: Request, res: Response) => {
     const placeholder = await prisma.canvasPlaceholder.create({
       data: {
         courseId,
+        pathwayId: pathwayId != null ? Number(pathwayId) : null,
         placeholderType,
         x: Number(x) || 0,
         y: Number(y) || 0,

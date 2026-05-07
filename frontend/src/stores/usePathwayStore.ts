@@ -12,6 +12,7 @@ interface PathwayState {
   createPathway: (name: string, type: string, courseId: string) => Promise<Pathway>;
   deletePathway: (pathwayId: number) => Promise<void>;
   updatePathway: (pathwayId: number, name: string, type: string) => Promise<void>;
+  duplicatePathway: (pathwayId: number, name: string, type: string) => Promise<Pathway>;
 }
 
 export const usePathwayStore = create<PathwayState>((set) => ({
@@ -31,15 +32,9 @@ export const usePathwayStore = create<PathwayState>((set) => ({
 
   togglePathwayVisibility: (pathwayId: number) =>
     set((state) => {
-      const isCore = state.pathways.find((p) => p.pathwayId === pathwayId)?.type === 'CORE';
       const isVisible = state.visiblePathwayIds.includes(pathwayId);
 
       const isActive = state.activePathwayId === pathwayId;
-
-      if (isCore) {
-        // CORE is always visible — clicking just changes the active editing target
-        return { activePathwayId: pathwayId };
-      }
 
       if (isVisible && isActive) {
         // Active pathway clicked again — hide it and promote next visible to active
@@ -89,5 +84,16 @@ export const usePathwayStore = create<PathwayState>((set) => ({
         p.pathwayId === pathwayId ? updated : p
       ),
     }));
+  },
+
+  duplicatePathway: async (pathwayId: number, name: string, type: string) => {
+    const res = await axios.post(`/pathway/${pathwayId}/duplicate`, { name, type });
+    const newPathway: Pathway = res.data;
+    set((state) => ({
+      pathways: [...state.pathways, newPathway],
+      visiblePathwayIds: [...state.visiblePathwayIds, newPathway.pathwayId],
+      activePathwayId: newPathway.pathwayId,
+    }));
+    return newPathway;
   },
 }));
