@@ -3,19 +3,19 @@ import type { PlaceholderBox, JunctionUnit } from "../../types";
 
 export const PLACEHOLDER_WIDTH = 256;
 
-// Header colours per type
 const TYPE_COLOR: Record<string, string> = {
-  CORE:     "#6B7280", // gray  – unknown unit
-  ELECTIVE: "#F59E0B", // amber
-  JUNCTION: "#8B5CF6", // violet
+  CORE:     "#6B7280",
+  ELECTIVE: "#F59E0B",
+  JUNCTION: "#8B5CF6",
+  AND:      "#059669",
 };
 
 const TYPE_ICON: Record<string, string> = {
-  CORE: "◆", ELECTIVE: "✦", JUNCTION: "⑂",
+  CORE: "◆", ELECTIVE: "✦", JUNCTION: "⑂", AND: "⊕",
 };
 
 const DEFAULT_LABEL: Record<string, string> = {
-  CORE: "Core Unit", ELECTIVE: "Elective", JUNCTION: "OR Junction",
+  CORE: "Core Unit", ELECTIVE: "Elective", JUNCTION: "OR Junction", AND: "AND Junction",
 };
 
 interface Props {
@@ -26,7 +26,6 @@ interface Props {
   onDragUnitOut: (junctionId: number, unit: JunctionUnit, e: React.MouseEvent) => void;
 }
 
-// OR divider
 const OrDivider = () => (
   <div className="flex items-center gap-1.5 text-[10px] text-violet-400 font-bold">
     <div className="flex-1 h-px bg-violet-100" />
@@ -35,17 +34,25 @@ const OrDivider = () => (
   </div>
 );
 
+const AndDivider = () => (
+  <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold">
+    <div className="flex-1 h-px bg-emerald-100" />
+    AND
+    <div className="flex-1 h-px bg-emerald-100" />
+  </div>
+);
+
 export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown, onUpdate, onDragUnitOut }) => {
-  const isJunction = box.placeholderType === "JUNCTION";
-  const [isExpanded, setIsExpanded] = useState(isJunction);
-  const [editingOptionIdx, setEditingOptionIdx] = useState<number | null>(null);
+  const isOrJunction  = box.placeholderType === "JUNCTION";
+  const isAndJunction = box.placeholderType === "AND";
+  const isJunctionLike = isOrJunction || isAndJunction;
+
+  const [isExpanded, setIsExpanded] = useState(isJunctionLike);
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState(box.label ?? DEFAULT_LABEL[box.placeholderType]);
   const labelInputRef = useRef<HTMLInputElement>(null);
-  const optionInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (editingLabel) labelInputRef.current?.focus(); }, [editingLabel]);
-  useEffect(() => { if (editingOptionIdx !== null) optionInputRef.current?.focus(); }, [editingOptionIdx]);
 
   const color = TYPE_COLOR[box.placeholderType];
   const icon  = TYPE_ICON[box.placeholderType];
@@ -56,31 +63,45 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
     setEditingLabel(false);
   };
 
-  const commitOption = (idx: number, value: string) => {
-    const next = [...(box.options ?? [])];
-    next[idx] = value.trim() || next[idx];
-    onUpdate(box.id, { options: next });
-    setEditingOptionIdx(null);
-  };
-
-  const addOption = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onUpdate(box.id, { options: [...(box.options ?? []), "Option"] });
-  };
-
-  const removeTextOption = (e: React.MouseEvent, idx: number) => {
-    e.stopPropagation();
-    onUpdate(box.id, { options: (box.options ?? []).filter((_, i) => i !== idx) });
-  };
-
   const removeUnitOption = (e: React.MouseEvent, unitId: string) => {
     e.stopPropagation();
     onUpdate(box.id, { unitOptions: (box.unitOptions ?? []).filter((u) => u.unitId !== unitId) });
   };
 
   const unitOptions = box.unitOptions ?? [];
-  const textOptions = box.options ?? [];
-  const totalEntries = unitOptions.length + textOptions.length;
+
+  // Total credits for AND junction display
+  const totalCredits = unitOptions.reduce((sum, u) => sum + (u.credits ?? 0), 0);
+
+  // Shared credit number input component
+  const CreditInput = ({
+    label,
+    value,
+    onChange,
+    placeholder,
+  }: {
+    label: string;
+    value: number | undefined;
+    onChange: (v: number | undefined) => void;
+    placeholder: string;
+  }) => (
+    <label className="flex items-center gap-1.5 text-[10px] text-gray-500">
+      <span className="shrink-0 font-medium">{label}</span>
+      <input
+        type="number"
+        min={0}
+        value={value ?? ""}
+        placeholder={placeholder}
+        onChange={(e) => {
+          const raw = e.target.value;
+          onChange(raw === "" ? undefined : Number(raw));
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="w-14 border border-gray-200 rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:border-gray-400 bg-white"
+      />
+      <span className="shrink-0">cr</span>
+    </label>
+  );
 
   return (
     <div
@@ -93,18 +114,17 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
         minHeight: 80,
       }}
     >
-      {/* Same outer wrapper as UnitBox */}
       <div
         className="border-2 border-dashed bg-white rounded flex flex-col w-full h-full overflow-hidden"
         style={{ borderColor: color + "66" }}
       >
-        {/* ── Header ─────────────────────────────────────────────────────── */}
+        {/* ── Header ── */}
         <div
           className="h-20 w-full flex items-center justify-between px-4 cursor-grab active:cursor-grabbing shrink-0 relative"
           style={{ backgroundColor: color, color: "white" }}
           onMouseDown={(e) => onMouseDown(e, box.id)}
           onDoubleClick={(e) => {
-            if (!isJunction) { e.stopPropagation(); setLabelDraft(displayLabel); setEditingLabel(true); }
+            if (!isJunctionLike) { e.stopPropagation(); setLabelDraft(displayLabel); setEditingLabel(true); }
           }}
         >
           <div className="flex-1 truncate pr-6">
@@ -124,14 +144,14 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
               </h2>
             )}
             <p className="text-[10px] mt-0.5 opacity-50 uppercase tracking-widest font-medium">
-              {isJunction
-                ? `${totalEntries} option${totalEntries !== 1 ? 's' : ''} · drag units in`
+              {isJunctionLike
+                ? `${unitOptions.length} option${unitOptions.length !== 1 ? 's' : ''} · drag units in`
                 : "placeholder · double-click to rename"}
             </p>
           </div>
 
-          {/* Expand button (junction only) */}
-          {isJunction && (
+          {/* Expand/collapse (junctions only) */}
+          {isJunctionLike && (
             <button
               onClick={(e) => { e.stopPropagation(); setIsExpanded((v) => !v); }}
               onMouseDown={(e) => e.stopPropagation()}
@@ -145,7 +165,7 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
             </button>
           )}
 
-          {/* Delete (same position as UnitBox) */}
+          {/* Delete */}
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(box.id); }}
             onMouseDown={(e) => e.stopPropagation()}
@@ -156,103 +176,117 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
           </button>
         </div>
 
-        {/* ── Junction options (expanded) ─────────────────────────────────── */}
-        {isJunction && isExpanded && (
+        {/* ── OR junction expanded body ── */}
+        {isOrJunction && isExpanded && (
           <div
             className="flex flex-col bg-white border-t border-gray-100 px-2 py-2 gap-1.5"
             onMouseDown={(e) => e.stopPropagation()}
           >
-            {/* ── Unit cards ── */}
-            {unitOptions.map((unit, idx) => (
-              <React.Fragment key={unit.unitId}>
-                {idx > 0 && <OrDivider />}
-                <div
-                  className="rounded overflow-hidden shadow-sm border border-white/10 cursor-grab active:cursor-grabbing group/card"
-                  style={{ backgroundColor: unit.color || "#3B82F6" }}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    onDragUnitOut(box.id, unit, e);
-                  }}
-                  title="Drag to move out of junction"
-                >
-                  <div className="px-2.5 py-1.5 flex items-start gap-1.5 text-white">
-                    {/* Drag grip icon */}
-                    <svg className="w-3 h-3 mt-0.5 shrink-0 opacity-40 group-hover/card:opacity-70" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M7 2a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 2zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 8zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 14zm6-8a2 2 0 1 0-.001-4.001A2 2 0 0 0 13 6zm0 2a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 8zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 14z"/>
-                    </svg>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-bold truncate leading-tight">{unit.unitId}</div>
-                      <div className="text-[10px] opacity-75 truncate leading-tight">{unit.unitName}</div>
-                    </div>
-                    <button
-                      className="text-white/50 hover:text-white text-base leading-none shrink-0 -mt-0.5"
-                      onClick={(e) => removeUnitOption(e, unit.unitId)}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      title="Remove from junction"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  {unit.credits != null && (
-                    <div className="px-2.5 pb-1 text-[9px] text-white/50 leading-tight">
-                      {unit.credits} credits
-                    </div>
-                  )}
-                </div>
-              </React.Fragment>
-            ))}
+            {/* Credit range rule */}
+            <div className="flex items-center justify-between gap-1 pb-1 border-b border-violet-50">
+              <CreditInput
+                label="Min"
+                value={box.minCredits}
+                onChange={(v) => onUpdate(box.id, { minCredits: v })}
+                placeholder="—"
+              />
+              <span className="text-[10px] text-gray-300">–</span>
+              <CreditInput
+                label="Max"
+                value={box.maxCredits}
+                onChange={(v) => onUpdate(box.id, { maxCredits: v })}
+                placeholder="—"
+              />
+              <span className="text-[9px] text-gray-400 italic shrink-0">per unit</span>
+            </div>
 
-            {/* ── Text options ── */}
-            {textOptions.map((opt, idx) => (
-              <React.Fragment key={`text-${idx}`}>
-                {(unitOptions.length > 0 || idx > 0) && <OrDivider />}
-                <div className="flex items-center gap-1">
-                  {editingOptionIdx === idx ? (
-                    <input
-                      ref={optionInputRef}
-                      className="flex-1 text-xs border border-violet-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-violet-400"
-                      defaultValue={opt}
-                      onBlur={(e) => commitOption(idx, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitOption(idx, (e.target as HTMLInputElement).value);
-                        if (e.key === "Escape") setEditingOptionIdx(null);
-                      }}
-                    />
-                  ) : (
-                    <span
-                      className="flex-1 text-xs text-gray-600 truncate cursor-text hover:text-gray-900 px-1"
-                      onDoubleClick={() => setEditingOptionIdx(idx)}
-                      title="Double-click to edit"
-                    >
-                      {opt || <span className="italic text-gray-400">empty</span>}
-                    </span>
-                  )}
-                  <button
-                    className="text-[11px] text-gray-300 hover:text-red-400 leading-none px-0.5"
-                    onClick={(e) => removeTextOption(e, idx)}
-                    title="Remove"
-                  >
-                    ×
-                  </button>
-                </div>
-              </React.Fragment>
-            ))}
-
-            {totalEntries === 0 && (
-              <p className="text-[10px] text-gray-400 italic text-center py-1">
-                Drag units here or add a label below
+            {unitOptions.length === 0 ? (
+              <p className="text-[10px] text-gray-400 italic text-center py-2">
+                Drag units here to add options
               </p>
+            ) : (
+              unitOptions.map((unit, idx) => (
+                <React.Fragment key={unit.unitId}>
+                  {idx > 0 && <OrDivider />}
+                  <UnitCard unit={unit} onDragOut={(e) => onDragUnitOut(box.id, unit, e)} onRemove={(e) => removeUnitOption(e, unit.unitId)} />
+                </React.Fragment>
+              ))
             )}
+          </div>
+        )}
 
-            <button
-              className="mt-0.5 w-full text-[10px] text-violet-500 hover:text-violet-700 border border-dashed border-violet-200 rounded py-0.5 transition-colors"
-              onClick={addOption}
-            >
-              + add label
-            </button>
+        {/* ── AND junction expanded body ── */}
+        {isAndJunction && isExpanded && (
+          <div
+            className="flex flex-col bg-white border-t border-gray-100 px-2 py-2 gap-1.5"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* Max total credits rule */}
+            <div className="flex items-center justify-between gap-1 pb-1 border-b border-emerald-50">
+              <CreditInput
+                label="Max total"
+                value={box.maxTotalCredits}
+                onChange={(v) => onUpdate(box.id, { maxTotalCredits: v })}
+                placeholder="—"
+              />
+              <span className="text-[9px] text-gray-400 italic shrink-0">
+                total: <span className={box.maxTotalCredits !== undefined && totalCredits > box.maxTotalCredits ? "text-red-500 font-bold" : "text-emerald-600 font-semibold"}>{totalCredits}</span>
+                {box.maxTotalCredits !== undefined && ` / ${box.maxTotalCredits}`} cr
+              </span>
+            </div>
+
+            {unitOptions.length === 0 ? (
+              <p className="text-[10px] text-gray-400 italic text-center py-2">
+                Drag units here to add options
+              </p>
+            ) : (
+              unitOptions.map((unit, idx) => (
+                <React.Fragment key={unit.unitId}>
+                  {idx > 0 && <AndDivider />}
+                  <UnitCard unit={unit} onDragOut={(e) => onDragUnitOut(box.id, unit, e)} onRemove={(e) => removeUnitOption(e, unit.unitId)} />
+                </React.Fragment>
+              ))
+            )}
           </div>
         )}
       </div>
     </div>
   );
 };
+
+// Shared draggable unit card used inside both junction types
+const UnitCard: React.FC<{
+  unit: JunctionUnit;
+  onDragOut: (e: React.MouseEvent) => void;
+  onRemove: (e: React.MouseEvent) => void;
+}> = ({ unit, onDragOut, onRemove }) => (
+  <div
+    className="rounded overflow-hidden shadow-sm cursor-grab active:cursor-grabbing group/card"
+    style={{ backgroundColor: unit.color || "#3B82F6" }}
+    onMouseDown={(e) => { e.stopPropagation(); onDragOut(e); }}
+    title="Drag to move out of junction"
+  >
+    <div className="px-2.5 py-1.5 flex items-start gap-1.5 text-white">
+      <svg className="w-3 h-3 mt-0.5 shrink-0 opacity-40 group-hover/card:opacity-70" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M7 2a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 2zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 8zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 7 14zm6-8a2 2 0 1 0-.001-4.001A2 2 0 0 0 13 6zm0 2a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 8zm0 6a2 2 0 1 0 .001 4.001A2 2 0 0 0 13 14z"/>
+      </svg>
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] font-bold truncate leading-tight">{unit.unitId}</div>
+        <div className="text-[10px] opacity-75 truncate leading-tight">{unit.unitName}</div>
+      </div>
+      <button
+        className="text-white/50 hover:text-white text-base leading-none shrink-0 -mt-0.5"
+        onClick={onRemove}
+        onMouseDown={(e) => e.stopPropagation()}
+        title="Remove from junction"
+      >
+        ×
+      </button>
+    </div>
+    {unit.credits != null && (
+      <div className="px-2.5 pb-1 text-[9px] text-white/50 leading-tight">
+        {unit.credits} credits
+      </div>
+    )}
+  </div>
+);

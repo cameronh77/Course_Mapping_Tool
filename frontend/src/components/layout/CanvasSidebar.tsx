@@ -353,9 +353,10 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
               <div className="flex flex-col gap-2">
                 {(
                   [
-                    { type: 'CORE' as const,     icon: '◆', label: 'Core Unit',  border: 'border-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-800'   },
-                    { type: 'ELECTIVE' as const,  icon: '✦', label: 'Elective',   border: 'border-amber-400',  bg: 'bg-amber-50',  text: 'text-amber-800'  },
+                    { type: 'CORE' as const,     icon: '◆', label: 'Core Unit',   border: 'border-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-800'   },
+                    { type: 'ELECTIVE' as const,  icon: '✦', label: 'Elective',    border: 'border-amber-400',  bg: 'bg-amber-50',  text: 'text-amber-800'  },
                     { type: 'JUNCTION' as const,  icon: '⑂', label: 'OR Junction', border: 'border-purple-400', bg: 'bg-purple-50', text: 'text-purple-800' },
+                    { type: 'AND' as const,       icon: '⊕', label: 'AND Junction', border: 'border-emerald-400', bg: 'bg-emerald-50', text: 'text-emerald-800' },
                   ]
                 ).map(({ type, icon, label, border, bg, text }) => (
                   <div

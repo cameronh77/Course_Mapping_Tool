@@ -14,6 +14,7 @@ import teachingActivityRoutes from "./teaching-activity/routes/teachingActivityR
 import teachingActivityLinksRoutes from "./teaching-activity-links/routes/teachingActivityLinksRoutes.js";
 import themeCategoryRoutes from "./theme-category/routes/themeCategoryRoutes.js";
 import pathwayRoutes from "./pathway/routes/pathwayRoutes.js";
+import canvasPlaceholderRoutes from "./canvas-placeholder/routes/canvasPlaceholderRoutes.js";
 import cors from "cors";
 
 dotenv.config();
@@ -52,6 +53,7 @@ app.use("/api/teaching-activity", teachingActivityRoutes);
 app.use("/api/teaching-activity-links", teachingActivityLinksRoutes);
 app.use("/api/theme-category", themeCategoryRoutes);
 app.use("/api/pathway", pathwayRoutes);
+app.use("/api/canvas-placeholder", canvasPlaceholderRoutes);
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);

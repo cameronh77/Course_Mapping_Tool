@@ -236,13 +236,32 @@ export const CanvasPage: React.FC = () => {
 
   useEffect(() => {
     const loadCanvasState = async () => {
-      if (!currentCourse?.courseId || visiblePathwayIds.length === 0) {
+      if (!currentCourse?.courseId) {
         setUnitBoxes([]);
         setUnitMappings({});
         return;
       }
       try {
-        // Fetch shared lookups + all pathway unit data in parallel
+        // Always load placeholders so we know which courseUnitIds are parked in junctions
+        const phRes = await axiosInstance.get(`/canvas-placeholder?courseId=${currentCourse.courseId}`);
+        const loadedPlaceholders: PlaceholderBox[] = phRes.data || [];
+        setPlaceholderBoxes(loadedPlaceholders);
+
+        // Collect courseUnitIds that are currently parked inside a junction
+        const parkedIds = new Set<number>(
+          loadedPlaceholders.flatMap((p) =>
+            (p.unitOptions ?? [])
+              .map((u) => u.courseUnitId)
+              .filter((id): id is number => id != null)
+          )
+        );
+
+        if (visiblePathwayIds.length === 0) {
+          setUnitBoxes([]);
+          setUnitMappings({});
+          return;
+        }
+
         const [cloRes, uloRes, tagRes, ...pathwayRess] = await Promise.all([
           axiosInstance.get(`/CLO/viewAll/${currentCourse.courseId}`),
           axiosInstance.get(`/ULO/view`),
@@ -268,8 +287,11 @@ export const CanvasPage: React.FC = () => {
           );
 
           for (const cu of courseUnits) {
+            // Skip units that are currently parked inside a junction
+            if (parkedIds.has(cu.id)) continue;
+
             allUnitBoxes.push({
-              id: Date.now() + Math.random(),
+              id: cu.id, // use actual DB courseUnit id
               name: cu.unit.unitName,
               unitId: cu.unitId,
               pathwayId: cu.pathwayId,
@@ -316,25 +338,12 @@ export const CanvasPage: React.FC = () => {
     loadCLOs();
   }, [currentCourse?.courseId]);
 
-  // Load placeholder boxes from localStorage when course changes
-  useEffect(() => {
-    if (!currentCourse?.courseId) return;
-    const saved = localStorage.getItem(`canvas_placeholders_${currentCourse.courseId}`);
-    if (saved) {
-      try { setPlaceholderBoxes(JSON.parse(saved)); } catch { /* ignore */ }
-    } else {
-      setPlaceholderBoxes([]);
-    }
-  }, [currentCourse?.courseId]);
-
-  // Persist placeholder boxes to localStorage whenever they change
-  useEffect(() => {
-    if (!currentCourse?.courseId) return;
-    localStorage.setItem(
-      `canvas_placeholders_${currentCourse.courseId}`,
-      JSON.stringify(placeholderBoxes)
-    );
-  }, [currentCourse?.courseId, placeholderBoxes]);
+  // Persist a single placeholder update to the DB
+  const persistPlaceholderUpdate = (id: number, changes: Partial<PlaceholderBox>) => {
+    axiosInstance
+      .put(`/canvas-placeholder/${id}`, changes)
+      .catch((err) => console.error("Failed to save placeholder:", err));
+  };
 
   const companionSlotY = (snappedY: number): number | null => {
     const row = Math.round((snappedY - START_Y - 20) / ROW_HEIGHT);
@@ -536,19 +545,51 @@ export const CanvasPage: React.FC = () => {
   const placeholderBoxesRef = useRef(placeholderBoxes);
   placeholderBoxesRef.current = placeholderBoxes;
 
+  // ── Restore a junction unit back to the canvas (or create fresh if it never was) ──
+  const restoreOrPlaceUnit = (unit: JunctionUnit, asUnit: Unit, rawX: number, rawY: number) => {
+    if (unit.courseUnitId) {
+      // Unit has an existing DB record — snap and restore without re-creating
+      const snapped = snapToGrid(rawX, rawY);
+      const restoredBox: UnitBoxType = {
+        id: unit.courseUnitId,
+        name: unit.unitName,
+        unitId: unit.unitId,
+        pathwayId: unit.pathwayId,
+        description: unit.unitDesc,
+        credits: unit.credits,
+        semestersOffered: unit.semestersOffered,
+        x: snapped.x,
+        y: snapped.y,
+        color: unit.color,
+      };
+      setUnitBoxes((prev) => [...prev, restoredBox]);
+      const col = Math.max(0, Math.round((snapped.x - START_X) / COL_WIDTH));
+      const semester = snapped.y < START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT ? 1 : 2;
+      axiosInstance
+        .put(`/course-unit/update/${unit.courseUnitId}`, {
+          semester,
+          year: col + 1,
+          position: { x: snapped.x, y: snapped.y },
+        })
+        .catch((err) => console.error("Failed to restore unit position:", err));
+    } else {
+      // Sidebar-sourced unit — create a new course-unit record
+      addUnitToCanvasAtPos(asUnit, rawX, rawY, unit.color);
+    }
+  };
+
   // ── Drag unit OUT of a junction ────────────────────────────────────────────
   const handleDragUnitOut = (junctionId: number, unit: JunctionUnit, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
     // Remove from junction immediately
+    const removedOptions = (placeholderBoxesRef.current.find((p) => p.id === junctionId)?.unitOptions ?? [])
+      .filter((u) => u.unitId !== unit.unitId);
     setPlaceholderBoxes((prev) =>
-      prev.map((p) =>
-        p.id === junctionId
-          ? { ...p, unitOptions: (p.unitOptions ?? []).filter((u) => u.unitId !== unit.unitId) }
-          : p
-      )
+      prev.map((p) => p.id === junctionId ? { ...p, unitOptions: removedOptions } : p)
     );
+    persistPlaceholderUpdate(junctionId, { unitOptions: removedOptions });
 
     const asUnit: Unit = {
       unitId: unit.unitId,
@@ -577,9 +618,9 @@ export const CanvasPage: React.FC = () => {
         if (insideCanvas) {
           const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
 
-          // Check if dropped on another junction
+          // Check if dropped on another junction (OR or AND)
           const otherJunction = placeholderBoxesRef.current.find((p) => {
-            if (p.id === junctionId || p.placeholderType !== 'JUNCTION') return false;
+            if (p.id === junctionId || (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND')) return false;
             const approxH = 80 + ((p.unitOptions?.length ?? 0) + (p.options?.length ?? 0)) * 60 + 48;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
@@ -588,31 +629,21 @@ export const CanvasPage: React.FC = () => {
           });
 
           if (otherJunction) {
+            const newOptions = [...(otherJunction.unitOptions ?? []), unit];
             setPlaceholderBoxes((prev) =>
-              prev.map((p) =>
-                p.id === otherJunction.id
-                  ? { ...p, unitOptions: [...(p.unitOptions ?? []), unit] }
-                  : p
-              )
+              prev.map((p) => p.id === otherJunction.id ? { ...p, unitOptions: newOptions } : p)
             );
+            persistPlaceholderUpdate(otherJunction.id, { unitOptions: newOptions });
           } else {
-            // Place on canvas only if not already there in this pathway
-            const alreadyOnCanvas = unitBoxes.some(
-              (u) => u.unitId === asUnit.unitId && u.pathwayId === (unit.pathwayId ?? activePathwayId)
-            );
-            if (!alreadyOnCanvas) {
-              addUnitToCanvasAtPos(asUnit, canvasCoords.x - UNIT_BOX_WIDTH / 2, canvasCoords.y - 40, unit.color);
-            }
+            restoreOrPlaceUnit(unit, asUnit, canvasCoords.x - UNIT_BOX_WIDTH / 2, canvasCoords.y - 40);
           }
         } else {
           // Dropped outside canvas — put back in same junction
+          const restoredOptions = [...removedOptions, unit];
           setPlaceholderBoxes((prev) =>
-            prev.map((p) =>
-              p.id === junctionId
-                ? { ...p, unitOptions: [...(p.unitOptions ?? []), unit] }
-                : p
-            )
+            prev.map((p) => p.id === junctionId ? { ...p, unitOptions: restoredOptions } : p)
           );
+          persistPlaceholderUpdate(junctionId, { unitOptions: restoredOptions });
         }
       }
       setDraggedNewUnit(null);
@@ -671,10 +702,10 @@ export const CanvasPage: React.FC = () => {
             canvasRef.current
           );
 
-          // Check if dropped onto a junction placeholder
+          // Check if dropped onto a junction placeholder (OR or AND)
           const PLACEHOLDER_W = UNIT_BOX_WIDTH; // same as placeholder width
           const junctionHit = placeholderBoxesRef.current.find((p) => {
-            if (p.placeholderType !== 'JUNCTION') return false;
+            if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
             const approxHeight = 40 + (p.options?.length ?? 2) * 52 + 36;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + PLACEHOLDER_W &&
@@ -690,13 +721,11 @@ export const CanvasPage: React.FC = () => {
               credits: unit.credits,
               semestersOffered: unit.semestersOffered,
             };
+            const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
             setPlaceholderBoxes((prev) =>
-              prev.map((p) =>
-                p.id === junctionHit.id
-                  ? { ...p, unitOptions: [...(p.unitOptions ?? []), jUnit] }
-                  : p
-              )
+              prev.map((p) => p.id === junctionHit.id ? { ...p, unitOptions: newUnitOptions } : p)
             );
+            persistPlaceholderUpdate(junctionHit.id, { unitOptions: newUnitOptions });
           } else {
             addUnitToCanvasAtPos(
               unit,
@@ -734,16 +763,32 @@ export const CanvasPage: React.FC = () => {
         ) {
           const coords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
           const snapped = snapToGrid(coords.x, coords.y);
+          const tempId = Date.now();
           const newBox: PlaceholderBox = {
-            id: Date.now(),
+            id: tempId,
             placeholderType: type,
             x: snapped.x,
             y: snapped.y,
             ...(type === 'CORE'     ? { label: 'Core Unit' }
               : type === 'ELECTIVE' ? { label: 'Elective' }
-              :                       { options: ['Option A', 'Option B'] }),
+              : type === 'AND'      ? {}
+              :                       {}),
           };
           setPlaceholderBoxes((prev) => [...prev, newBox]);
+
+          if (currentCourse?.courseId) {
+            axiosInstance
+              .post('/canvas-placeholder', { courseId: currentCourse.courseId, ...newBox })
+              .then((res) => {
+                setPlaceholderBoxes((prev) =>
+                  prev.map((p) => p.id === tempId ? { ...p, id: res.data.id } : p)
+                );
+              })
+              .catch((err) => {
+                console.error("Failed to create placeholder:", err);
+                setPlaceholderBoxes((prev) => prev.filter((p) => p.id !== tempId));
+              });
+          }
         }
       }
       setDraggedPlaceholder(null);
@@ -790,6 +835,7 @@ export const CanvasPage: React.FC = () => {
       setPlaceholderBoxes((prev) =>
         prev.map((p) => p.id === id ? { ...p, x: snapped.x, y: snapped.y } : p)
       );
+      persistPlaceholderUpdate(id, { x: snapped.x, y: snapped.y });
     };
 
     document.addEventListener("mousemove", handleMove);
@@ -967,11 +1013,11 @@ export const CanvasPage: React.FC = () => {
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
 
-      // Check if dropped onto a junction placeholder
+      // Check if dropped onto a junction placeholder (OR or AND)
       if (canvasRef.current && unit?.unitId) {
         const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
         const junctionHit = placeholderBoxesRef.current.find((p) => {
-          if (p.placeholderType !== 'JUNCTION') return false;
+          if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
           const approxHeight = 80 + (p.options?.length ?? 2) * 52 + 36;
           return (
             canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
@@ -988,18 +1034,20 @@ export const CanvasPage: React.FC = () => {
             semestersOffered: unit.semestersOffered,
             color: unit.color,
             pathwayId: unit.pathwayId,
+            courseUnitId: id, // preserve DB id so we can restore without re-creating
           };
+          const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
           setPlaceholderBoxes((prev) =>
-            prev.map((p) =>
-              p.id === junctionHit.id
-                ? { ...p, unitOptions: [...(p.unitOptions ?? []), jUnit] }
-                : p
-            )
+            prev.map((p) => p.id === junctionHit.id ? { ...p, unitOptions: newUnitOptions } : p)
           );
-          // Revert unit back to where it came from
-          setUnitBoxes((prev) =>
-            prev.map((u) => u.id === id ? { ...u, x: originalPos.x, y: originalPos.y } : u)
-          );
+          persistPlaceholderUpdate(junctionHit.id, { unitOptions: newUnitOptions });
+          // Hide from canvas state only — keep the DB record so we can restore it later
+          setUnitBoxes((prev) => prev.filter((u) => u.id !== id));
+          setUnitMappings((prev) => {
+            const next = { ...prev };
+            delete next[unit.unitId!];
+            return next;
+          });
           setDraggedUnit(null);
           setBlockedUnitId(null);
           setTimeout(() => setIsDragging(false), 100);
@@ -1596,11 +1644,17 @@ export const CanvasPage: React.FC = () => {
             <CanvasPlaceholder
               key={box.id}
               box={box}
-              onDelete={(id) => setPlaceholderBoxes((prev) => prev.filter((p) => p.id !== id))}
+              onDelete={(id) => {
+                setPlaceholderBoxes((prev) => prev.filter((p) => p.id !== id));
+                axiosInstance
+                  .delete(`/canvas-placeholder/${id}`)
+                  .catch((err) => console.error("Failed to delete placeholder:", err));
+              }}
               onMouseDown={handlePlaceholderDragOnCanvas}
-              onUpdate={(id, changes) =>
-                setPlaceholderBoxes((prev) => prev.map((p) => p.id === id ? { ...p, ...changes } : p))
-              }
+              onUpdate={(id, changes) => {
+                setPlaceholderBoxes((prev) => prev.map((p) => p.id === id ? { ...p, ...changes } : p));
+                persistPlaceholderUpdate(id, changes);
+              }}
               onDragUnitOut={handleDragUnitOut}
             />
           ))}
@@ -1735,14 +1789,17 @@ export const CanvasPage: React.FC = () => {
         const bgColor =
           draggedPlaceholder.type === 'CORE'     ? '#6B7280'
           : draggedPlaceholder.type === 'ELECTIVE' ? '#F59E0B'
+          : draggedPlaceholder.type === 'AND'      ? '#059669'
           :                                           '#8B5CF6';
         const icon =
           draggedPlaceholder.type === 'CORE'     ? '◆'
           : draggedPlaceholder.type === 'ELECTIVE' ? '✦'
+          : draggedPlaceholder.type === 'AND'      ? '⊕'
           :                                           '⑂';
         const label =
           draggedPlaceholder.type === 'CORE'     ? 'Core Unit'
           : draggedPlaceholder.type === 'ELECTIVE' ? 'Elective'
+          : draggedPlaceholder.type === 'AND'      ? 'AND Junction'
           :                                           'OR Junction';
         return (
           <div

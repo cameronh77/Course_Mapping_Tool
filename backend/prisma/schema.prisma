@@ -42,16 +42,33 @@ model Course {
   expectedDuration      Int //The expected duration of the course
   numberTeachingPeriods Int //How many teaching periods in a year
 
-  unitsOffered     CourseUnit[]
-  themes           CourseTheme[]
-  learningOutcomes CourseLearningOutcome[]
-  pathways         Pathway[]
-  UnitRelationship UnitRelationship[]
+  unitsOffered        CourseUnit[]
+  themes              CourseTheme[]
+  learningOutcomes    CourseLearningOutcome[]
+  pathways            Pathway[]
+  UnitRelationship    UnitRelationship[]
+  existingTagsUnit    CourseUnitTags[]
+  existingTags        Tag[]
+  themeCategories     ThemeCategory[]
+  canvasPlaceholders  CanvasPlaceholder[]
+}
 
-  existingTagsUnit CourseUnitTags[]
-  existingTags     Tag[]
+model CanvasPlaceholder {
+  id              Int     @id @default(autoincrement())
+  courseId        String
+  placeholderType String  // CORE | ELECTIVE | JUNCTION | AND
+  x               Float
+  y               Float
+  label           String?
+  options         Json?   // string[]
+  unitOptions     Json?   // JunctionUnit[]
+  // OR junction: per-unit credit constraints
+  minCredits      Float?
+  maxCredits      Float?
+  // AND junction: max sum of all unit credits
+  maxTotalCredits Float?
 
-  themeCategories  ThemeCategory[]
+  course Course @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
 }
 
 model Pathway {
