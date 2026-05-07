@@ -382,69 +382,49 @@ export const CanvasPage: React.FC = () => {
   };
 
   const handleSaveCanvas = async () => {
-    if (currentCourse?.courseId) {
-      try {
-        const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
+    if (!currentCourse?.courseId) return;
+    try {
+      const unitIdsOnCanvas = new Set(
+        unitBoxes
+          .map((u) => u.unitId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+      );
 
-        const unitsWithSemester = unitBoxes.map((u) => {
-          const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
-          const semester = u.y < middleSemesterDividerY ? 1 : 2;
-          const year = col + 1;
-          return { ...u, semester, year };
-        });
+      const cleanedUnitMappings: UnitMappings = Object.fromEntries(
+        Object.entries(unitMappings)
+          .filter(([unitId]) => unitIdsOnCanvas.has(unitId))
+          .map(([unitId, mapping]) => {
+            const dedupClos = Array.from(
+              new Map((mapping?.clos || []).map((clo) => [clo.cloId, clo])).values()
+            );
+            const dedupTags = Array.from(
+              new Map((mapping?.tags || []).map((tag) => [tag.tagId, tag])).values()
+            );
+            return [unitId, { clos: dedupClos, tags: dedupTags }];
+          })
+      ) as UnitMappings;
 
-        const unitIdsOnCanvas = new Set(
-          unitsWithSemester
-            .map((u) => u.unitId)
-            .filter((id): id is string => typeof id === "string" && id.length > 0)
-        );
+      await axiosInstance.post(
+        `/course-unit/tags/${currentCourse.courseId}`,
+        { unitMappings: cleanedUnitMappings }
+      );
 
-        const cleanedUnitMappings: UnitMappings = Object.fromEntries(
-          Object.entries(unitMappings)
-            .filter(([unitId]) => unitIdsOnCanvas.has(unitId))
-            .map(([unitId, mapping]) => {
-              const dedupClos = Array.from(
-                new Map((mapping?.clos || []).map((clo) => [clo.cloId, clo])).values()
-              );
-              const dedupTags = Array.from(
-                new Map((mapping?.tags || []).map((tag) => [tag.tagId, tag])).values()
-              );
-              return [unitId, { clos: dedupClos, tags: dedupTags }];
-            })
-        ) as UnitMappings;
-
-        if (!activePathwayId) {
-          alert("No pathway selected. Please create or select a pathway before saving.");
-          return;
-        }
-
-        await axiosInstance.post(
-          `/course-unit/canvas/${currentCourse.courseId}`,
-          {
-            pathwayId: activePathwayId,
-            units: unitsWithSemester,
-            unitMappings: cleanedUnitMappings,
-          }
-        );
-
-        // Persist theme layout
-        if (themeLayoutRef.current) {
-          saveThemeLayout(currentCourse.courseId, themeLayoutRef.current);
-        }
-
-        alert("Canvas saved successfully!");
-      } catch (error) {
-        console.error("Error saving canvas:", error);
-        const errorMessage =
-          (error as any)?.response?.data?.error ||
-          (error as any)?.response?.data?.message ||
-          "Failed to save canvas.";
-        alert(errorMessage);
+      if (themeLayoutRef.current) {
+        saveThemeLayout(currentCourse.courseId, themeLayoutRef.current);
       }
+
+      alert("Mappings saved successfully!");
+    } catch (error) {
+      console.error("Error saving mappings:", error);
+      const errorMessage =
+        (error as any)?.response?.data?.error ||
+        (error as any)?.response?.data?.message ||
+        "Failed to save mappings.";
+      alert(errorMessage);
     }
   };
 
-  const addUnitToCanvasAtPos = (
+  const addUnitToCanvasAtPos = async (
     selectedUnit: Unit,
     x: number,
     y: number,
@@ -457,6 +437,8 @@ export const CanvasPage: React.FC = () => {
       alert("This unit has already been added to this pathway.");
       return;
     }
+
+    if (!activePathwayId || !currentCourse?.courseId) return;
 
     const semestersPerYear =
       Number((currentCourse as any)?.numberTeachingPeriods) ||
@@ -483,11 +465,16 @@ export const CanvasPage: React.FC = () => {
       return;
     }
 
+    const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
+    const semester = snappedY < middleSemesterDividerY ? 1 : 2;
+    const year = col + 1;
+
+    const tempId = Date.now();
     const newUnit = {
-      id: Date.now(),
+      id: tempId,
       name: selectedUnit.unitName,
       unitId: selectedUnit.unitId,
-      pathwayId: activePathwayId ?? undefined,
+      pathwayId: activePathwayId,
       description: selectedUnit.unitDesc,
       credits: selectedUnit.credits,
       semestersOffered: selectedUnit.semestersOffered,
@@ -497,6 +484,27 @@ export const CanvasPage: React.FC = () => {
     };
 
     setUnitBoxes((prev) => [...prev, newUnit]);
+
+    try {
+      const res = await axiosInstance.post("/course-unit/create", {
+        courseId: currentCourse.courseId,
+        unitId: selectedUnit.unitId,
+        semester,
+        year,
+        elective: false,
+        pathwayId: activePathwayId,
+        color: color || "#3B82F6",
+        position: { x: snappedX, y: snappedY },
+      });
+      const dbId: number = res.data.id;
+      setUnitBoxes((prev) =>
+        prev.map((u) => (u.id === tempId ? { ...u, id: dbId } : u))
+      );
+    } catch (err) {
+      console.error("Failed to persist unit:", err);
+      setUnitBoxes((prev) => prev.filter((u) => u.id !== tempId));
+      alert("Failed to add unit. Please try again.");
+    }
   };
 
   const handleNewUnitMouseDown = (e: React.MouseEvent, unit: Unit) => {
@@ -711,6 +719,10 @@ export const CanvasPage: React.FC = () => {
     };
 
     const handleUp = () => {
+      let finalX = originalPos.x;
+      let finalY = originalPos.y;
+      let finalCol = 0;
+
       setUnitBoxes((prevUnits) =>
         prevUnits.map((u) => {
           if (u.id === id) {
@@ -757,13 +769,31 @@ export const CanvasPage: React.FC = () => {
               if (slotBlocked) {
                 snappedX = originalPos.x;
                 snappedY = originalPos.y;
+                finalCol = Math.max(0, Math.round((originalPos.x - START_X) / COL_WIDTH));
+              } else {
+                finalCol = col;
               }
             }
+            finalX = snappedX;
+            finalY = snappedY;
             return { ...u, x: snappedX, y: snappedY };
           }
           return u;
         })
       );
+
+      // Persist the new position to the DB
+      const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
+      const semester = finalY < middleSemesterDividerY ? 1 : 2;
+      const year = finalCol + 1;
+      axiosInstance
+        .put(`/course-unit/update/${id}`, {
+          semester,
+          year,
+          position: { x: finalX, y: finalY },
+        })
+        .catch((err) => console.error("Failed to persist unit position:", err));
+
       setDraggedUnit(null);
       setBlockedUnitId(null);
       document.removeEventListener("mousemove", handleMove);
@@ -789,6 +819,9 @@ export const CanvasPage: React.FC = () => {
         return next;
       });
     }
+    axiosInstance
+      .delete("/course-unit/delete", { data: { id: unitId } })
+      .catch((err) => console.error("Failed to delete unit from DB:", err));
   }
 
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
