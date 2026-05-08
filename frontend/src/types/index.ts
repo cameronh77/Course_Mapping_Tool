@@ -84,6 +84,8 @@ export interface UnitBox {
   semester?: number;
   year?: number;
   spansYear?: boolean;
+  /** True when the unit has been placed on the theme view but not yet on the timeline. */
+  unallocated?: boolean;
 }
 
 export type AssessmentType =
