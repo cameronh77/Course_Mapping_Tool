@@ -17,11 +17,7 @@ interface CanvasSidebarProps {
   setShowSearchResults: (show: boolean) => void;
   searchResults: Unit[];
   handleNewUnitMouseDown: (e: React.MouseEvent, unit: Unit) => void;
-  connectionMode: boolean;
   setConnectionMode: (mode: boolean) => void;
-  setConnectionSource: (source: string | null) => void;
-  selectedRelationType: string;
-  setSelectedRelationType: (type: any) => void;
   getCLOColor: (cloId: number) => string;
   selectedTagFilters?: number[];
   onToggleTagFilter?: (tagId: number) => void;
@@ -39,11 +35,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   setShowSearchResults,
   searchResults,
   handleNewUnitMouseDown,
-  connectionMode,
   setConnectionMode,
-  setConnectionSource,
-  selectedRelationType,
-  setSelectedRelationType,
   getCLOColor,
   selectedTagFilters = [],
   onToggleTagFilter = () => {},
@@ -224,21 +216,17 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                 Link Units
               </h2>
-              <p className="text-xs text-red-600 mb-4">Click "Enter Mode", then click a source unit, followed by a target unit to map prerequisites.</p>
-              <button className={`${connectionMode ? "bg-red-600 hover:bg-red-700" : "bg-white text-red-600 border border-red-300 hover:bg-red-50"} font-bold py-2 px-4 rounded w-full mb-3 shadow-sm transition-colors text-sm`} onClick={() => { setConnectionMode(!connectionMode); setConnectionSource(null); }}>
-                {connectionMode ? <span className="text-white">Exit Connection Mode</span> : "Enter Connection Mode"}
-              </button>
-              {connectionMode && (
-                <div className="mt-3 bg-white p-3 rounded border border-red-200 shadow-sm">
-                  <label className="block text-gray-700 text-xs font-bold mb-2">Relationship Type:</label>
-                  <select className="shadow-sm border-gray-300 border rounded w-full py-1.5 px-2 text-sm text-gray-700 focus:ring-red-400 focus:border-red-400" value={selectedRelationType} onChange={(e) => setSelectedRelationType(e.target.value as any)}>
-                    <option value="PREREQUISITE">Prerequisite</option>
-                    <option value="COREQUISITE">Corequisite</option>
-                    <option value="PROGRESSION">Progression</option>
-                    <option value="CONNECTED">Connected</option>
-                  </select>
-                </div>
-              )}
+              <p className="text-xs text-red-600 mb-3">Hover a unit and click the link icon in its top-left corner to start a connection. Pick a relationship type, then click the target unit. Press Esc to cancel.</p>
+              <div className="bg-white rounded border border-red-100 p-3 shadow-sm">
+                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-2">Legend</p>
+                <ul className="flex flex-col gap-1.5 text-xs text-gray-700">
+                  <li className="flex items-center gap-2"><span className="w-3 h-0.5" style={{ backgroundColor: "#EF4444" }} />Prerequisite</li>
+                  <li className="flex items-center gap-2"><span className="w-3 h-0.5" style={{ backgroundColor: "#F59E0B" }} />Corequisite</li>
+                  <li className="flex items-center gap-2"><span className="w-3 h-0.5" style={{ backgroundColor: "#10B981" }} />Progression</li>
+                  <li className="flex items-center gap-2"><span className="w-3 h-0.5" style={{ backgroundColor: "#6366F1" }} />Connected</li>
+                </ul>
+                <p className="text-[10px] text-gray-400 mt-2">Click a connection line on the canvas to delete it.</p>
+              </div>
             </div>
           </div>
         )}

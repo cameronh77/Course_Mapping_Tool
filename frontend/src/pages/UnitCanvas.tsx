@@ -133,6 +133,26 @@ export const CanvasPage: React.FC = () => {
   const [relationships, setRelationships] = useState<UnitRelationship[]>([]);
   const [selectedRelationType, setSelectedRelationType] =
     useState<UnitRelationship["relationshipType"]>("PREREQUISITE");
+  const [connectionToolbarPos, setConnectionToolbarPos] = useState<{ x: number; y: number } | null>(null);
+  const connectionToolbarDragRef = React.useRef<{ dx: number; dy: number } | null>(null);
+
+  const handleConnectionToolbarMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+    connectionToolbarDragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    const onMove = (ev: MouseEvent) => {
+      const o = connectionToolbarDragRef.current;
+      if (!o) return;
+      setConnectionToolbarPos({ x: ev.clientX - o.dx, y: ev.clientY - o.dy });
+    };
+    const onUp = () => {
+      connectionToolbarDragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   // State for expanded units and active tabs
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
@@ -167,6 +187,18 @@ export const CanvasPage: React.FC = () => {
     };
     loadRelationships();
   }, [currentCourse?.courseId]);
+
+  useEffect(() => {
+    if (!connectionMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setConnectionMode(false);
+        setConnectionSource(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [connectionMode]);
 
   useEffect(() => {
     const loadCanvasState = async () => {
@@ -974,16 +1006,54 @@ export const CanvasPage: React.FC = () => {
           setShowSearchResults={setShowSearchResults}
           searchResults={searchResults}
           handleNewUnitMouseDown={handleNewUnitMouseDown}
-          connectionMode={connectionMode}
           setConnectionMode={setConnectionMode}
-          setConnectionSource={setConnectionSource}
-          selectedRelationType={selectedRelationType}
-          setSelectedRelationType={setSelectedRelationType}
           getCLOColor={getCLOColor}
         />
       </div>
 
-      <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+      <div ref={canvasRef} className={`flex-1 bg-white overflow-auto relative ${connectionMode ? 'cursor-crosshair' : ''}`} style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+        {connectionMode && (
+          <div
+            onMouseDown={handleConnectionToolbarMouseDown}
+            className={`fixed z-[60] bg-white border border-red-200 rounded-lg shadow-lg px-3 py-2 flex items-center gap-2 cursor-move select-none ${connectionToolbarPos ? "" : "top-[7.5rem] left-1/2 -translate-x-1/2"}`}
+            style={connectionToolbarPos ? { top: connectionToolbarPos.y, left: connectionToolbarPos.x } : undefined}
+          >
+            <span className="text-gray-300 mr-1" title="Drag to move">⋮⋮</span>
+            <span className="text-xs font-bold text-red-700 mr-1">
+              {connectionSource ? "Click target unit" : "Click source unit"} ·
+            </span>
+            {(["PREREQUISITE", "COREQUISITE", "PROGRESSION", "CONNECTED"] as const).map((t) => {
+              const active = selectedRelationType === t;
+              const colors: Record<string, string> = {
+                PREREQUISITE: "#EF4444",
+                COREQUISITE: "#F59E0B",
+                PROGRESSION: "#10B981",
+                CONNECTED: "#6366F1",
+              };
+              return (
+                <button
+                  key={t}
+                  onClick={() => setSelectedRelationType(t)}
+                  className={`text-[11px] font-semibold px-2 py-1 rounded-full border transition-colors ${active ? 'text-white' : 'bg-white hover:bg-gray-50'}`}
+                  style={{
+                    backgroundColor: active ? colors[t] : undefined,
+                    borderColor: colors[t],
+                    color: active ? '#fff' : colors[t],
+                  }}
+                >
+                  {t.charAt(0) + t.slice(1).toLowerCase()}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => { setConnectionMode(false); setConnectionSource(null); }}
+              className="ml-2 text-[11px] font-semibold px-2 py-1 rounded text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+              title="Cancel (Esc)"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
         {/* View Mode Toggle */}
         <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
           <button
@@ -1074,6 +1144,11 @@ export const CanvasPage: React.FC = () => {
               existingTags={existingTags || []}
               isBlocked={blockedUnitId !== null && draggedUnit === unit.id}
               isHighlighted={ghostHoverId === unit.id}
+              onStartConnection={(uid) => {
+                setSidebarTab('connections');
+                setConnectionMode(true);
+                setConnectionSource(uid);
+              }}
             />
           ))}
           

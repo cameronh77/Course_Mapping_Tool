@@ -30,6 +30,7 @@ interface UnitBoxProps {
   toggleExpand: (e: React.MouseEvent, id: number) => void;
   setActiveTab: (id: number, tab: 'info' | 'clos' | 'tags') => void;
   deleteUnit: (id: number) => void;
+  onStartConnection?: (unitId: string) => void;
 }
 
 export const UnitBox: React.FC<UnitBoxProps> = ({
@@ -56,6 +57,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   existingTags = [],
   isBlocked = false,
   isHighlighted = false,
+  onStartConnection,
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
   const [hoveredCLODesc, setHoveredCLODesc] = useState<string | null>(null);
@@ -160,14 +162,27 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
             )}
           </button>
 
-          <button 
-            onClick={(e) => { e.stopPropagation(); deleteUnit(unit.id); }} 
-            onMouseDown={(e) => e.stopPropagation()} 
+          <button
+            onClick={(e) => { e.stopPropagation(); deleteUnit(unit.id); }}
+            onMouseDown={(e) => e.stopPropagation()}
             className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 border-2 border-white shadow-sm text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
             title="Remove Unit"
           >
             ×
           </button>
+
+          {onStartConnection && unit.unitId && !connectionMode && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onStartConnection(unit.unitId!); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="absolute -top-2 -left-2 bg-red-500 hover:bg-red-600 border-2 border-white shadow-sm text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+              title="Link to another unit"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* Expanded Content Area */}
