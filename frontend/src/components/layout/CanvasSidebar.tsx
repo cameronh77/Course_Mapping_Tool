@@ -26,6 +26,7 @@ interface CanvasSidebarProps {
   selectedTagFilters?: number[];
   onToggleTagFilter?: (tagId: number) => void;
   onClearTagFilters?: () => void;
+  unallocatedUnits?: Unit[];
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
@@ -48,6 +49,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   selectedTagFilters = [],
   onToggleTagFilter = () => {},
   onClearTagFilters = () => {},
+  unallocatedUnits = [],
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore() as any;
@@ -213,6 +215,36 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Unallocated Units — added to a theme but not yet placed on the timeline */}
+            {unallocatedUnits.length > 0 && (
+              <div className="mt-2">
+                <label className="block text-amber-700 text-xs font-bold mb-2 uppercase tracking-wide">
+                  Unallocated Units
+                  <span className="ml-1 text-[10px] font-semibold text-amber-600">
+                    ({unallocatedUnits.length})
+                  </span>
+                </label>
+                <p className="text-[11px] text-gray-500 mb-2">
+                  In a theme but not on the timeline. Drag onto the timeline to place.
+                </p>
+                <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1">
+                  {unallocatedUnits.map((unit) => (
+                    <div
+                      key={unit.unitId}
+                      className="px-3 py-2 rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 cursor-grab active:cursor-grabbing transition-colors"
+                      onMouseDown={(e) => handleNewUnitMouseDown(e, unit)}
+                      title="Drag onto the timeline (or another theme group) to place this unit"
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-bold text-amber-800 text-xs">{unit.unitId}</span>
+                        <span className="text-sm font-medium text-gray-800 truncate">{unit.unitName}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
