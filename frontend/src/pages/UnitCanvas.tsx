@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
+import { UnitDetailDrawer } from "../components/common/UnitDetailDrawer";
 import { GridBackground } from "../components/common/GridBackground";
 import { ConnectionLines } from "../components/common/ConnectionLines";
 import { ThemeView } from "../components/common/ThemeView";
@@ -154,8 +155,8 @@ export const CanvasPage: React.FC = () => {
     window.addEventListener("mouseup", onUp);
   };
 
-  // State for expanded units and active tabs
-  const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
+  // Detail drawer state (replaces inline expand)
+  const [drawerUnitId, setDrawerUnitId] = useState<number | null>(null);
   const [activeTabs, setActiveTabs] = useState<
     Record<number, "info" | "clos" | "tags">
   >({});
@@ -757,6 +758,7 @@ export const CanvasPage: React.FC = () => {
   function deleteUnit(unitId: number) {
     const targetUnit = unitBoxes.find((unit) => unit.id === unitId);
     setUnitBoxes(unitBoxes.filter((unit) => unit.id !== unitId));
+    if (drawerUnitId === unitId) setDrawerUnitId(null);
     if (targetUnit?.unitId) {
       setUnitMappings((prev) => {
         const next = { ...prev };
@@ -954,12 +956,7 @@ export const CanvasPage: React.FC = () => {
 
   const toggleExpand = (e: React.MouseEvent, unitId: number) => {
     e.stopPropagation();
-    setExpandedUnits((prev) => {
-      const next = new Set(prev);
-      if (next.has(unitId)) next.delete(unitId);
-      else next.add(unitId);
-      return next;
-    });
+    setDrawerUnitId((prev) => (prev === unitId ? null : unitId));
   };
 
   const yearsCount =
@@ -978,10 +975,8 @@ export const CanvasPage: React.FC = () => {
     const unit = unitBoxes.find(
       (u) => u.unitId === unitKey || u.id.toString() === unitKey
     );
-    if (unit && !expandedUnits.has(unit.id)) {
-      setExpandedUnits((prev) => new Set(prev).add(unit.id));
-    }
     if (unit) {
+      setDrawerUnitId(unit.id);
       setActiveTabs((prev) => ({
         ...prev,
         [unit.id]: parsed.type === "clo" ? "clos" : "tags",
@@ -1117,7 +1112,7 @@ export const CanvasPage: React.FC = () => {
               selectedUnits={selectedUnits}
               connectionMode={connectionMode}
               connectionSource={connectionSource}
-              isExpanded={expandedUnits.has(unit.id)}
+              isExpanded={false}
               activeTab={activeTabs[unit.id] || "info"}
               unitMappings={
                 unitMappings[unit.unitId || unit.id.toString()] || {
@@ -1143,7 +1138,7 @@ export const CanvasPage: React.FC = () => {
               getCLOColor={getCLOColor}
               existingTags={existingTags || []}
               isBlocked={blockedUnitId !== null && draggedUnit === unit.id}
-              isHighlighted={ghostHoverId === unit.id}
+              isHighlighted={ghostHoverId === unit.id || drawerUnitId === unit.id}
               onStartConnection={(uid) => {
                 setSidebarTab('connections');
                 setConnectionMode(true);
@@ -1161,6 +1156,38 @@ export const CanvasPage: React.FC = () => {
               onDeleteRelationship={handleDeleteRelationship}
             />
           </svg>
+
+          {drawerUnitId !== null && (() => {
+            const unit = unitBoxes.find((u) => u.id === drawerUnitId);
+            if (!unit) return null;
+            const key = unit.unitId || unit.id.toString();
+            const PANEL_W = 320;
+            const GAP = 12;
+            const unitW = unit.width ?? UNIT_BOX_WIDTH;
+            const fitsRight = unit.x + unitW + GAP + PANEL_W <= innerWidth;
+            const left = fitsRight
+              ? unit.x + unitW + GAP
+              : Math.max(GAP, unit.x - PANEL_W - GAP);
+            const top = Math.max(
+              GAP,
+              Math.min(unit.y, innerHeight - 420 - GAP)
+            );
+            return (
+              <UnitDetailDrawer
+                unit={unit}
+                position={{ left, top }}
+                activeTab={activeTabs[unit.id] || "info"}
+                setActiveTab={(id, tab) =>
+                  setActiveTabs((prev) => ({ ...prev, [id]: tab }))
+                }
+                unitMappings={unitMappings[key] || { clos: [], tags: [] }}
+                getCLOColor={getCLOColor}
+                existingTags={existingTags || []}
+                onClose={() => setDrawerUnitId(null)}
+                onDrop={handleUnitBoxDrop}
+              />
+            );
+          })()}
         </div>
         ) : (
           <ThemeView
