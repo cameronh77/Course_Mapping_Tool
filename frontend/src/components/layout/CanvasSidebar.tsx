@@ -26,6 +26,7 @@ interface CanvasSidebarProps {
   onClearTagFilters?: () => void;
   handlePlaceholderMouseDown?: (e: React.MouseEvent, type: PlaceholderType) => void;
   unallocatedUnits?: Unit[];
+  onDeleteUnallocated?: (unitId: string) => void;
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
@@ -46,6 +47,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   onClearTagFilters = () => {},
   handlePlaceholderMouseDown,
   unallocatedUnits = [],
+  onDeleteUnallocated,
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore() as any;
@@ -404,14 +406,30 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
                   {unallocatedUnits.map((unit) => (
                     <div
                       key={unit.unitId}
-                      className="px-3 py-2 rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 cursor-grab active:cursor-grabbing transition-colors"
+                      className="group/unalloc relative px-3 py-2 rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 cursor-grab active:cursor-grabbing transition-colors"
                       onMouseDown={(e) => handleNewUnitMouseDown(e, unit)}
                       title="Drag onto the timeline (or another theme group) to place this unit"
                     >
-                      <div className="flex flex-col">
+                      <div className="flex flex-col pr-5">
                         <span className="font-bold text-amber-800 text-xs">{unit.unitId}</span>
                         <span className="text-sm font-medium text-gray-800 truncate">{unit.unitName}</span>
                       </div>
+                      {onDeleteUnallocated && (
+                        <button
+                          type="button"
+                          className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-amber-100 hover:bg-red-500 hover:text-white text-amber-700 text-[11px] font-bold flex items-center justify-center opacity-0 group-hover/unalloc:opacity-100 transition-opacity"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Remove unit "${unit.unitId}" from this canvas?`)) {
+                              onDeleteUnallocated(unit.unitId);
+                            }
+                          }}
+                          title="Remove unit from canvas"
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -34,6 +34,7 @@ export interface ThemeViewProps {
   existingTags: Tag[];
   getCLOColor: (cloId: number) => string;
   onUnitGroupChange: (unitKey: string, fromTag: Tag | null, toTag: Tag | null) => void;
+  onDeleteUnit?: (unitKey: string) => void;
   layoutRef?: React.MutableRefObject<ThemeViewStorage | null>;
 }
 
@@ -107,6 +108,7 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   unitMappings,
   existingTags,
   onUnitGroupChange,
+  onDeleteUnit,
   layoutRef,
 }) => {
   const groupMetas = useMemo<GroupMeta[]>(
@@ -735,7 +737,7 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
         return (
           <div
             key={unitKey}
-            className="absolute bg-white rounded-lg border shadow-sm overflow-hidden cursor-grab hover:shadow-md transition-shadow"
+            className="absolute bg-white rounded-lg border shadow-sm overflow-hidden cursor-grab hover:shadow-md transition-shadow group/freecard"
             style={{
               left: pos.x,
               top: pos.y,
@@ -752,6 +754,21 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
               <div className="text-xs font-medium text-gray-800 truncate leading-tight">{unit.name}</div>
               {unit.credits && <div className="text-[10px] text-gray-400 mt-0.5">{unit.credits} cr</div>}
             </div>
+            {onDeleteUnit && (
+              <button
+                className="absolute top-1 right-1 w-4 h-4 rounded-full bg-gray-200 hover:bg-red-500 hover:text-white text-gray-500 text-[10px] font-bold flex items-center justify-center opacity-0 group-hover/freecard:opacity-100 transition-opacity z-10"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm(`Remove unit "${unit.unitId || unit.name}" from this canvas?`)) {
+                    onDeleteUnit(unitKey);
+                  }
+                }}
+                title="Remove unit from canvas"
+              >
+                ×
+              </button>
+            )}
           </div>
         );
       })}

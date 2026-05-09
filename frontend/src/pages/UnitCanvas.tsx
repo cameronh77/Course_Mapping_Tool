@@ -302,7 +302,7 @@ export const CanvasPage: React.FC = () => {
 
           for (const cu of courseUnits) {
             allUnitBoxes.push({
-              id: Date.now() + Math.random(),
+              id: cu.id,
               name: cu.unit.unitName,
               unitId: cu.unitId,
               pathwayId: cu.pathwayId,
@@ -462,6 +462,7 @@ export const CanvasPage: React.FC = () => {
           })
       ) as UnitMappings;
         // Unallocated units live only on the theme view — don't persist them as course-units.
+        const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
         const unitsWithSemester = unitBoxes.filter((u) => !u.unallocated).map((u) => {
           const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
           const semester = u.y < middleSemesterDividerY ? 1 : 2;
@@ -496,7 +497,9 @@ export const CanvasPage: React.FC = () => {
     color?: string
   ) => {
     const existing = unitBoxes.find(
-      (u) => u.unitId === selectedUnit.unitId && u.pathwayId === activePathwayId
+      (u) =>
+        u.unitId === selectedUnit.unitId &&
+        (u.unallocated || u.pathwayId === activePathwayId)
     );
     if (existing && !existing.unallocated) {
       alert("This unit has already been added to this pathway.");
@@ -530,21 +533,56 @@ export const CanvasPage: React.FC = () => {
       return;
     }
 
-    if (existing?.unallocated) {
-      // Promote: place on timeline, clear unallocated flag.
-      setUnitBoxes((prev) =>
-        prev.map((u) =>
-          u.id === existing.id
-            ? { ...u, x: snappedX, y: snappedY, unallocated: false, color: color || u.color || "#3B82F6" }
-            : u
-        )
-      );
-      return;
-    }
-
     const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
     const semester = snappedY < middleSemesterDividerY ? 1 : 2;
     const year = col + 1;
+
+    if (existing?.unallocated) {
+      // Promote: place on timeline, clear unallocated flag, attach to pathway, persist.
+      const promotedColor = color || existing.color || "#3B82F6";
+      setUnitBoxes((prev) =>
+        prev.map((u) =>
+          u.id === existing.id
+            ? {
+                ...u,
+                x: snappedX,
+                y: snappedY,
+                unallocated: false,
+                pathwayId: activePathwayId,
+                color: promotedColor,
+              }
+            : u
+        )
+      );
+      try {
+        const res = await axiosInstance.post("/course-unit/create", {
+          courseId: currentCourse.courseId,
+          unitId: selectedUnit.unitId,
+          semester,
+          year,
+          elective: false,
+          pathwayId: activePathwayId,
+          color: promotedColor,
+          position: { x: snappedX, y: snappedY },
+        });
+        const dbId: number = res.data.id;
+        setUnitBoxes((prev) =>
+          prev.map((u) => (u.id === existing.id ? { ...u, id: dbId } : u))
+        );
+      } catch (err) {
+        console.error("Failed to persist promoted unit:", err);
+        // Roll back the promotion so the unit reappears in the unallocated list.
+        setUnitBoxes((prev) =>
+          prev.map((u) =>
+            u.id === existing.id
+              ? { ...u, x: -10000, y: -10000, unallocated: true, pathwayId: undefined }
+              : u
+          )
+        );
+        alert("Failed to place unit. Please try again.");
+      }
+      return;
+    }
 
     const tempId = Date.now();
     const newUnit = {
@@ -1268,6 +1306,10 @@ export const CanvasPage: React.FC = () => {
         return next;
       });
     }
+    // Unallocated units are local-only (no CourseUnit row); skip the backend delete.
+    // Also skip if the id is a client-side temp id (Date.now()), which exceeds INT4.
+    if (targetUnit?.unallocated) return;
+    if (!Number.isInteger(unitId) || unitId > 2147483647) return;
     axiosInstance
       .delete("/course-unit/delete", { data: { id: unitId } })
       .catch((err) => console.error("Failed to delete unit from DB:", err));
@@ -1535,6 +1577,10 @@ export const CanvasPage: React.FC = () => {
               credits: u.credits ?? 0,
               semestersOffered: u.semestersOffered ?? [],
             }))}
+          onDeleteUnallocated={(unitId) => {
+            const target = unitBoxes.find((u) => u.unitId === unitId && u.unallocated);
+            if (target) deleteUnit(target.id);
+          }}
         />
       </div>
 
@@ -1865,6 +1911,12 @@ export const CanvasPage: React.FC = () => {
             existingTags={existingTags}
             getCLOColor={getCLOColor}
             onUnitGroupChange={handleUnitGroupChange}
+            onDeleteUnit={(unitKey) => {
+              const target = unitBoxes.find(
+                (u) => (u.unitId || u.id.toString()) === unitKey
+              );
+              if (target) deleteUnit(target.id);
+            }}
             layoutRef={themeLayoutRef}
           />
         )}
