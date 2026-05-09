@@ -144,22 +144,48 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
   // Sync when new units are added to canvas
   useEffect(() => {
     const allGrouped = new Set(Object.values(groupUnits).flat());
-    const newFree = unitBoxes
+    const newKeys = unitBoxes
       .map((u) => u.unitId || u.id.toString())
       .filter((k) => !allGrouped.has(k) && !freeUnits[k]);
-    if (newFree.length === 0) return;
-    setFreeUnits((prev) => {
-      const freeBaseY =
-        Object.entries(groupPositions).reduce(
-          (max, [key, pos]) => Math.max(max, pos.y + getGroupHeight(groupUnits[key]?.length || 0)),
-          CANVAS_PAD
-        ) + GROUP_ROW_GAP;
-      const next = { ...prev };
-      newFree.forEach((key, i) => {
-        next[key] = { x: CANVAS_PAD + (Object.keys(prev).length + i) * (UNIT_CARD_W + CARD_GAP), y: freeBaseY };
+    if (newKeys.length === 0) return;
+
+    // Newly-added units that already carry a tag mapping land directly in that group.
+    const additionsByGroup: Record<GroupKey, string[]> = {};
+    const newFree: string[] = [];
+    for (const key of newKeys) {
+      const tag = unitMappings[key]?.tags?.[0];
+      const groupKey: GroupKey | null = tag ? `tag-${tag.tagId}` : null;
+      if (groupKey && groupUnits[groupKey] !== undefined) {
+        (additionsByGroup[groupKey] ||= []).push(key);
+      } else {
+        newFree.push(key);
+      }
+    }
+
+    if (Object.keys(additionsByGroup).length > 0) {
+      setGroupUnits((prev) => {
+        const next = { ...prev };
+        for (const [gk, keys] of Object.entries(additionsByGroup)) {
+          next[gk] = [...(next[gk] || []), ...keys];
+        }
+        return next;
       });
-      return next;
-    });
+    }
+
+    if (newFree.length > 0) {
+      setFreeUnits((prev) => {
+        const freeBaseY =
+          Object.entries(groupPositions).reduce(
+            (max, [key, pos]) => Math.max(max, pos.y + getGroupHeight(groupUnits[key]?.length || 0)),
+            CANVAS_PAD
+          ) + GROUP_ROW_GAP;
+        const next = { ...prev };
+        newFree.forEach((key, i) => {
+          next[key] = { x: CANVAS_PAD + (Object.keys(prev).length + i) * (UNIT_CARD_W + CARD_GAP), y: freeBaseY };
+        });
+        return next;
+      });
+    }
   }, [unitBoxes]);
 
   // Keep layoutRef in sync so the parent can persist on save
