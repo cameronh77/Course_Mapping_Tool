@@ -428,6 +428,13 @@ export const CanvasPage: React.FC = () => {
             return [unitId, { clos: dedupClos, tags: dedupTags }];
           })
       ) as UnitMappings;
+        // Unallocated units live only on the theme view — don't persist them as course-units.
+        const unitsWithSemester = unitBoxes.filter((u) => !u.unallocated).map((u) => {
+          const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
+          const semester = u.y < middleSemesterDividerY ? 1 : 2;
+          const year = col + 1;
+          return { ...u, semester, year };
+        });
 
       await axiosInstance.post(
         `/course-unit/tags/${currentCourse.courseId}`,
@@ -486,7 +493,19 @@ export const CanvasPage: React.FC = () => {
       START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2;
     const snappedY = START_Y + closestRow * ROW_HEIGHT + 20;
 
-    if (isSlotOccupied(snappedX, snappedY)) {
+    if (isSlotOccupied(snappedX, snappedY, existing?.id)) {
+      return;
+    }
+
+    if (existing?.unallocated) {
+      // Promote: place on timeline, clear unallocated flag.
+      setUnitBoxes((prev) =>
+        prev.map((u) =>
+          u.id === existing.id
+            ? { ...u, x: snappedX, y: snappedY, unallocated: false, color: color || u.color || "#3B82F6" }
+            : u
+        )
+      );
       return;
     }
 
@@ -640,6 +659,103 @@ export const CanvasPage: React.FC = () => {
     };
   };
 
+  // Add a search-result unit directly to a theme group without placing it on the timeline.
+  const addUnallocatedUnitToTheme = (selectedUnit: Unit, tag: Tag) => {
+    const existing = unitBoxes.find((u) => u.unitId === selectedUnit.unitId);
+    const ensureTagMapping = () => {
+      setUnitMappings((prev) => {
+        const m = prev[selectedUnit.unitId] || { clos: [], tags: [] };
+        if (m.tags.find((t) => t.tagId === tag.tagId)) return prev;
+        return { ...prev, [selectedUnit.unitId]: { ...m, tags: [...m.tags, tag] } };
+      });
+      if (currentCourse?.courseId) {
+        addUnitTags([
+          {
+            courseId: currentCourse.courseId,
+            unitId: selectedUnit.unitId,
+            tagId: tag.tagId,
+          },
+        ]);
+      }
+    };
+
+    if (existing) {
+      // Already on canvas (allocated or unallocated) — just attach the tag.
+      ensureTagMapping();
+      return;
+    }
+
+    const newUnit: UnitBoxType = {
+      id: Date.now(),
+      name: selectedUnit.unitName,
+      unitId: selectedUnit.unitId,
+      description: selectedUnit.unitDesc,
+      credits: selectedUnit.credits,
+      semestersOffered: selectedUnit.semestersOffered,
+      // Off-grid placeholder; the unit is filtered out of the timeline render until allocated.
+      x: -10000,
+      y: -10000,
+      color: "#3B82F6",
+      unallocated: true,
+    };
+
+    // Seed the mapping first so ThemeView's sync places the new unit into this tag's group.
+    setUnitMappings((prev) => ({
+      ...prev,
+      [selectedUnit.unitId]: {
+        clos: prev[selectedUnit.unitId]?.clos || [],
+        tags: [tag],
+      },
+    }));
+    setUnitBoxes((prev) => [...prev, newUnit]);
+    if (currentCourse?.courseId) {
+      addUnitTags([
+        {
+          courseId: currentCourse.courseId,
+          unitId: selectedUnit.unitId,
+          tagId: tag.tagId,
+        },
+      ]);
+    }
+  };
+
+  // Add a search-result unit as unallocated with no tag. Appears as a free card in
+  // ThemeView and in the sidebar's Unallocated list until the user places it.
+  const addUnallocatedUnit = (selectedUnit: Unit) => {
+    if (unitBoxes.some((u) => u.unitId === selectedUnit.unitId)) return;
+
+    const newUnit: UnitBoxType = {
+      id: Date.now(),
+      name: selectedUnit.unitName,
+      unitId: selectedUnit.unitId,
+      description: selectedUnit.unitDesc,
+      credits: selectedUnit.credits,
+      semestersOffered: selectedUnit.semestersOffered,
+      x: -10000,
+      y: -10000,
+      color: "#3B82F6",
+      unallocated: true,
+    };
+    setUnitMappings((prev) => ({
+      ...prev,
+      [selectedUnit.unitId]: prev[selectedUnit.unitId] || { clos: [], tags: [] },
+    }));
+    setUnitBoxes((prev) => [...prev, newUnit]);
+  };
+
+  const findThemeGroupTagAt = (clientX: number, clientY: number): Tag | null => {
+    let node: Element | null = document.elementFromPoint(clientX, clientY);
+    while (node) {
+      const id = (node as HTMLElement).id;
+      if (id && id.startsWith("theme-group-tag-")) {
+        const tagId = Number(id.replace("theme-group-tag-", ""));
+        return existingTags?.find((t: Tag) => t.tagId === tagId) ?? null;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  };
+
   const handleNewUnitMouseDown = (e: React.MouseEvent, unit: Unit) => {
     e.preventDefault();
     setDraggedNewUnit({
@@ -658,7 +774,20 @@ export const CanvasPage: React.FC = () => {
       document.removeEventListener("mousemove", handleGlobalMove);
       document.removeEventListener("mouseup", handleGlobalUp);
 
-      if (canvasRef.current) {
+      // In theme view, a drop on a theme group adds the unit as unallocated under that tag.
+      // A drop on empty space adds it as unallocated with no tag (shown as a free card + in sidebar).
+      if (viewMode === "theme") {
+        const targetTag = findThemeGroupTagAt(upEvent.clientX, upEvent.clientY);
+        if (targetTag) {
+          addUnallocatedUnitToTheme(unit, targetTag);
+        } else {
+          addUnallocatedUnit(unit);
+        }
+        setDraggedNewUnit(null);
+        return;
+      }
+
+      if (canvasRef.current && viewMode === "grid") {
         const rect = canvasRef.current.getBoundingClientRect();
         if (
           upEvent.clientX >= rect.left &&
@@ -1374,6 +1503,15 @@ export const CanvasPage: React.FC = () => {
           onToggleTagFilter={toggleTagFilter}
           onClearTagFilters={clearTagFilters}
           handlePlaceholderMouseDown={handlePlaceholderMouseDown}
+          unallocatedUnits={unitBoxes
+            .filter((u) => u.unallocated && u.unitId)
+            .map((u) => ({
+              unitId: u.unitId!,
+              unitName: u.name,
+              unitDesc: u.description ?? "",
+              credits: u.credits ?? 0,
+              semestersOffered: u.semestersOffered ?? [],
+            }))}
         />
       </div>
 
@@ -1521,7 +1659,7 @@ export const CanvasPage: React.FC = () => {
           />
 
           {unitBoxes
-            .filter((u) => u.spansYear && isUnitVisible(u.unitId))
+            .filter((u) => u.spansYear && isUnitVisible(u.unitId) && !u.unallocated)
             .map((u) => {
               const cy = companionSlotY(u.y);
               if (cy === null) return null;
@@ -1552,7 +1690,7 @@ export const CanvasPage: React.FC = () => {
               );
             })}
 
-          {unitBoxes.filter((unit) => isUnitVisible(unit.unitId)).map((unit) => (
+          {unitBoxes.filter((unit) => isUnitVisible(unit.unitId) && !unit.unallocated).map((unit) => (
             <UnitBox
               key={unit.id}
               unit={unit}
