@@ -7,6 +7,7 @@ import {
   viewTagsByCourse,
   viewTagsByUnit,
   viewUnitTagsByCourse,
+  updateTag,
 } from "../controllers/tagControllers.js";
 
 const router = express.Router();
@@ -16,7 +17,8 @@ router.post("/associate-unit", addUnitsToTag);
 router.get("/view-tags/:courseId", viewTagsByCourse);
 router.get("/view-unit-tags", viewTagsByUnit);
 router.get("/view-unit-course/:courseId", viewUnitTagsByCourse);
-router.delete("/delete", deleteTag);
+router.delete("/delete/:tagId", deleteTag);
+router.put("/update/:tagId", updateTag);
 router.delete("/delete-from-tag/", deleteUnitFromTag);
 
 export default router;

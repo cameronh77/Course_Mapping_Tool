@@ -13,6 +13,29 @@ export const GROUP_COL_GAP = 40;
 export const GROUP_ROW_GAP = 40;
 export const CANVAS_PAD = 40;
 
+// Category (outer wrapper around tag groups)
+export const CATEGORY_HEADER_H = 40;
+export const CATEGORY_PAD = 20;
+export const CATEGORY_BAND_GAP = 16;
+export const CATEGORY_W = GROUP_W + CATEGORY_PAD * 2;
+
+export const CATEGORY_COLOR = {
+  bg: "#0F172A",
+  border: "#334155",
+  header: "#1E293B",
+  text: "#E2E8F0",
+  label: "#94A3B8",
+};
+
+export function getCategoryHeight(nestedUnitCounts: number[]): number {
+  if (nestedUnitCounts.length === 0) {
+    return CATEGORY_HEADER_H + CATEGORY_PAD * 2 + 60;
+  }
+  const bandsH = nestedUnitCounts.reduce((sum, count) => sum + getGroupHeight(count), 0);
+  const gapsH = (nestedUnitCounts.length - 1) * CATEGORY_BAND_GAP;
+  return CATEGORY_HEADER_H + CATEGORY_PAD * 2 + bandsH + gapsH;
+}
+
 export const THEME_COLORS = [
   { bg: "#F3E8FF", border: "#C084FC", text: "#7C3AED", label: "#6D28D9" },
   { bg: "#DCFCE7", border: "#86EFAC", text: "#16A34A", label: "#15803D" },

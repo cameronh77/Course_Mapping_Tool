@@ -51,4 +51,29 @@ export const useTagStore = create((set, get) => ({
       console.log(error.response.data.message);
     }
   },
+
+  deleteTag: async (tagId) => {
+    try {
+      const res = await axiosInstance.delete(`/tag/delete/${tagId}`);
+      set((state) => ({
+        existingTags: state.existingTags.filter((t) => t.tagId !== tagId),
+        existingTagConnections: state.existingTagConnections.filter((c) => c.tagId !== tagId),
+      }));
+      return res.data;
+    } catch (error) {
+      console.log((error as any)?.response?.data?.message || error);
+    }
+  },
+
+  updateTag: async (tagId, tagName) => {
+    try {
+      const res = await axiosInstance.put(`/tag/update/${tagId}`, { tagName });
+      set((state) => ({
+        existingTags: state.existingTags.map((t) => (t.tagId === tagId ? res.data : t)),
+      }));
+      return res.data;
+    } catch (error) {
+      console.log((error as any)?.response?.data?.message || error);
+    }
+  },
 }));
