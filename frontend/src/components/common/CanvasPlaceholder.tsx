@@ -106,12 +106,12 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
 
   return (
     <div
-      className="absolute group transition-shadow duration-200 z-10 shadow-sm hover:shadow-md"
+      className={`absolute group transition-shadow duration-200 shadow-sm hover:shadow-md ${isExpanded ? "z-40" : "z-10"}`}
       style={{
         left: box.x,
         top: box.y,
         width: PLACEHOLDER_WIDTH,
-        height: isExpanded ? "auto" : 80,
+        height: 80,
         minHeight: 80,
       }}
     >
@@ -160,8 +160,8 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
               title={isExpanded ? "Collapse" : "Show options"}
             >
               {isExpanded
-                ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>
-                : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+                ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+                : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
               }
             </button>
           )}
@@ -176,31 +176,41 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
             ×
           </button>
         </div>
+      </div>
 
-        {/* ── OR junction expanded body ── */}
-        {isOrJunction && isExpanded && (
-          <div
-            className="flex flex-col bg-white border-t border-gray-100 px-2 py-2 gap-1.5"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {/* Credit range rule */}
-            <div className="flex items-center justify-between gap-1 pb-1 border-b border-violet-50">
-              <CreditInput
-                label="Min"
-                value={box.minCredits}
-                onChange={(v) => onUpdate(box.id, { minCredits: v })}
-                placeholder="—"
-              />
-              <span className="text-[10px] text-gray-300">–</span>
-              <CreditInput
-                label="Max"
-                value={box.maxCredits}
-                onChange={(v) => onUpdate(box.id, { maxCredits: v })}
-                placeholder="—"
-              />
-              <span className="text-[9px] text-gray-400 italic shrink-0">per unit</span>
-            </div>
+      {/* ── OR junction side panel ── */}
+      {isOrJunction && isExpanded && (
+        <div
+          className="absolute flex flex-col bg-white border border-gray-200 shadow-xl rounded overflow-hidden"
+          style={{
+            left: PLACEHOLDER_WIDTH + 8,
+            top: 0,
+            width: 252,
+            height: 240,
+            borderLeft: `4px solid ${color}`,
+            zIndex: 50,
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {/* Credit range rule */}
+          <div className="flex items-center justify-between gap-1 px-2 py-2 border-b border-violet-50 shrink-0">
+            <CreditInput
+              label="Min"
+              value={box.minCredits}
+              onChange={(v) => onUpdate(box.id, { minCredits: v })}
+              placeholder="—"
+            />
+            <span className="text-[10px] text-gray-300">–</span>
+            <CreditInput
+              label="Max"
+              value={box.maxCredits}
+              onChange={(v) => onUpdate(box.id, { maxCredits: v })}
+              placeholder="—"
+            />
+            <span className="text-[9px] text-gray-400 italic shrink-0">per unit</span>
+          </div>
 
+          <div className="flex flex-col px-2 py-2 gap-1.5 overflow-y-auto flex-1">
             {unitOptions.length === 0 ? (
               <p className="text-[10px] text-gray-400 italic text-center py-2">
                 Drag units here to add options
@@ -214,28 +224,38 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
               ))
             )}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ── AND junction expanded body ── */}
-        {isAndJunction && isExpanded && (
-          <div
-            className="flex flex-col bg-white border-t border-gray-100 px-2 py-2 gap-1.5"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {/* Max total credits rule */}
-            <div className="flex items-center justify-between gap-1 pb-1 border-b border-emerald-50">
-              <CreditInput
-                label="Max total"
-                value={box.maxTotalCredits}
-                onChange={(v) => onUpdate(box.id, { maxTotalCredits: v })}
-                placeholder="—"
-              />
-              <span className="text-[9px] text-gray-400 italic shrink-0">
-                total: <span className={box.maxTotalCredits !== undefined && totalCredits > box.maxTotalCredits ? "text-red-500 font-bold" : "text-emerald-600 font-semibold"}>{totalCredits}</span>
-                {box.maxTotalCredits !== undefined && ` / ${box.maxTotalCredits}`} cr
-              </span>
-            </div>
+      {/* ── AND junction side panel ── */}
+      {isAndJunction && isExpanded && (
+        <div
+          className="absolute flex flex-col bg-white border border-gray-200 shadow-xl rounded overflow-hidden"
+          style={{
+            left: PLACEHOLDER_WIDTH + 8,
+            top: 0,
+            width: 252,
+            height: 240,
+            borderLeft: `4px solid ${color}`,
+            zIndex: 50,
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {/* Max total credits rule */}
+          <div className="flex items-center justify-between gap-1 px-2 py-2 border-b border-emerald-50 shrink-0">
+            <CreditInput
+              label="Max total"
+              value={box.maxTotalCredits}
+              onChange={(v) => onUpdate(box.id, { maxTotalCredits: v })}
+              placeholder="—"
+            />
+            <span className="text-[9px] text-gray-400 italic shrink-0">
+              total: <span className={box.maxTotalCredits !== undefined && totalCredits > box.maxTotalCredits ? "text-red-500 font-bold" : "text-emerald-600 font-semibold"}>{totalCredits}</span>
+              {box.maxTotalCredits !== undefined && ` / ${box.maxTotalCredits}`} cr
+            </span>
+          </div>
 
+          <div className="flex flex-col px-2 py-2 gap-1.5 overflow-y-auto flex-1">
             {unitOptions.length === 0 ? (
               <p className="text-[10px] text-gray-400 italic text-center py-2">
                 Drag units here to add options
@@ -249,8 +269,8 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
               ))
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
