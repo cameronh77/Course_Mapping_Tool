@@ -68,6 +68,8 @@ model CanvasPlaceholder {
   maxCredits      Float?
   // AND junction: max sum of all unit credits
   maxTotalCredits Float?
+  // SELECTIVE_ELECTIVE: tag ids that define the unit pool
+  tagIds          Json?
 
   course  Course   @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
   pathway Pathway? @relation(fields: [pathwayId], references: [pathwayId], onDelete: SetNull)

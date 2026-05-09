@@ -204,7 +204,7 @@ export interface TARelationship {
   unitId: string;
 }
 
-export type PlaceholderType = 'CORE' | 'ELECTIVE' | 'JUNCTION' | 'AND';
+export type PlaceholderType = 'CORE' | 'ELECTIVE' | 'SELECTIVE_ELECTIVE' | 'JUNCTION' | 'AND';
 
 export interface JunctionUnit {
   unitId: string;
@@ -231,4 +231,6 @@ export interface PlaceholderBox {
   maxCredits?: number;
   // AND junction: maximum sum of all unit credits
   maxTotalCredits?: number;
+  // SELECTIVE_ELECTIVE: tag-based pool filter
+  tagIds?: number[];
 }

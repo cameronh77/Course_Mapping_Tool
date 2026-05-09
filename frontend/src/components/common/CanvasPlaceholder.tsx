@@ -1,21 +1,23 @@
 import React, { useState, useRef, useEffect } from "react";
-import type { PlaceholderBox, JunctionUnit } from "../../types";
+import type { PlaceholderBox, JunctionUnit, Tag, UnitBox, UnitMappings } from "../../types";
+import { getTagColor } from "./themeViewConstants";
 
 export const PLACEHOLDER_WIDTH = 256;
 
 const TYPE_COLOR: Record<string, string> = {
-  CORE:     "#6B7280",
-  ELECTIVE: "#F59E0B",
-  JUNCTION: "#8B5CF6",
-  AND:      "#059669",
+  CORE:               "#6B7280",
+  ELECTIVE:           "#F59E0B",
+  SELECTIVE_ELECTIVE: "#EA580C",
+  JUNCTION:           "#8B5CF6",
+  AND:                "#059669",
 };
 
 const TYPE_ICON: Record<string, string> = {
-  CORE: "◆", ELECTIVE: "✦", JUNCTION: "⑂", AND: "⊕",
+  CORE: "◆", ELECTIVE: "✦", SELECTIVE_ELECTIVE: "⊞", JUNCTION: "⑂", AND: "⊕",
 };
 
 const DEFAULT_LABEL: Record<string, string> = {
-  CORE: "Core Unit", ELECTIVE: "Elective", JUNCTION: "OR Junction", AND: "AND Junction",
+  CORE: "Core Unit", ELECTIVE: "Elective", SELECTIVE_ELECTIVE: "Selective Elective", JUNCTION: "OR Junction", AND: "AND Junction",
 };
 
 interface Props {
@@ -25,6 +27,9 @@ interface Props {
   onUpdate: (id: number, changes: Partial<PlaceholderBox>) => void;
   onDragUnitOut: (junctionId: number, unit: JunctionUnit, e: React.MouseEvent) => void;
   onEditUnit: (unit: JunctionUnit) => void;
+  existingTags?: Tag[];
+  unitMappings?: UnitMappings;
+  unitBoxes?: UnitBox[];
 }
 
 const OrDivider = () => (
@@ -43,12 +48,13 @@ const AndDivider = () => (
   </div>
 );
 
-export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown, onUpdate, onDragUnitOut, onEditUnit }) => {
+export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown, onUpdate, onDragUnitOut, onEditUnit, existingTags = [], unitMappings = {}, unitBoxes = [] }) => {
   const isOrJunction  = box.placeholderType === "JUNCTION";
   const isAndJunction = box.placeholderType === "AND";
+  const isSelectiveElective = box.placeholderType === "SELECTIVE_ELECTIVE";
   const isJunctionLike = isOrJunction || isAndJunction;
 
-  const [isExpanded, setIsExpanded] = useState(isJunctionLike);
+  const [isExpanded, setIsExpanded] = useState(isJunctionLike || isSelectiveElective);
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState(box.label ?? DEFAULT_LABEL[box.placeholderType]);
   const labelInputRef = useRef<HTMLInputElement>(null);
@@ -70,9 +76,33 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
   };
 
   const unitOptions = box.unitOptions ?? [];
+  const selectedTagIds = box.tagIds ?? [];
 
   // Total credits for AND junction display
   const totalCredits = unitOptions.reduce((sum, u) => sum + (u.credits ?? 0), 0);
+
+  // Derive pool units for SELECTIVE_ELECTIVE from unitMappings filtered by selectedTagIds
+  const poolUnits = React.useMemo(() => {
+    if (!isSelectiveElective || selectedTagIds.length === 0) return [];
+    const seen = new Set<string>();
+    const results: { unitId: string; name: string; credits?: number; color?: string }[] = [];
+    for (const [unitId, mapping] of Object.entries(unitMappings)) {
+      if (seen.has(unitId)) continue;
+      if (mapping.tags.some((t) => selectedTagIds.includes(t.tagId))) {
+        seen.add(unitId);
+        const box = unitBoxes.find((u) => u.unitId === unitId);
+        results.push({ unitId, name: box?.name ?? unitId, credits: box?.credits, color: box?.color });
+      }
+    }
+    return results;
+  }, [isSelectiveElective, selectedTagIds, unitMappings, unitBoxes]);
+
+  const toggleTag = (tagId: number) => {
+    const next = selectedTagIds.includes(tagId)
+      ? selectedTagIds.filter((id) => id !== tagId)
+      : [...selectedTagIds, tagId];
+    onUpdate(box.id, { tagIds: next });
+  };
 
   // Shared credit number input component
   const CreditInput = ({
@@ -104,6 +134,8 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
     </label>
   );
 
+  const canExpand = isJunctionLike || isSelectiveElective;
+
   return (
     <div
       className={`absolute group transition-shadow duration-200 shadow-sm hover:shadow-md ${isExpanded ? "z-40" : "z-10"}`}
@@ -125,7 +157,7 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
           style={{ backgroundColor: color, color: "white" }}
           onMouseDown={(e) => onMouseDown(e, box.id)}
           onDoubleClick={(e) => {
-            if (!isJunctionLike) { e.stopPropagation(); setLabelDraft(displayLabel); setEditingLabel(true); }
+            if (!isJunctionLike && !isSelectiveElective) { e.stopPropagation(); setLabelDraft(displayLabel); setEditingLabel(true); }
           }}
         >
           <div className="flex-1 truncate pr-6">
@@ -147,12 +179,16 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
             <p className="text-[10px] mt-0.5 opacity-50 uppercase tracking-widest font-medium">
               {isJunctionLike
                 ? `${unitOptions.length} option${unitOptions.length !== 1 ? 's' : ''} · drag units in`
-                : "placeholder · double-click to rename"}
+                : isSelectiveElective
+                  ? selectedTagIds.length === 0
+                    ? "select tags to define pool"
+                    : `${selectedTagIds.length} tag${selectedTagIds.length !== 1 ? 's' : ''} · ${poolUnits.length} unit${poolUnits.length !== 1 ? 's' : ''}`
+                  : "placeholder · double-click to rename"}
             </p>
           </div>
 
-          {/* Expand/collapse (junctions only) */}
-          {isJunctionLike && (
+          {/* Expand/collapse (junctions + selective elective) */}
+          {canExpand && (
             <button
               onClick={(e) => { e.stopPropagation(); setIsExpanded((v) => !v); }}
               onMouseDown={(e) => e.stopPropagation()}
@@ -267,6 +303,108 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
                   <UnitCard unit={unit} onDragOut={(e) => onDragUnitOut(box.id, unit, e)} onRemove={(e) => removeUnitOption(e, unit.unitId)} onEdit={() => onEditUnit(unit)} />
                 </React.Fragment>
               ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Selective Elective side panel ── */}
+      {isSelectiveElective && isExpanded && (
+        <div
+          className="absolute flex flex-col bg-white border border-gray-200 shadow-xl rounded overflow-hidden"
+          style={{
+            left: PLACEHOLDER_WIDTH + 8,
+            top: 0,
+            width: 272,
+            height: 280,
+            borderLeft: `4px solid ${color}`,
+            zIndex: 50,
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {/* Tag selector */}
+          <div className="px-2 pt-2 pb-1.5 border-b border-orange-50 shrink-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-orange-700 mb-1.5">Filter by Tag</p>
+            {existingTags.length === 0 ? (
+              <p className="text-[10px] text-gray-400 italic">No tags defined for this course.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {existingTags.map((tag) => {
+                  const active = selectedTagIds.includes(tag.tagId);
+                  const tagColors = getTagColor(tag.tagId, existingTags);
+                  return (
+                    <button
+                      key={tag.tagId}
+                      type="button"
+                      onClick={() => toggleTag(tag.tagId)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="text-[10px] px-2 py-0.5 rounded-full border font-semibold transition-all"
+                      style={
+                        active
+                          ? { backgroundColor: tagColors.bg, borderColor: tagColors.border, color: tagColors.label }
+                          : { backgroundColor: "transparent", borderColor: "#D1D5DB", color: "#9CA3AF" }
+                      }
+                      title={active ? `Remove ${tag.tagName} from filter` : `Add ${tag.tagName} to filter`}
+                    >
+                      {tag.tagName}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Credit constraints */}
+          <div className="flex items-center gap-1 px-2 py-1.5 border-b border-orange-50 shrink-0">
+            <CreditInput
+              label="Min"
+              value={box.minCredits}
+              onChange={(v) => onUpdate(box.id, { minCredits: v })}
+              placeholder="—"
+            />
+            <span className="text-[10px] text-gray-300">–</span>
+            <CreditInput
+              label="Max"
+              value={box.maxCredits}
+              onChange={(v) => onUpdate(box.id, { maxCredits: v })}
+              placeholder="—"
+            />
+            <span className="text-[9px] text-gray-400 italic shrink-0">credits</span>
+          </div>
+
+          {/* Matching unit pool */}
+          <div className="flex flex-col px-2 py-2 gap-1.5 overflow-y-auto flex-1">
+            {selectedTagIds.length === 0 ? (
+              <p className="text-[10px] text-gray-400 italic text-center py-3">
+                Select tags above to see matching units.
+              </p>
+            ) : poolUnits.length === 0 ? (
+              <p className="text-[10px] text-gray-400 italic text-center py-3">
+                No canvas units match the selected tags.
+              </p>
+            ) : (
+              <>
+                <p className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold shrink-0">
+                  {poolUnits.length} eligible unit{poolUnits.length !== 1 ? 's' : ''}
+                </p>
+                {poolUnits.map((unit) => (
+                  <div
+                    key={unit.unitId}
+                    className="rounded overflow-hidden shadow-sm"
+                    style={{ backgroundColor: unit.color || "#3B82F6" }}
+                  >
+                    <div className="px-2.5 py-1.5 text-white">
+                      <div className="text-[11px] font-bold truncate leading-tight">{unit.unitId}</div>
+                      <div className="text-[10px] opacity-75 truncate leading-tight">{unit.name}</div>
+                    </div>
+                    {unit.credits != null && (
+                      <div className="px-2.5 pb-1 text-[9px] text-white/50 leading-tight">
+                        {unit.credits} credits
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </div>

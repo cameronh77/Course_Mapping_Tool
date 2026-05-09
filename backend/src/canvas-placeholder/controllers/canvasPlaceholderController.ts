@@ -27,7 +27,7 @@ export const getCanvasPlaceholders = async (req: Request, res: Response) => {
 
 // POST /api/canvas-placeholder
 export const createCanvasPlaceholder = async (req: Request, res: Response) => {
-  const { courseId, pathwayId, placeholderType, x, y, label, options, unitOptions, minCredits, maxCredits, maxTotalCredits } = req.body;
+  const { courseId, pathwayId, placeholderType, x, y, label, options, unitOptions, minCredits, maxCredits, maxTotalCredits, tagIds } = req.body;
   if (!courseId || !placeholderType) {
     return res.status(400).json({ message: "courseId and placeholderType are required" });
   }
@@ -45,6 +45,7 @@ export const createCanvasPlaceholder = async (req: Request, res: Response) => {
         minCredits: minCredits != null ? Number(minCredits) : null,
         maxCredits: maxCredits != null ? Number(maxCredits) : null,
         maxTotalCredits: maxTotalCredits != null ? Number(maxTotalCredits) : null,
+        tagIds: tagIds ?? null,
       },
     });
     return res.status(201).json(placeholder);
@@ -58,7 +59,7 @@ export const updateCanvasPlaceholder = async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
 
-  const { x, y, label, options, unitOptions, minCredits, maxCredits, maxTotalCredits } = req.body;
+  const { x, y, label, options, unitOptions, minCredits, maxCredits, maxTotalCredits, tagIds } = req.body;
   try {
     const updated = await prisma.canvasPlaceholder.update({
       where: { id },
@@ -71,6 +72,7 @@ export const updateCanvasPlaceholder = async (req: Request, res: Response) => {
         ...(minCredits !== undefined && { minCredits: minCredits != null ? Number(minCredits) : null }),
         ...(maxCredits !== undefined && { maxCredits: maxCredits != null ? Number(maxCredits) : null }),
         ...(maxTotalCredits !== undefined && { maxTotalCredits: maxTotalCredits != null ? Number(maxTotalCredits) : null }),
+        ...(tagIds !== undefined && { tagIds: tagIds ?? null }),
       },
     });
     return res.json(updated);

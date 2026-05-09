@@ -1928,6 +1928,9 @@ export const CanvasPage: React.FC = () => {
               }}
               onDragUnitOut={handleDragUnitOut}
               onEditUnit={(unit) => setEditingJunctionUnit(unit)}
+              existingTags={existingTags || []}
+              unitMappings={unitMappings}
+              unitBoxes={unitBoxes}
             />
           ))}
 
@@ -2097,30 +2100,26 @@ export const CanvasPage: React.FC = () => {
 
       {/* Floating Drag Preview for Placeholder Blocks — matches unit box ghost */}
       {draggedPlaceholder && (() => {
-        const bgColor =
-          draggedPlaceholder.type === 'CORE'     ? '#6B7280'
-          : draggedPlaceholder.type === 'ELECTIVE' ? '#F59E0B'
-          : draggedPlaceholder.type === 'AND'      ? '#059669'
-          :                                           '#8B5CF6';
-        const icon =
-          draggedPlaceholder.type === 'CORE'     ? '◆'
-          : draggedPlaceholder.type === 'ELECTIVE' ? '✦'
-          : draggedPlaceholder.type === 'AND'      ? '⊕'
-          :                                           '⑂';
-        const label =
-          draggedPlaceholder.type === 'CORE'     ? 'Core Unit'
-          : draggedPlaceholder.type === 'ELECTIVE' ? 'Elective'
-          : draggedPlaceholder.type === 'AND'      ? 'AND Junction'
-          :                                           'OR Junction';
+        const bgColor: Record<string, string> = {
+          CORE: '#6B7280', ELECTIVE: '#F59E0B', SELECTIVE_ELECTIVE: '#EA580C',
+          JUNCTION: '#8B5CF6', AND: '#059669',
+        };
+        const icon: Record<string, string> = {
+          CORE: '◆', ELECTIVE: '✦', SELECTIVE_ELECTIVE: '⊞', JUNCTION: '⑂', AND: '⊕',
+        };
+        const label: Record<string, string> = {
+          CORE: 'Core Unit', ELECTIVE: 'Free Elective', SELECTIVE_ELECTIVE: 'Selective Elective',
+          JUNCTION: 'OR Junction', AND: 'AND Junction',
+        };
         return (
           <div
             className="fixed pointer-events-none z-[200] opacity-80"
             style={{ left: draggedPlaceholder.x - UNIT_BOX_WIDTH / 2, top: draggedPlaceholder.y - 40, width: UNIT_BOX_WIDTH }}
           >
-            <div className="rounded shadow-2xl border-2 border-white text-white overflow-hidden" style={{ backgroundColor: bgColor }}>
+            <div className="rounded shadow-2xl border-2 border-white text-white overflow-hidden" style={{ backgroundColor: bgColor[draggedPlaceholder.type] }}>
               <div className="px-4 py-3">
                 <h2 className="text-lg font-semibold leading-tight">
-                  <span className="mr-1 opacity-80">{icon}</span>{label}
+                  <span className="mr-1 opacity-80">{icon[draggedPlaceholder.type]}</span>{label[draggedPlaceholder.type]}
                 </h2>
                 <p className="text-[10px] opacity-50 uppercase tracking-widest mt-0.5">Placeholder</p>
               </div>
