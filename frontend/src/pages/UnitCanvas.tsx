@@ -495,10 +495,10 @@ export const CanvasPage: React.FC = () => {
     y: number,
     color?: string
   ) => {
-    const unitExists = unitBoxes.some(
+    const existing = unitBoxes.find(
       (u) => u.unitId === selectedUnit.unitId && u.pathwayId === activePathwayId
     );
-    if (unitExists) {
+    if (existing && !existing.unallocated) {
       alert("This unit has already been added to this pathway.");
       return;
     }
