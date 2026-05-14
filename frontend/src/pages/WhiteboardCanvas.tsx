@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Hand, ZoomIn, ZoomOut } from "lucide-react";
 import { axiosInstance } from "../lib/axios";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
@@ -1787,82 +1788,43 @@ export const WhiteboardCanvas: React.FC = () => {
 
       {/* Canvas: 5/6 width, right */}
       <div ref={canvasRef} className="w-5/6 bg-white overflow-auto relative" style={{ userSelect: "none" }}>
-        <div className="sticky left-3 top-3 z-[90] w-fit pointer-events-none">
-          {zoomPaletteOpen && (
-            <div className="mb-2 flex items-center gap-2 rounded-full border border-gray-200 bg-white/95 p-2 shadow-2xl backdrop-blur-sm pointer-events-auto">
-              <button
-                className={`h-10 w-10 rounded-full border transition-colors ${
-                  canvasTool === "hand"
-                    ? "bg-blue-50 text-blue-700 border-blue-300"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                }`}
-                onClick={handleSelectHandTool}
-                title="Hand tool"
-              >
-                <svg className="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M8 11V7a1 1 0 0 1 2 0v4" />
-                  <path d="M10 11V6a1 1 0 0 1 2 0v5" />
-                  <path d="M12 11V5a1 1 0 0 1 2 0v6" />
-                  <path d="M14 11V7a1 1 0 0 1 2 0v4" />
-                  <path d="M8 11c0-1 0-2 0-2a1 1 0 0 1 2 0v2" />
-                  <path d="M16 11v3c0 3-2 5-5 5s-5-2-5-5v-4" />
-                </svg>
-              </button>
-              <button
-                className={`h-10 w-10 rounded-full border transition-colors ${
-                  canvasTool === "out"
-                    ? "bg-blue-50 text-blue-700 border-blue-300"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                }`}
-                onClick={() => handleSelectZoomTool("out")}
-                title="Select zoom out tool"
-              >
-                <svg className="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M20 20l-3.5-3.5" />
-                  <path d="M8 11h6" />
-                </svg>
-              </button>
-              <button
-                className={`h-10 w-10 rounded-full border transition-colors ${
-                  canvasTool === "in"
-                    ? "bg-blue-50 text-blue-700 border-blue-300"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                }`}
-                onClick={() => handleSelectZoomTool("in")}
-                title="Select zoom in tool"
-              >
-                <svg className="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M20 20l-3.5-3.5" />
-                  <path d="M11 8v6" />
-                  <path d="M8 11h6" />
-                </svg>
-              </button>
-              <button
-                className="h-10 rounded-full border border-gray-300 bg-white px-3 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-100"
-                onClick={handleResetZoom}
-                title="Reset zoom"
-              >
-                Reset
-              </button>
-            </div>
-          )}
+        <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
+          <span className="text-xs text-gray-400 font-medium mr-1">Tools:</span>
           <button
-            className={`pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border shadow-xl transition-colors ${
-              zoomPaletteOpen ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+              canvasTool === "hand"
+                ? "bg-gray-900 text-white shadow-sm"
+                : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
             }`}
-            onClick={handleZoomBrushClick}
-            title="Zoom tools"
+            onClick={handleSelectHandTool}
+            title="Hand tool"
+            aria-label="Hand tool"
           >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 20l5.5-5.5" />
-              <path d="M13 5l6 6" />
-              <path d="M6 18l-1 1" />
-              <path d="M14 4l6 6" />
-              <path d="M9 15l-2 2" />
-              <path d="M15 3l6 6" />
-            </svg>
+            <Hand className="size-4" aria-hidden="true" />
+          </button>
+          <button
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+              canvasTool === "out"
+                ? "bg-gray-900 text-white shadow-sm"
+                : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
+            }`}
+            onClick={() => handleSelectZoomTool("out")}
+            title="Select zoom out tool"
+            aria-label="Zoom out tool"
+          >
+            <ZoomOut className="size-4" aria-hidden="true" />
+          </button>
+          <button
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+              canvasTool === "in"
+                ? "bg-gray-900 text-white shadow-sm"
+                : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
+            }`}
+            onClick={() => handleSelectZoomTool("in")}
+            title="Select zoom in tool"
+            aria-label="Zoom in tool"
+          >
+            <ZoomIn className="size-4" aria-hidden="true" />
           </button>
         </div>
         <div

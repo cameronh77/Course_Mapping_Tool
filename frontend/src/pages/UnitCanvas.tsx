@@ -14,6 +14,7 @@ import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
 import { useTagStore } from "../stores/useTagStore";
+import { useSearchParams } from "react-router-dom";
 import { usePathwayStore } from "../stores/usePathwayStore";
 import { useNavigate } from "react-router-dom";
 import type {
@@ -63,7 +64,8 @@ export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
 
   // UX State - View Mode & Sidebar Navigation Tab
-  const [viewMode, setViewMode] = useState<'grid' | 'theme'>('grid');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewMode = searchParams.get("view") === "theme" ? "theme" : "grid";
   const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
 
   // State for editing
@@ -140,6 +142,15 @@ export const CanvasPage: React.FC = () => {
   } = useUnitStore();
 
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
+  const setViewMode = (mode: "grid" | "theme") => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (mode === "grid") {
+      nextParams.delete("view");
+    } else {
+      nextParams.set("view", mode);
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const navigate = useNavigate();
   // Context Menu to identify specific units
@@ -1627,26 +1638,8 @@ export const CanvasPage: React.FC = () => {
             </button>
           </div>
         )}
-        {/* View Mode Toggle */}
+        {/* Pathway toggles */}
         <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
-          {/* View mode buttons */}
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
-            onClick={() => setViewMode('grid')}
-          >
-            Timeline View
-          </button>
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'theme' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
-            onClick={() => setViewMode('theme')}
-          >
-            Theme View
-          </button>
-
-          {/* Divider */}
-          <div className="w-px h-5 bg-gray-200 mx-1" />
-
-          {/* Pathway toggles */}
           <span className="text-xs text-gray-400 font-medium mr-1">Pathways:</span>
           {pathways.map((pathway) => {
             const isVisible = visiblePathwayIds.includes(pathway.pathwayId);
