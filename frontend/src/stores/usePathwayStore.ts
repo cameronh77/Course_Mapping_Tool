@@ -32,9 +32,15 @@ export const usePathwayStore = create<PathwayState>((set) => ({
 
   togglePathwayVisibility: (pathwayId: number) =>
     set((state) => {
+      const isCore = state.pathways.find((p) => p.pathwayId === pathwayId)?.type === 'CORE';
       const isVisible = state.visiblePathwayIds.includes(pathwayId);
 
       const isActive = state.activePathwayId === pathwayId;
+
+      if (isCore) {
+        // CORE is always visible — clicking just changes the active editing target
+        return { activePathwayId: pathwayId };
+      }
 
       if (isVisible && isActive) {
         // Active pathway clicked again — hide it and promote next visible to active

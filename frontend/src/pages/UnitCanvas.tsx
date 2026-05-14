@@ -1661,7 +1661,9 @@ export const CanvasPage: React.FC = () => {
                 key={pathway.pathwayId}
                 onClick={() => togglePathwayVisibility(pathway.pathwayId)}
                 title={
-                  isActive
+                  pathway.type === 'CORE'
+                    ? isActive ? 'Core pathway (always visible, currently editing)' : 'Core pathway (always visible) — click to set as editing target'
+                    : isActive
                     ? 'Currently visible & editing — click again to hide'
                     : isVisible
                     ? 'Visible — click to set as editing target, click again to hide'
