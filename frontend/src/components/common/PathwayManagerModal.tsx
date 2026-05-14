@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { usePathwayStore } from "../../stores/usePathwayStore";
 import type { PathwayType } from "../../types";
+import { FieldTooltip } from "./FieldTooltip";
 
 interface PathwayManagerModalProps {
   courseId: string;
@@ -91,7 +92,20 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
         )}
 
         <form onSubmit={handleCreate} className="mb-4 pb-4 border-b border-slate-700">
-          <div className="text-xs text-slate-300 mb-2 font-semibold">Add new</div>
+          <div className="text-xs text-slate-300 mb-2 font-semibold">
+            Add new
+          </div>
+          <div className="flex gap-2 items-center mb-1">
+            <span className="text-[10px] text-slate-400 flex-1">
+              Name
+              <FieldTooltip text="A descriptive name for this pathway (e.g. 'Software Engineering Major'). Shown on the canvas and in reports." />
+            </span>
+            <span className="text-[10px] text-slate-400 w-24">
+              Type
+              <FieldTooltip text="CORE: always required. MAJOR/MINOR: elective streams. ENTRY_POINT: alternative entry routes into the course." />
+            </span>
+            <span className="w-12" />
+          </div>
           <div className="flex gap-2">
             <input
               className="flex-1 px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"

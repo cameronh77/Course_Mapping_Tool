@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { FieldTooltip } from "./FieldTooltip";
 
 const ACTIVITY_TYPES = [
   "Lecture",
@@ -40,7 +41,10 @@ const TeachingActivityForm: React.FC<TeachingActivityFormProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
-        <label className={labelClass}>Activity Name</label>
+        <label className={labelClass}>
+          Activity Name
+          <FieldTooltip text="A short name for this teaching activity (e.g. 'Week 1 Lecture', 'Lab Session 3')." />
+        </label>
         <input
           value={form.name}
           onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
@@ -51,7 +55,10 @@ const TeachingActivityForm: React.FC<TeachingActivityFormProps> = ({
       </div>
 
       <div>
-        <label className={labelClass}>Activity Type</label>
+        <label className={labelClass}>
+          Activity Type
+          <FieldTooltip text="The format of this teaching activity. Determines how it is categorised and displayed on the canvas." />
+        </label>
         <select
           value={form.type}
           onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}
@@ -64,7 +71,10 @@ const TeachingActivityForm: React.FC<TeachingActivityFormProps> = ({
       </div>
 
       <div>
-        <label className={labelClass}>Description</label>
+        <label className={labelClass}>
+          Description
+          <FieldTooltip text="What this activity covers or aims to achieve. Helps students understand the purpose of each session." />
+        </label>
         <textarea
           value={form.description}
           onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
