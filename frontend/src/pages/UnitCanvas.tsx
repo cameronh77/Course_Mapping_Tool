@@ -3,6 +3,7 @@ import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
 import { UnitBox } from "../components/common/UnitBox";
 import { CanvasPlaceholder } from "../components/common/CanvasPlaceholder";
+import { UnitDetailDrawer } from "../components/common/UnitDetailDrawer";
 import { GridBackground } from "../components/common/GridBackground";
 import { ConnectionLines } from "../components/common/ConnectionLines";
 import { ThemeView } from "../components/common/ThemeView";
@@ -168,9 +169,29 @@ export const CanvasPage: React.FC = () => {
   const [relationships, setRelationships] = useState<UnitRelationship[]>([]);
   const [selectedRelationType, setSelectedRelationType] =
     useState<UnitRelationship["relationshipType"]>("PREREQUISITE");
+  const [connectionToolbarPos, setConnectionToolbarPos] = useState<{ x: number; y: number } | null>(null);
+  const connectionToolbarDragRef = React.useRef<{ dx: number; dy: number } | null>(null);
 
-  // State for expanded units and active tabs
-  const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
+  const handleConnectionToolbarMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+    connectionToolbarDragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    const onMove = (ev: MouseEvent) => {
+      const o = connectionToolbarDragRef.current;
+      if (!o) return;
+      setConnectionToolbarPos({ x: ev.clientX - o.dx, y: ev.clientY - o.dy });
+    };
+    const onUp = () => {
+      connectionToolbarDragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // Detail drawer state (replaces inline expand)
+  const [drawerUnitId, setDrawerUnitId] = useState<number | null>(null);
   const [activeTabs, setActiveTabs] = useState<
     Record<number, "info" | "clos" | "tags">
   >({});
@@ -235,6 +256,18 @@ export const CanvasPage: React.FC = () => {
   }, [currentCourse?.courseId, visiblePathwayIds]);
 
   useEffect(() => {
+    if (!connectionMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setConnectionMode(false);
+        setConnectionSource(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [connectionMode]);
+
+  useEffect(() => {
     const loadCanvasState = async () => {
       if (!currentCourse?.courseId || visiblePathwayIds.length === 0) {
         setUnitBoxes([]);
@@ -269,7 +302,7 @@ export const CanvasPage: React.FC = () => {
 
           for (const cu of courseUnits) {
             allUnitBoxes.push({
-              id: Date.now() + Math.random(),
+              id: cu.id,
               name: cu.unit.unitName,
               unitId: cu.unitId,
               pathwayId: cu.pathwayId,
@@ -429,6 +462,7 @@ export const CanvasPage: React.FC = () => {
           })
       ) as UnitMappings;
         // Unallocated units live only on the theme view — don't persist them as course-units.
+        const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
         const unitsWithSemester = unitBoxes.filter((u) => !u.unallocated).map((u) => {
           const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
           const semester = u.y < middleSemesterDividerY ? 1 : 2;
@@ -462,10 +496,12 @@ export const CanvasPage: React.FC = () => {
     y: number,
     color?: string
   ) => {
-    const unitExists = unitBoxes.some(
-      (u) => u.unitId === selectedUnit.unitId && u.pathwayId === activePathwayId
+    const existing = unitBoxes.find(
+      (u) =>
+        u.unitId === selectedUnit.unitId &&
+        (u.unallocated || u.pathwayId === activePathwayId)
     );
-    if (unitExists) {
+    if (existing && !existing.unallocated) {
       alert("This unit has already been added to this pathway.");
       return;
     }
@@ -497,21 +533,56 @@ export const CanvasPage: React.FC = () => {
       return;
     }
 
-    if (existing?.unallocated) {
-      // Promote: place on timeline, clear unallocated flag.
-      setUnitBoxes((prev) =>
-        prev.map((u) =>
-          u.id === existing.id
-            ? { ...u, x: snappedX, y: snappedY, unallocated: false, color: color || u.color || "#3B82F6" }
-            : u
-        )
-      );
-      return;
-    }
-
     const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
     const semester = snappedY < middleSemesterDividerY ? 1 : 2;
     const year = col + 1;
+
+    if (existing?.unallocated) {
+      // Promote: place on timeline, clear unallocated flag, attach to pathway, persist.
+      const promotedColor = color || existing.color || "#3B82F6";
+      setUnitBoxes((prev) =>
+        prev.map((u) =>
+          u.id === existing.id
+            ? {
+                ...u,
+                x: snappedX,
+                y: snappedY,
+                unallocated: false,
+                pathwayId: activePathwayId,
+                color: promotedColor,
+              }
+            : u
+        )
+      );
+      try {
+        const res = await axiosInstance.post("/course-unit/create", {
+          courseId: currentCourse.courseId,
+          unitId: selectedUnit.unitId,
+          semester,
+          year,
+          elective: false,
+          pathwayId: activePathwayId,
+          color: promotedColor,
+          position: { x: snappedX, y: snappedY },
+        });
+        const dbId: number = res.data.id;
+        setUnitBoxes((prev) =>
+          prev.map((u) => (u.id === existing.id ? { ...u, id: dbId } : u))
+        );
+      } catch (err) {
+        console.error("Failed to persist promoted unit:", err);
+        // Roll back the promotion so the unit reappears in the unallocated list.
+        setUnitBoxes((prev) =>
+          prev.map((u) =>
+            u.id === existing.id
+              ? { ...u, x: -10000, y: -10000, unallocated: true, pathwayId: undefined }
+              : u
+          )
+        );
+        alert("Failed to place unit. Please try again.");
+      }
+      return;
+    }
 
     const tempId = Date.now();
     const newUnit = {
@@ -1227,6 +1298,7 @@ export const CanvasPage: React.FC = () => {
   function deleteUnit(unitId: number) {
     const targetUnit = unitBoxes.find((unit) => unit.id === unitId);
     setUnitBoxes(unitBoxes.filter((unit) => unit.id !== unitId));
+    if (drawerUnitId === unitId) setDrawerUnitId(null);
     if (targetUnit?.unitId) {
       setUnitMappings((prev) => {
         const next = { ...prev };
@@ -1234,6 +1306,10 @@ export const CanvasPage: React.FC = () => {
         return next;
       });
     }
+    // Unallocated units are local-only (no CourseUnit row); skip the backend delete.
+    // Also skip if the id is a client-side temp id (Date.now()), which exceeds INT4.
+    if (targetUnit?.unallocated) return;
+    if (!Number.isInteger(unitId) || unitId > 2147483647) return;
     axiosInstance
       .delete("/course-unit/delete", { data: { id: unitId } })
       .catch((err) => console.error("Failed to delete unit from DB:", err));
@@ -1435,12 +1511,7 @@ export const CanvasPage: React.FC = () => {
 
   const toggleExpand = (e: React.MouseEvent, unitId: number) => {
     e.stopPropagation();
-    setExpandedUnits((prev) => {
-      const next = new Set(prev);
-      if (next.has(unitId)) next.delete(unitId);
-      else next.add(unitId);
-      return next;
-    });
+    setDrawerUnitId((prev) => (prev === unitId ? null : unitId));
   };
 
   const getPathwayBadge = (pathwayId: number | undefined) => {
@@ -1465,10 +1536,8 @@ export const CanvasPage: React.FC = () => {
     const unit = unitBoxes.find(
       (u) => u.unitId === unitKey || u.id.toString() === unitKey
     );
-    if (unit && !expandedUnits.has(unit.id)) {
-      setExpandedUnits((prev) => new Set(prev).add(unit.id));
-    }
     if (unit) {
+      setDrawerUnitId(unit.id);
       setActiveTabs((prev) => ({
         ...prev,
         [unit.id]: parsed.type === "clo" ? "clos" : "tags",
@@ -1493,11 +1562,7 @@ export const CanvasPage: React.FC = () => {
           setShowSearchResults={setShowSearchResults}
           searchResults={searchResults}
           handleNewUnitMouseDown={handleNewUnitMouseDown}
-          connectionMode={connectionMode}
           setConnectionMode={setConnectionMode}
-          setConnectionSource={setConnectionSource}
-          selectedRelationType={selectedRelationType}
-          setSelectedRelationType={setSelectedRelationType}
           getCLOColor={getCLOColor}
           selectedTagFilters={selectedTagFilters}
           onToggleTagFilter={toggleTagFilter}
@@ -1512,11 +1577,57 @@ export const CanvasPage: React.FC = () => {
               credits: u.credits ?? 0,
               semestersOffered: u.semestersOffered ?? [],
             }))}
+          onDeleteUnallocated={(unitId) => {
+            const target = unitBoxes.find((u) => u.unitId === unitId && u.unallocated);
+            if (target) deleteUnit(target.id);
+          }}
         />
       </div>
 
-      <div ref={canvasRef} className="flex-1 bg-white overflow-auto relative" style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
-        {/* Toolbar: View Mode + Pathway Toggle */}
+      <div ref={canvasRef} className={`flex-1 bg-white overflow-auto relative ${connectionMode ? 'cursor-crosshair' : ''}`} style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+        {connectionMode && (
+          <div
+            onMouseDown={handleConnectionToolbarMouseDown}
+            className={`fixed z-[60] bg-white border border-red-200 rounded-lg shadow-lg px-3 py-2 flex items-center gap-2 cursor-move select-none ${connectionToolbarPos ? "" : "top-[7.5rem] left-1/2 -translate-x-1/2"}`}
+            style={connectionToolbarPos ? { top: connectionToolbarPos.y, left: connectionToolbarPos.x } : undefined}
+          >
+            <span className="text-gray-300 mr-1" title="Drag to move">⋮⋮</span>
+            <span className="text-xs font-bold text-red-700 mr-1">
+              {connectionSource ? "Click target unit" : "Click source unit"} ·
+            </span>
+            {(["PREREQUISITE", "COREQUISITE", "PROGRESSION", "CONNECTED"] as const).map((t) => {
+              const active = selectedRelationType === t;
+              const colors: Record<string, string> = {
+                PREREQUISITE: "#EF4444",
+                COREQUISITE: "#F59E0B",
+                PROGRESSION: "#10B981",
+                CONNECTED: "#6366F1",
+              };
+              return (
+                <button
+                  key={t}
+                  onClick={() => setSelectedRelationType(t)}
+                  className={`text-[11px] font-semibold px-2 py-1 rounded-full border transition-colors ${active ? 'text-white' : 'bg-white hover:bg-gray-50'}`}
+                  style={{
+                    backgroundColor: active ? colors[t] : undefined,
+                    borderColor: colors[t],
+                    color: active ? '#fff' : colors[t],
+                  }}
+                >
+                  {t.charAt(0) + t.slice(1).toLowerCase()}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => { setConnectionMode(false); setConnectionSource(null); }}
+              className="ml-2 text-[11px] font-semibold px-2 py-1 rounded text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+              title="Cancel (Esc)"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+        {/* View Mode Toggle */}
         <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
           {/* View mode buttons */}
           <button
@@ -1698,7 +1809,7 @@ export const CanvasPage: React.FC = () => {
               selectedUnits={selectedUnits}
               connectionMode={connectionMode}
               connectionSource={connectionSource}
-              isExpanded={expandedUnits.has(unit.id)}
+              isExpanded={false}
               activeTab={activeTabs[unit.id] || "info"}
               unitMappings={
                 unitMappings[unit.unitId || unit.id.toString()] || {
@@ -1724,8 +1835,13 @@ export const CanvasPage: React.FC = () => {
               getCLOColor={getCLOColor}
               existingTags={existingTags || []}
               isBlocked={blockedUnitId !== null && draggedUnit === unit.id}
-              isHighlighted={ghostHoverId === unit.id}
+              isHighlighted={ghostHoverId === unit.id || drawerUnitId === unit.id}
               pathwayBadge={getPathwayBadge(unit.pathwayId)}
+              onStartConnection={(uid) => {
+                setSidebarTab('connections');
+                setConnectionMode(true);
+                setConnectionSource(uid);
+              }}
             />
           ))}
 
@@ -1754,6 +1870,38 @@ export const CanvasPage: React.FC = () => {
               onDeleteRelationship={handleDeleteRelationship}
             />
           </svg>
+
+          {drawerUnitId !== null && (() => {
+            const unit = unitBoxes.find((u) => u.id === drawerUnitId);
+            if (!unit) return null;
+            const key = unit.unitId || unit.id.toString();
+            const PANEL_W = 320;
+            const GAP = 12;
+            const unitW = unit.width ?? UNIT_BOX_WIDTH;
+            const fitsRight = unit.x + unitW + GAP + PANEL_W <= innerWidth;
+            const left = fitsRight
+              ? unit.x + unitW + GAP
+              : Math.max(GAP, unit.x - PANEL_W - GAP);
+            const top = Math.max(
+              GAP,
+              Math.min(unit.y, innerHeight - 420 - GAP)
+            );
+            return (
+              <UnitDetailDrawer
+                unit={unit}
+                position={{ left, top }}
+                activeTab={activeTabs[unit.id] || "info"}
+                setActiveTab={(id, tab) =>
+                  setActiveTabs((prev) => ({ ...prev, [id]: tab }))
+                }
+                unitMappings={unitMappings[key] || { clos: [], tags: [] }}
+                getCLOColor={getCLOColor}
+                existingTags={existingTags || []}
+                onClose={() => setDrawerUnitId(null)}
+                onDrop={handleUnitBoxDrop}
+              />
+            );
+          })()}
         </div>
         ) : (
           <ThemeView
@@ -1763,6 +1911,12 @@ export const CanvasPage: React.FC = () => {
             existingTags={existingTags}
             getCLOColor={getCLOColor}
             onUnitGroupChange={handleUnitGroupChange}
+            onDeleteUnit={(unitKey) => {
+              const target = unitBoxes.find(
+                (u) => (u.unitId || u.id.toString()) === unitKey
+              );
+              if (target) deleteUnit(target.id);
+            }}
             layoutRef={themeLayoutRef}
           />
         )}
