@@ -15,11 +15,11 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<PathwayType>("MAJOR");
   const [addEntryLevel, setAddEntryLevel] = useState(false);
-  const [entryLevelCount, setEntryLevelCount] = useState(1);
+  const [entryLevelCount, setEntryLevelCount] = useState("1");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editType, setEditType] = useState<PathwayType>("MAJOR");
-  const [editEntryLevelCount, setEditEntryLevelCount] = useState(0);
+  const [editEntryLevelCount, setEditEntryLevelCount] = useState("0");
   const [error, setError] = useState<string | null>(null);
 
   // Normalize name and extract base name from entry point
@@ -44,16 +44,15 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
       const trimmedName = newName.trim();
       await createPathway(trimmedName, newType, courseId);
       if (addEntryLevel) {
-        const safeCount = Math.max(1, Math.floor(entryLevelCount || 1));
+        const safeCount = Math.max(1, parseInt(entryLevelCount, 10) || 1);
         for (let i = 1; i <= safeCount; i += 1) {
-          const suffix = safeCount === 1 ? "" : ` ${i}`;
-          await createPathway(`${trimmedName} Entry Point${suffix}`, "ENTRY_POINT", courseId);
+          await createPathway(`${trimmedName} Entry Point ${i}`, "ENTRY_POINT", courseId);
         }
       }
       setNewName("");
       setNewType("MAJOR");
       setAddEntryLevel(false);
-      setEntryLevelCount(1);
+      setEntryLevelCount("1");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to create pathway";
       setError(message);
@@ -67,10 +66,17 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
     // Count existing entry points if this is a parent pathway
     if (type !== "ENTRY_POINT") {
       const count = getEntryPointCount(id, name);
-      setEditEntryLevelCount(count);
+      setEditEntryLevelCount(String(count));
     } else {
       setEditEntryLevelCount(0);
     }
+  };
+
+  // Extract the trailing number from an entry point name, e.g. "CS Major Entry Point 3" → 3.
+  // Returns 0 if no number is found (old unnumbered format).
+  const entryPointNumber = (name: string): number => {
+    const m = name.match(/\s(\d+)$/);
+    return m ? parseInt(m[1], 10) : 0;
   };
 
   const saveEdit = async () => {
@@ -80,25 +86,43 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
       const originalPathway = pathways.find((p) => p.pathwayId === editingId);
       await updatePathway(editingId, editName.trim(), editType);
 
-      // Handle entry level changes for parent pathways
       if (originalPathway && originalPathway.type !== "ENTRY_POINT") {
-        const oldCount = getEntryPointCount(editingId, originalPathway.name);
-        const newCount = editEntryLevelCount;
+        const desiredCount = Math.max(0, parseInt(editEntryLevelCount, 10) || 0);
+        const newParentName = editName.trim();
+        const nameChanged =
+          normalizeName(newParentName) !== normalizeName(originalPathway.name);
 
-        if (newCount > oldCount) {
-          // Create new entry points
-          for (let i = oldCount + 1; i <= newCount; i += 1) {
-            const suffix = newCount === 1 ? "" : ` ${i}`;
-            await createPathway(`${editName.trim()} Entry Point${suffix}`, "ENTRY_POINT", courseId);
+        const currentEntryPoints = pathways.filter(
+          (p) => p.type === "ENTRY_POINT" && isEntryPointFor(p.name, originalPathway.name)
+        );
+
+        if (nameChanged) {
+          // Parent was renamed — delete all old entry points and recreate under new name.
+          for (const ep of currentEntryPoints) {
+            await deletePathway(ep.pathwayId);
           }
-        } else if (newCount < oldCount) {
-          // Delete extra entry points
-          const entryPointsToDelete = pathways.filter(
-            (p) => p.type === "ENTRY_POINT" && isEntryPointFor(p.name, editName.trim())
+          for (let i = 1; i <= desiredCount; i += 1) {
+            await createPathway(`${newParentName} Entry Point ${i}`, "ENTRY_POINT", courseId);
+          }
+        } else {
+          // Parent name unchanged — reconcile to exactly desiredCount numbered 1–N.
+          const existingNums = new Set(
+            currentEntryPoints.map(entryPointNumber).filter((n) => n > 0)
           );
-          // Keep only the first newCount entry points
-          for (let i = newCount; i < entryPointsToDelete.length; i += 1) {
-            await deletePathway(entryPointsToDelete[i].pathwayId);
+
+          // Delete entry points that are out of range or have no valid number.
+          for (const ep of currentEntryPoints) {
+            const n = entryPointNumber(ep.name);
+            if (n === 0 || n > desiredCount) {
+              await deletePathway(ep.pathwayId);
+            }
+          }
+
+          // Create any missing slots in 1–desiredCount.
+          for (let i = 1; i <= desiredCount; i += 1) {
+            if (!existingNums.has(i)) {
+              await createPathway(`${newParentName} Entry Point ${i}`, "ENTRY_POINT", courseId);
+            }
           }
         }
       }
@@ -114,6 +138,15 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
     if (!window.confirm("Delete this pathway? This cannot be undone.")) return;
     try {
       setError(null);
+      const target = pathways.find((p) => p.pathwayId === id);
+      if (target) {
+        const entryPoints = pathways.filter(
+          (p) => p.type === "ENTRY_POINT" && isEntryPointFor(p.name, target.name)
+        );
+        for (const ep of entryPoints) {
+          await deletePathway(ep.pathwayId);
+        }
+      }
       await deletePathway(id);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to delete pathway";
@@ -194,10 +227,7 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
                 min={1}
                 step={1}
                 value={entryLevelCount}
-                onChange={(e) => {
-                  const next = Number(e.target.value);
-                  setEntryLevelCount(Number.isFinite(next) ? next : 1);
-                }}
+                onChange={(e) => setEntryLevelCount(e.target.value)}
                 className="w-20 px-2 py-1 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
               />
             </div>
@@ -247,10 +277,7 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
                           min={0}
                           step={1}
                           value={editEntryLevelCount}
-                          onChange={(e) => {
-                            const next = Number(e.target.value);
-                            setEditEntryLevelCount(Number.isFinite(next) ? next : 0);
-                          }}
+                          onChange={(e) => setEditEntryLevelCount(e.target.value)}
                           className="w-12 px-1 py-1 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
                         />
                       </div>

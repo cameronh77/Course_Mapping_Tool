@@ -6,7 +6,7 @@ import { usePathwayStore } from "../../stores/usePathwayStore";
 import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
 import { PathwayManagerModal } from "../common/PathwayManagerModal";
 import { getTagColor } from "../common/themeViewConstants";
-import type { Tag, Unit, PlaceholderType, Pathway } from "../../types";
+import type { Tag, Unit, PlaceholderType } from "../../types";
 
 interface CanvasSidebarProps {
   sidebarTab: 'units' | 'connections' | 'mapping';
@@ -81,43 +81,11 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   }, [pathwayDropdownOpen]);
 
   const activePathway = pathways.find((p) => p.pathwayId === activePathwayId) ?? null;
-  const pathwayById = useMemo(() => {
-    const map = new Map<number, Pathway>();
-    pathways.forEach((p) => map.set(p.pathwayId, p));
-    return map;
-  }, [pathways]);
-
-  const normalizeName = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
-  const entryPointBaseName = (name: string) =>
-    normalizeName(name).replace(/\s+entry\s+(level|point)(\s+\d+)?$/i, "").trim();
-  const isEntryPointFor = (entryName: string, parentName: string) =>
-    entryPointBaseName(entryName) === normalizeName(parentName);
 
   const nonEntryPathways = useMemo(
     () => pathways.filter((p) => p.type !== "ENTRY_POINT"),
     [pathways]
   );
-
-  const activeParentPathway = useMemo(() => {
-    if (!activePathwayId) return null;
-    const active = pathwayById.get(activePathwayId) ?? null;
-    if (!active) return null;
-    if (active.type !== "ENTRY_POINT") return active;
-    return (
-      nonEntryPathways.find((p) => isEntryPointFor(active.name, p.name)) ?? null
-    );
-  }, [activePathwayId, pathwayById, nonEntryPathways]);
-
-  const relevantEntryPoints = useMemo(() => {
-    if (!activeParentPathway) return [] as Pathway[];
-    const related = pathways.filter(
-      (p) => p.type === "ENTRY_POINT" && isEntryPointFor(p.name, activeParentPathway.name)
-    );
-    if (activePathway?.type === "ENTRY_POINT" && !related.some((p) => p.pathwayId === activePathway.pathwayId)) {
-      return [...related, activePathway];
-    }
-    return related;
-  }, [activeParentPathway, pathways, activePathway]);
 
   const dropdownPathways = useMemo(
     () => nonEntryPathways,
@@ -262,38 +230,6 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
           )}
         </div>
 
-        {relevantEntryPoints.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-gray-200">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-              Entry Points
-            </label>
-            <div className="grid grid-cols-6 gap-1.5">
-              {relevantEntryPoints.map((p) => {
-                const isActive = p.pathwayId === activePathwayId;
-                // Extract level number from entry point name
-                const levelMatch = p.name.match(/\d+$/);
-                const level = levelMatch ? levelMatch[0] : "1";
-                return (
-                  <button
-                    type="button"
-                    key={p.pathwayId}
-                    onClick={() => {
-                      setActivePathway(p.pathwayId);
-                    }}
-                    className={`flex items-center justify-center py-2 rounded-md text-sm font-semibold transition-colors ${
-                      isActive 
-                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
-                        : "bg-gray-50 text-gray-700 border border-gray-200 hover:border-emerald-200 hover:bg-emerald-50"
-                    }`}
-                    title={p.name}
-                  >
-                    {level}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       {pathwayManagerOpen && currentCourse?.courseId && (

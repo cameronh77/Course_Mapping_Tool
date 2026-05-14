@@ -103,6 +103,9 @@ export const CanvasPage: React.FC = () => {
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
+  const copyBarRef = useRef<HTMLDivElement>(null);
+  const [copyBarOpen, setCopyBarOpen] = useState(false);
+  const [copyBarLoading, setCopyBarLoading] = useState(false);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
   const {
@@ -110,6 +113,7 @@ export const CanvasPage: React.FC = () => {
     activePathwayId,
     visiblePathwayIds,
     fetchPathways,
+    setActivePathway,
   } = usePathwayStore();
 
   useEffect(() => {
@@ -117,6 +121,30 @@ export const CanvasPage: React.FC = () => {
       fetchPathways(currentCourse.courseId);
     }
   }, [currentCourse?.courseId, fetchPathways]);
+
+  // Derive the entry points relevant to the currently active pathway so the
+  // horizontal bar knows what to render.
+  const epNormalize = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+  const epBaseName = (name: string) =>
+    epNormalize(name).replace(/\s+entry\s+(level|point)(\s+\d+)?$/i, "").trim();
+  const isEPFor = (entryName: string, parentName: string) =>
+    epBaseName(entryName) === epNormalize(parentName);
+
+  const activePathwayObj = useMemo(
+    () => pathways.find((p) => p.pathwayId === activePathwayId) ?? null,
+    [pathways, activePathwayId]
+  );
+
+  const entryPointParent = useMemo(() => {
+    if (!activePathwayObj) return null;
+    if (activePathwayObj.type !== "ENTRY_POINT") return activePathwayObj;
+    return pathways.find((p) => p.type !== "ENTRY_POINT" && isEPFor(activePathwayObj.name, p.name)) ?? null;
+  }, [activePathwayObj, pathways]);
+
+  const canvasEntryPoints = useMemo(() => {
+    if (!entryPointParent) return [];
+    return pathways.filter((p) => p.type === "ENTRY_POINT" && isEPFor(p.name, entryPointParent.name));
+  }, [entryPointParent, pathways]);
 
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
@@ -257,6 +285,17 @@ export const CanvasPage: React.FC = () => {
     };
     loadRelationships();
   }, [currentCourse?.courseId, visiblePathwayIds]);
+
+  useEffect(() => {
+    if (!copyBarOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (copyBarRef.current && !copyBarRef.current.contains(e.target as Node)) {
+        setCopyBarOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [copyBarOpen]);
 
   useEffect(() => {
     if (!connectionMode) return;
@@ -441,6 +480,70 @@ export const CanvasPage: React.FC = () => {
     };
     addData(apiData);
     setViewingTagMenu(false);
+  };
+
+  const handleCopyFromEntryPoint = async (sourcePathwayId: number) => {
+    if (!activePathwayId || !currentCourse?.courseId) return;
+    try {
+      const res = await axiosInstance.get(
+        `/course-unit/view?courseId=${currentCourse.courseId}&pathwayId=${sourcePathwayId}`
+      );
+      const sourceUnits: any[] = res.data;
+
+      let copied = 0;
+      let skipped = 0;
+      const newBoxes: UnitBoxType[] = [];
+
+      for (const cu of sourceUnits) {
+        const alreadyExists = unitBoxes.some(
+          (u) => u.unitId === cu.unitId && u.pathwayId === activePathwayId
+        );
+        if (alreadyExists) {
+          skipped++;
+          continue;
+        }
+        try {
+          const createRes = await axiosInstance.post("/course-unit/create", {
+            courseId: currentCourse.courseId,
+            unitId: cu.unitId,
+            semester: cu.semester,
+            year: cu.year,
+            elective: cu.elective,
+            pathwayId: activePathwayId,
+            color: cu.color || "#3B82F6",
+            position: cu.position,
+          });
+          newBoxes.push({
+            id: createRes.data.id,
+            name: cu.unit.unitName,
+            unitId: cu.unitId,
+            pathwayId: activePathwayId,
+            description: cu.unit.unitDesc,
+            credits: cu.unit.credits,
+            semestersOffered: cu.unit.semestersOffered,
+            x: cu.position?.x ?? 0,
+            y: cu.position?.y ?? 0,
+            color: cu.color || "#3B82F6",
+          });
+          copied++;
+        } catch {
+          skipped++;
+        }
+      }
+
+      if (newBoxes.length > 0) {
+        setUnitBoxes((prev) => [...prev, ...newBoxes]);
+      }
+
+      const msg =
+        skipped > 0
+          ? `${copied} unit(s) copied. ${skipped} skipped (already present).`
+          : `${copied} unit(s) copied successfully.`;
+      alert(msg);
+    } catch (err) {
+      console.error("Failed to copy units:", err);
+      alert("Failed to copy units. Please try again.");
+    }
   };
 
   const handleSaveCanvas = async () => {
@@ -1007,13 +1110,19 @@ export const CanvasPage: React.FC = () => {
     if (editingId) {
       const editedUnit = unitBoxes.find((unit) => unit.id === editingId);
       if (editedUnit) {
-        updateUnit(editedUnit.unitId!, {
-          unitName: formData.unitName || editedUnit.name,
-          unitDesc: formData.unitDesc || editedUnit.description,
-          credits: formData.credits || editedUnit.credits,
-          semestersOffered:
-            formData.semestersOffered || editedUnit.semestersOffered,
-        })
+        const newColor = formData.color || editedUnit.color;
+        Promise.all([
+          updateUnit(editedUnit.unitId!, {
+            unitName: formData.unitName || editedUnit.name,
+            unitDesc: formData.unitDesc || editedUnit.description,
+            credits: formData.credits || editedUnit.credits,
+            semestersOffered:
+              formData.semestersOffered || editedUnit.semestersOffered,
+          }),
+          newColor !== editedUnit.color
+            ? axiosInstance.put(`/course-unit/update/${editingId}`, { color: newColor })
+            : Promise.resolve(),
+        ])
           .then(() => {
             setUnitBoxes(
               unitBoxes.map((unit) =>
@@ -1026,7 +1135,7 @@ export const CanvasPage: React.FC = () => {
                       credits: formData.credits || unit.credits,
                       semestersOffered:
                         formData.semestersOffered || unit.semestersOffered,
-                      color: formData.color || unit.color,
+                      color: newColor,
                     }
                   : unit
               )
@@ -1516,13 +1625,7 @@ export const CanvasPage: React.FC = () => {
     setDrawerUnitId((prev) => (prev === unitId ? null : unitId));
   };
 
-  const getPathwayBadge = (pathwayId: number | undefined) => {
-    if (visiblePathwayIds.length <= 1 || !pathwayId) return undefined;
-    const p = pathways.find((pw) => pw.pathwayId === pathwayId);
-    return p ? { name: p.name, type: p.type } : undefined;
-  };
-
-  const yearsCount =
+const yearsCount =
     Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
   const semPerYear =
     Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
@@ -1587,6 +1690,69 @@ export const CanvasPage: React.FC = () => {
       </div>
 
       <div ref={canvasRef} className={`flex-1 bg-white overflow-auto relative ${connectionMode ? 'cursor-crosshair' : ''}`} style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+        {canvasEntryPoints.length > 0 && (
+          <div className="sticky top-0 left-0 z-50 flex items-center gap-1 px-3 py-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
+            <span className="text-xs text-gray-400 font-medium mr-1">Entry Point:</span>
+            {canvasEntryPoints.map((p) => {
+              const isActive = p.pathwayId === activePathwayId;
+              const level = p.name.match(/\d+$/)?.[0] ?? "1";
+              return (
+                <button
+                  key={p.pathwayId}
+                  type="button"
+                  onClick={() => setActivePathway(p.pathwayId)}
+                  title={p.name}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                    isActive
+                      ? "bg-gray-900 text-white shadow-sm"
+                      : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
+                  }`}
+                >
+                  {level}
+                </button>
+              );
+            })}
+            {(() => {
+              const siblings = canvasEntryPoints.filter((p) => p.pathwayId !== activePathwayId);
+              if (siblings.length === 0) return null;
+              return (
+                <div className="relative ml-2" ref={copyBarRef}>
+                  <button
+                    type="button"
+                    disabled={copyBarLoading}
+                    onClick={() => setCopyBarOpen((o) => !o)}
+                    className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600 rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span>⧉</span>
+                    {copyBarLoading ? "Copying…" : "Copy from…"}
+                  </button>
+                  {copyBarOpen && (
+                    <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 py-1 min-w-[140px]">
+                      {siblings.map((p) => {
+                        const level = p.name.match(/\d+$/)?.[0] ?? p.name;
+                        return (
+                          <button
+                            key={p.pathwayId}
+                            type="button"
+                            onClick={async () => {
+                              setCopyBarOpen(false);
+                              setCopyBarLoading(true);
+                              await handleCopyFromEntryPoint(p.pathwayId);
+                              setCopyBarLoading(false);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 transition-colors"
+                          >
+                            Entry Point {level}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
         {connectionMode && (
           <div
             onMouseDown={handleConnectionToolbarMouseDown}
@@ -1703,13 +1869,13 @@ export const CanvasPage: React.FC = () => {
               existingTags={existingTags || []}
               isBlocked={blockedUnitId !== null && draggedUnit === unit.id}
               isHighlighted={ghostHoverId === unit.id || drawerUnitId === unit.id}
-              pathwayBadge={getPathwayBadge(unit.pathwayId)}
               onStartConnection={(uid) => {
                 setSidebarTab('connections');
                 setConnectionMode(true);
                 setConnectionSource(uid);
               }}
             />
+
           ))}
 
           {/* Placeholder boxes */}
