@@ -87,17 +87,20 @@ function buildFreshLayout(
 }
 
 function mergeWithSaved(fresh: ThemeViewStorage, saved: ThemeViewStorage): ThemeViewStorage {
-  const groupUnits = { ...fresh.groupUnits, ...saved.groupUnits };
-  for (const key of Object.keys(fresh.groupUnits)) {
-    if (!groupUnits[key]) groupUnits[key] = [];
-  }
+  // Fresh group membership always wins — it's derived from current tag assignments.
+  // Saved data is only used for positions so the user's drag layout is preserved.
   const groupPositions = { ...saved.groupPositions };
   for (const [key, pos] of Object.entries(fresh.groupPositions)) {
     if (!groupPositions[key]) groupPositions[key] = pos;
   }
+  // Keep saved free-unit positions only for units that are still untagged in fresh.
+  const freeUnits: Record<string, { x: number; y: number }> = {};
+  for (const key of Object.keys(fresh.freeUnits)) {
+    freeUnits[key] = saved.freeUnits[key] ?? fresh.freeUnits[key];
+  }
   return {
-    groupUnits,
-    freeUnits: saved.freeUnits,
+    groupUnits: fresh.groupUnits,
+    freeUnits,
     groupPositions,
   };
 }
@@ -410,6 +413,37 @@ export const ThemeView: React.FC<ThemeViewProps> = ({
       });
     }
   }, [unitBoxes]);
+
+  // When unitMappings changes (e.g. user assigns a tag via sidebar), move any free units
+  // that now have a tag assignment into the correct group.
+  useEffect(() => {
+    const toGroup: { key: string; groupKey: GroupKey }[] = [];
+    for (const key of Object.keys(freeUnits)) {
+      const tags = unitMappings[key]?.tags || [];
+      for (const tag of tags) {
+        const groupKey: GroupKey = `tag-${tag.tagId}`;
+        if (groupUnits[groupKey] !== undefined && !groupUnits[groupKey].includes(key)) {
+          toGroup.push({ key, groupKey });
+          break;
+        }
+      }
+    }
+    if (toGroup.length === 0) return;
+    setGroupUnits((prev) => {
+      const next = { ...prev };
+      for (const { key, groupKey } of toGroup) {
+        if (next[groupKey] && !next[groupKey].includes(key)) {
+          next[groupKey] = [...next[groupKey], key];
+        }
+      }
+      return next;
+    });
+    setFreeUnits((prev) => {
+      const next = { ...prev };
+      for (const { key } of toGroup) delete next[key];
+      return next;
+    });
+  }, [unitMappings]);
 
   useEffect(() => {
     if (layoutRef) layoutRef.current = { groupPositions, groupUnits, freeUnits };
