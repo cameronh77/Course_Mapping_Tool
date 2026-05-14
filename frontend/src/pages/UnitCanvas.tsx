@@ -389,6 +389,7 @@ export const CanvasPage: React.FC = () => {
   ): boolean => {
     return unitBoxes.some((u) => {
       if (u.id === excludeId) return false;
+      if (u.pathwayId !== activePathwayId) return false;
       if (Math.abs(u.x - x) >= 1) return false;
       if (Math.abs(u.y - y) < 1) return true;
       if (u.spansYear) {
@@ -445,8 +446,13 @@ export const CanvasPage: React.FC = () => {
   const handleSaveCanvas = async () => {
     if (!currentCourse?.courseId) return;
     try {
+      // Only include units from the currently selected pathway
+      const unitsInPathway = unitBoxes.filter(
+        (u) => u.pathwayId === activePathwayId && !u.unallocated
+      );
+
       const unitIdsOnCanvas = new Set(
-        unitBoxes
+        unitsInPathway
           .map((u) => u.unitId)
           .filter((id): id is string => typeof id === "string" && id.length > 0)
       );
@@ -465,13 +471,6 @@ export const CanvasPage: React.FC = () => {
           })
       ) as UnitMappings;
         // Unallocated units live only on the theme view — don't persist them as course-units.
-        const middleSemesterDividerY = START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT;
-        const unitsWithSemester = unitBoxes.filter((u) => !u.unallocated).map((u) => {
-          const col = Math.max(0, Math.round((u.x - START_X) / COL_WIDTH));
-          const semester = u.y < middleSemesterDividerY ? 1 : 2;
-          const year = col + 1;
-          return { ...u, semester, year };
-        });
 
       await axiosInstance.post(
         `/course-unit/tags/${currentCourse.courseId}`,
@@ -1638,7 +1637,7 @@ export const CanvasPage: React.FC = () => {
           />
 
           {unitBoxes
-            .filter((u) => u.spansYear && isUnitVisible(u.unitId) && !u.unallocated)
+            .filter((u) => u.pathwayId === activePathwayId && u.spansYear && isUnitVisible(u.unitId) && !u.unallocated)
             .map((u) => {
               const cy = companionSlotY(u.y);
               if (cy === null) return null;
@@ -1669,7 +1668,7 @@ export const CanvasPage: React.FC = () => {
               );
             })}
 
-          {unitBoxes.filter((unit) => isUnitVisible(unit.unitId) && !unit.unallocated).map((unit) => (
+          {unitBoxes.filter((unit) => unit.pathwayId === activePathwayId && isUnitVisible(unit.unitId) && !unit.unallocated).map((unit) => (
             <UnitBox
               key={unit.id}
               unit={unit}
@@ -1774,7 +1773,7 @@ export const CanvasPage: React.FC = () => {
         ) : (
           <ThemeView
             courseId={currentCourse?.courseId ?? ""}
-            unitBoxes={unitBoxes}
+            unitBoxes={unitBoxes.filter((u) => u.pathwayId === activePathwayId || u.unallocated)}
             unitMappings={unitMappings}
             existingTags={existingTags}
             getCLOColor={getCLOColor}

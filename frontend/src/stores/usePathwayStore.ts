@@ -6,6 +6,7 @@ interface PathwayState {
   pathways: Pathway[];
   activePathwayId: number | null;
   visiblePathwayIds: number[];
+  _courseId: string | null;
   fetchPathways: (courseId: string) => Promise<void>;
   setActivePathway: (pathwayId: number) => void;
   togglePathwayVisibility: (pathwayId: number) => void;
@@ -14,48 +15,126 @@ interface PathwayState {
   updatePathway: (pathwayId: number, name: string, type: string) => Promise<void>;
 }
 
+const selectionKey = (courseId: string) => `pathway_selection_${courseId}`;
+
+const loadPersistedSelection = (
+  courseId: string,
+  pathways: Pathway[]
+): { activePathwayId: number; visiblePathwayIds: number[] } | null => {
+  try {
+    const raw = localStorage.getItem(selectionKey(courseId));
+    if (!raw) return null;
+    const { activePathwayId, visiblePathwayIds } = JSON.parse(raw) as {
+      activePathwayId: number;
+      visiblePathwayIds: number[];
+    };
+    const validIds = new Set(pathways.map((p) => p.pathwayId));
+    const validVisible = visiblePathwayIds.filter((id) => validIds.has(id));
+    if (validVisible.length > 0 && validIds.has(activePathwayId)) {
+      return { activePathwayId, visiblePathwayIds: validVisible };
+    }
+  } catch { /* ignore */ }
+  return null;
+};
+
+const persistSelection = (
+  courseId: string | null,
+  activePathwayId: number | null,
+  visiblePathwayIds: number[]
+) => {
+  if (!courseId) return;
+  try {
+    localStorage.setItem(
+      selectionKey(courseId),
+      JSON.stringify({ activePathwayId, visiblePathwayIds })
+    );
+  } catch { /* ignore */ }
+};
+
 export const usePathwayStore = create<PathwayState>((set) => ({
   pathways: [],
   activePathwayId: null,
   visiblePathwayIds: [],
+  _courseId: null,
 
   fetchPathways: async (courseId: string) => {
     const res = await axios.get(`/pathway?courseId=${courseId}`);
     const pathways: Pathway[] = res.data;
-    set({ pathways });
-    const core = pathways.find((p) => p.type === "CORE");
-    if (core) set({ activePathwayId: core.pathwayId, visiblePathwayIds: [core.pathwayId] });
+
+    set((state) => {
+      // Don't override an active in-session selection for the same course.
+      if (state._courseId === courseId && state.visiblePathwayIds.length > 0) {
+        return { pathways };
+      }
+
+      // Try to restore a previously persisted selection for this course.
+      const saved = loadPersistedSelection(courseId, pathways);
+      if (saved) {
+        return { pathways, _courseId: courseId, ...saved };
+      }
+
+      // Fall back to CORE, then first non-entry-point, then first pathway.
+      const defaultPathway =
+        pathways.find((p) => p.type === "CORE") ??
+        pathways.find((p) => p.type !== "ENTRY_POINT") ??
+        pathways[0];
+
+      if (defaultPathway) {
+        const selection = {
+          activePathwayId: defaultPathway.pathwayId,
+          visiblePathwayIds: [defaultPathway.pathwayId],
+        };
+        persistSelection(courseId, selection.activePathwayId, selection.visiblePathwayIds);
+        return { pathways, _courseId: courseId, ...selection };
+      }
+
+      return { pathways, _courseId: courseId };
+    });
   },
 
-  setActivePathway: (pathwayId: number) => set({ activePathwayId: pathwayId }),
+  setActivePathway: (pathwayId: number) =>
+    set((state) => {
+      const newVisible = state.visiblePathwayIds.includes(pathwayId)
+        ? state.visiblePathwayIds
+        : [...state.visiblePathwayIds, pathwayId];
+      persistSelection(state._courseId, pathwayId, newVisible);
+      return { activePathwayId: pathwayId, visiblePathwayIds: newVisible };
+    }),
 
   togglePathwayVisibility: (pathwayId: number) =>
     set((state) => {
-      const isCore = state.pathways.find((p) => p.pathwayId === pathwayId)?.type === 'CORE';
+      const isCore = state.pathways.find((p) => p.pathwayId === pathwayId)?.type === "CORE";
       const isVisible = state.visiblePathwayIds.includes(pathwayId);
-
       const isActive = state.activePathwayId === pathwayId;
 
-      if (isCore) {
-        // CORE is always visible — clicking just changes the active editing target
-        return { activePathwayId: pathwayId };
-      }
+      let next: Partial<PathwayState>;
 
-      if (isVisible && isActive) {
-        // Active pathway clicked again — hide it and promote next visible to active
+      if (isCore) {
+        // CORE is always visible — clicking just changes the active editing target.
+        next = { activePathwayId: pathwayId };
+      } else if (isVisible && isActive) {
+        // Active pathway clicked again — hide it and promote the next visible to active.
         const newVisible = state.visiblePathwayIds.filter((id) => id !== pathwayId);
         const newActive = newVisible.length > 0 ? newVisible[newVisible.length - 1] : null;
-        return { visiblePathwayIds: newVisible, activePathwayId: newActive };
+        next = { visiblePathwayIds: newVisible, activePathwayId: newActive };
       } else if (isVisible && !isActive) {
-        // Already visible but not the editing target — promote to active (don't hide)
-        return { activePathwayId: pathwayId };
+        // Already visible but not the editing target — promote to active (don't hide).
+        next = { activePathwayId: pathwayId };
       } else {
-        // Hidden — show it and make it the active editing target
-        return {
+        // Hidden — show it and make it the active editing target.
+        next = {
           visiblePathwayIds: [...state.visiblePathwayIds, pathwayId],
           activePathwayId: pathwayId,
         };
       }
+
+      persistSelection(
+        state._courseId,
+        (next.activePathwayId ?? state.activePathwayId) as number | null,
+        (next.visiblePathwayIds ?? state.visiblePathwayIds) as number[]
+      );
+
+      return next;
     }),
 
   createPathway: async (name: string, type: string, courseId: string) => {
@@ -70,9 +149,8 @@ export const usePathwayStore = create<PathwayState>((set) => ({
     set((state) => {
       const newVisible = state.visiblePathwayIds.filter((id) => id !== pathwayId);
       const newActive =
-        state.activePathwayId === pathwayId
-          ? (newVisible[0] ?? null)
-          : state.activePathwayId;
+        state.activePathwayId === pathwayId ? (newVisible[0] ?? null) : state.activePathwayId;
+      persistSelection(state._courseId, newActive, newVisible);
       return {
         pathways: state.pathways.filter((p) => p.pathwayId !== pathwayId),
         visiblePathwayIds: newVisible,
@@ -85,9 +163,7 @@ export const usePathwayStore = create<PathwayState>((set) => ({
     const res = await axios.put(`/pathway/${pathwayId}`, { name, type });
     const updated: Pathway = res.data;
     set((state) => ({
-      pathways: state.pathways.map((p) =>
-        p.pathwayId === pathwayId ? updated : p
-      ),
+      pathways: state.pathways.map((p) => (p.pathwayId === pathwayId ? updated : p)),
     }));
   },
 }));
