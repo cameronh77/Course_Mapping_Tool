@@ -7,13 +7,15 @@ interface PathwayManagerModalProps {
   onClose: () => void;
 }
 
-const TYPES: PathwayType[] = ["CORE", "MAJOR", "MINOR", "ENTRY_POINT"];
+const TYPES: PathwayType[] = ["CORE", "MAJOR", "MINOR", "SPECIALISATION"];
 
 export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ courseId, onClose }) => {
   const { pathways, createPathway, updatePathway, deletePathway } = usePathwayStore();
 
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<PathwayType>("MAJOR");
+  const [addEntryLevel, setAddEntryLevel] = useState(false);
+  const [entryLevelCount, setEntryLevelCount] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editType, setEditType] = useState<PathwayType>("MAJOR");
@@ -24,9 +26,19 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
     if (!newName.trim()) return;
     try {
       setError(null);
-      await createPathway(newName.trim(), newType, courseId);
+      const trimmedName = newName.trim();
+      await createPathway(trimmedName, newType, courseId);
+      if (addEntryLevel) {
+        const safeCount = Math.max(1, Math.floor(entryLevelCount || 1));
+        for (let i = 1; i <= safeCount; i += 1) {
+          const suffix = safeCount === 1 ? "" : ` ${i}`;
+          await createPathway(`${trimmedName} Entry Point${suffix}`, "ENTRY_POINT", courseId);
+        }
+      }
       setNewName("");
       setNewType("MAJOR");
+      setAddEntryLevel(false);
+      setEntryLevelCount(1);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to create pathway";
       setError(message);
@@ -118,6 +130,31 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
               Add
             </button>
           </div>
+          <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-slate-500 bg-slate-900"
+              checked={addEntryLevel}
+              onChange={(e) => setAddEntryLevel(e.target.checked)}
+            />
+            Add entry level
+          </label>
+          {addEntryLevel && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate-300">
+              <span>Number of entry levels</span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={entryLevelCount}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setEntryLevelCount(Number.isFinite(next) ? next : 1);
+                }}
+                className="w-20 px-2 py-1 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
+              />
+            </div>
+          )}
         </form>
 
         <div className="space-y-2">
@@ -139,17 +176,23 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                     />
-                    <select
-                      className="px-2 py-1 rounded bg-slate-900 border border-slate-600 text-sm"
-                      value={editType}
-                      onChange={(e) => setEditType(e.target.value as PathwayType)}
-                    >
-                      {TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
+                    {p.type === "ENTRY_POINT" ? (
+                      <span className="px-2 py-1 rounded bg-slate-900 border border-slate-600 text-sm text-slate-300">
+                        ENTRY_POINT
+                      </span>
+                    ) : (
+                      <select
+                        className="px-2 py-1 rounded bg-slate-900 border border-slate-600 text-sm"
+                        value={editType}
+                        onChange={(e) => setEditType(e.target.value as PathwayType)}
+                      >
+                        {TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <button
                       type="button"
                       className="px-2 py-1 text-xs rounded bg-sky-600 hover:bg-sky-500"

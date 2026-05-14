@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
@@ -6,7 +6,7 @@ import { usePathwayStore } from "../../stores/usePathwayStore";
 import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
 import { PathwayManagerModal } from "../common/PathwayManagerModal";
 import { getTagColor } from "../common/themeViewConstants";
-import type { Tag, Unit, PlaceholderType } from "../../types";
+import type { Tag, Unit, PlaceholderType, Pathway } from "../../types";
 
 interface CanvasSidebarProps {
   sidebarTab: 'units' | 'connections' | 'mapping';
@@ -81,6 +81,49 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   }, [pathwayDropdownOpen]);
 
   const activePathway = pathways.find((p) => p.pathwayId === activePathwayId) ?? null;
+  const pathwayById = useMemo(() => {
+    const map = new Map<number, Pathway>();
+    pathways.forEach((p) => map.set(p.pathwayId, p));
+    return map;
+  }, [pathways]);
+
+  const normalizeName = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+  const entryPointBaseName = (name: string) =>
+    normalizeName(name).replace(/\s+entry\s+(level|point)(\s+\d+)?$/i, "").trim();
+  const isEntryPointFor = (entryName: string, parentName: string) =>
+    entryPointBaseName(entryName) === normalizeName(parentName);
+
+  const nonEntryPathways = useMemo(
+    () => pathways.filter((p) => p.type !== "ENTRY_POINT"),
+    [pathways]
+  );
+
+  const activeParentPathway = useMemo(() => {
+    if (!activePathwayId) return null;
+    const active = pathwayById.get(activePathwayId) ?? null;
+    if (!active) return null;
+    if (active.type !== "ENTRY_POINT") return active;
+    return (
+      nonEntryPathways.find((p) => isEntryPointFor(active.name, p.name)) ?? null
+    );
+  }, [activePathwayId, pathwayById, nonEntryPathways]);
+
+  const relevantEntryPoints = useMemo(() => {
+    if (!activeParentPathway) return [] as Pathway[];
+    const related = pathways.filter(
+      (p) => p.type === "ENTRY_POINT" && isEntryPointFor(p.name, activeParentPathway.name)
+    );
+    if (activePathway?.type === "ENTRY_POINT" && !related.some((p) => p.pathwayId === activePathway.pathwayId)) {
+      return [...related, activePathway];
+    }
+    return related;
+  }, [activeParentPathway, pathways, activePathway]);
+
+  const dropdownPathways = useMemo(
+    () => nonEntryPathways,
+    [nonEntryPathways]
+  );
+
   const pathwayTypeBadge: Record<string, string> = {
     CORE: "bg-blue-100 text-blue-700",
     MAJOR: "bg-purple-100 text-purple-700",
@@ -102,8 +145,13 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
         <div className="relative">
           <button
             type="button"
-            onClick={() => setPathwayDropdownOpen((o) => !o)}
-            disabled={pathways.length === 0}
+            onClick={() => {
+              if (pathways.length === 0) {
+                setPathwayManagerOpen(true);
+                return;
+              }
+              setPathwayDropdownOpen((o) => !o);
+            }}
             className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md text-sm text-left hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
             aria-haspopup="listbox"
             aria-expanded={pathwayDropdownOpen}
@@ -122,7 +170,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
                 </>
               ) : (
                 <span className="text-gray-400">
-                  {pathways.length === 0 ? "No pathways" : "Select pathway"}
+                  {pathways.length === 0 ? "Add pathway" : "Select pathway"}
                 </span>
               )}
             </span>
@@ -144,7 +192,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
               role="listbox"
             >
               <div className="max-h-60 overflow-y-auto py-1">
-                {pathways.map((p) => {
+                {dropdownPathways.map((p) => {
                   const isActive = p.pathwayId === activePathwayId;
                   return (
                     <button
@@ -213,6 +261,39 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
             </div>
           )}
         </div>
+
+        {relevantEntryPoints.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-gray-200">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+              Entry Points
+            </label>
+            <div className="grid grid-cols-6 gap-1.5">
+              {relevantEntryPoints.map((p) => {
+                const isActive = p.pathwayId === activePathwayId;
+                // Extract level number from entry point name
+                const levelMatch = p.name.match(/\d+$/);
+                const level = levelMatch ? levelMatch[0] : "1";
+                return (
+                  <button
+                    type="button"
+                    key={p.pathwayId}
+                    onClick={() => {
+                      setActivePathway(p.pathwayId);
+                    }}
+                    className={`flex items-center justify-center py-2 rounded-md text-sm font-semibold transition-colors ${
+                      isActive 
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                        : "bg-gray-50 text-gray-700 border border-gray-200 hover:border-emerald-200 hover:bg-emerald-50"
+                    }`}
+                    title={p.name}
+                  >
+                    {level}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {pathwayManagerOpen && currentCourse?.courseId && (

@@ -110,10 +110,6 @@ export const CanvasPage: React.FC = () => {
     activePathwayId,
     visiblePathwayIds,
     fetchPathways,
-    setActivePathway,
-    togglePathwayVisibility,
-    createPathway,
-    deletePathway,
   } = usePathwayStore();
 
   useEffect(() => {
@@ -121,10 +117,6 @@ export const CanvasPage: React.FC = () => {
       fetchPathways(currentCourse.courseId);
     }
   }, [currentCourse?.courseId, fetchPathways]);
-
-  const [showPathwayModal, setShowPathwayModal] = useState(false);
-  const [newPathwayName, setNewPathwayName] = useState("");
-  const [newPathwayType, setNewPathwayType] = useState<"MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION">("MAJOR");
 
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
@@ -1638,111 +1630,6 @@ export const CanvasPage: React.FC = () => {
             </button>
           </div>
         )}
-        {/* Pathway toggles */}
-        <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
-          <span className="text-xs text-gray-400 font-medium mr-1">Pathways:</span>
-          {pathways.map((pathway) => {
-            const isVisible = visiblePathwayIds.includes(pathway.pathwayId);
-            const isActive = activePathwayId === pathway.pathwayId;
-            return (
-              <button
-                key={pathway.pathwayId}
-                onClick={() => togglePathwayVisibility(pathway.pathwayId)}
-                title={
-                  pathway.type === 'CORE'
-                    ? isActive ? 'Core pathway (always visible, currently editing)' : 'Core pathway (always visible) — click to set as editing target'
-                    : isActive
-                    ? 'Currently visible & editing — click again to hide'
-                    : isVisible
-                    ? 'Visible — click to set as editing target, click again to hide'
-                    : 'Hidden — click to show'
-                }
-                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${
-                  isActive
-                    ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-300'
-                    : isVisible
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600'
-                }`}
-              >
-                {pathway.type === 'CORE' && <span className="text-[10px]">◆</span>}
-                {pathway.type === 'MAJOR' && <span className="text-[10px]">▲</span>}
-                {pathway.type === 'MINOR' && <span className="text-[10px]">●</span>}
-                {pathway.type === 'ENTRY_POINT' && <span className="text-[10px]">→</span>}
-                {pathway.name}
-                {pathway.type !== 'CORE' && (
-                  <span
-                    role="button"
-                    onClick={(e) => { e.stopPropagation(); deletePathway(pathway.pathwayId); }}
-                    className="ml-1 opacity-60 hover:opacity-100 hover:text-red-300 leading-none"
-                    title="Delete pathway"
-                  >
-                    ×
-                  </span>
-                )}
-              </button>
-            );
-          })}
-
-          {/* Add pathway button */}
-          <button
-            onClick={() => setShowPathwayModal(true)}
-            className="px-2 py-1.5 text-xs font-bold rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-all"
-            title="Add pathway"
-          >
-            + Pathway
-          </button>
-        </div>
-
-        {/* Add Pathway Modal */}
-        {showPathwayModal && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[200] backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-lg shadow-2xl w-80">
-              <h3 className="text-sm font-bold text-gray-800 mb-4">Add Pathway</h3>
-              <div className="flex flex-col gap-3">
-                <input
-                  type="text"
-                  placeholder="Pathway name (e.g. Software Engineering)"
-                  value={newPathwayName}
-                  onChange={(e) => setNewPathwayName(e.target.value)}
-                  className="input input-bordered input-sm w-full"
-                />
-                <select
-                  value={newPathwayType}
-                  onChange={(e) => setNewPathwayType(e.target.value as "MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION")}
-                  className="select select-bordered select-sm w-full"
-                >
-                  <option value="MAJOR">Major</option>
-                  <option value="MINOR">Minor</option>
-                  <option value="SPECIALISATION">Specialisation</option>
-                  <option value="ENTRY_POINT">Entry Point</option>
-                </select>
-                <div className="flex gap-2 justify-end mt-1">
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => { setShowPathwayModal(false); setNewPathwayName(""); }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    className="btn btn-sm btn-primary"
-                    disabled={!newPathwayName.trim()}
-                    onClick={async () => {
-                      if (!newPathwayName.trim() || !currentCourse?.courseId) return;
-                      const pathway = await createPathway(newPathwayName.trim(), newPathwayType, currentCourse.courseId);
-                      setActivePathway(pathway.pathwayId);
-                      setShowPathwayModal(false);
-                      setNewPathwayName("");
-                    }}
-                  >
-                    Create
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {viewMode === 'grid' ? (
         <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
           <GridBackground
