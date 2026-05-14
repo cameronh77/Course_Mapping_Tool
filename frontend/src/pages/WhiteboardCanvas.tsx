@@ -1766,6 +1766,7 @@ export const WhiteboardCanvas: React.FC = () => {
         <CanvasSidebar
           sidebarTab={sidebarTab}
           setSidebarTab={setSidebarTab}
+          showWhiteboardControls={true}
           handleSaveCanvas={handleSaveCanvas}
           setShowCreateForm={setShowCreateForm}
           searchTerm={searchTerm}
