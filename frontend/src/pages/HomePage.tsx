@@ -33,8 +33,8 @@ export const HomePage = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
-  const { existingCourses, createCourse, viewCourses, setCurrentCourse } =
-    useCourseStore();
+  const { existingCourses, createCourse, viewCourses, setCurrentCourse, deleteCourse } =
+    useCourseStore() as any;
 
   useEffect(() => {
     setLoadedCourses(
@@ -283,9 +283,15 @@ export const HomePage = () => {
                 activeStatus={true}
                 courseName={course.courseName}
                 courseId={course.courseId}
+                courseDesc={course.courseDesc}
                 courseDuration={course.expectedDuration}
                 numberOfUnits={32}
                 onClick={() => handleViewCourse(course)}
+                onDelete={() => {
+                  if (confirm(`Delete "${course.courseName}"? This cannot be undone.`)) {
+                    deleteCourse(course.courseId);
+                  }
+                }}
               />
             ))}
             <button

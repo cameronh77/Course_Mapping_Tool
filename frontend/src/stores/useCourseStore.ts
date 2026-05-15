@@ -50,6 +50,17 @@ export const useCourseStore = create((set) => ({
     }
   },
 
+  deleteCourse: async (courseId: string) => {
+    try {
+      await axiosInstance.delete("/course/delete", { data: { courseId } });
+      set((state: any) => ({
+        existingCourses: state.existingCourses.filter((c: any) => c.courseId !== courseId),
+      }));
+    } catch (error) {
+      console.log(error.response.data.message);
+    }
+  },
+
   updateCourse: async (data) => {
     try {
       const input = {
