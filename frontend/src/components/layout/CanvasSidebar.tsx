@@ -502,12 +502,21 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
                 </button>
                 <button
                   onClick={() => {
+                    handlers.addTeachingActivity?.();
+                    setAddDropdownOpen(false);
+                  }}
+                  className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-indigo-50 text-indigo-600"
+                >
+                  + Teaching Activity
+                </button>
+                <button
+                  onClick={() => {
                     handlers.addCLO?.();
                     setAddDropdownOpen(false);
                   }}
                   className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-pink-50 text-pink-600"
                 >
-                  + CLO Box
+                  + CLO
                 </button>
                 <button
                   onClick={() => {
@@ -578,7 +587,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
       )}
 
       {/* Phase Navigation Tabs */}
-      <div className="flex w-full mb-5 bg-gray-100 rounded-lg p-1 border border-gray-200 shadow-inner">
+      {!showWhiteboardControls && <div className="flex w-full mb-5 bg-gray-100 rounded-lg p-1 border border-gray-200 shadow-inner">
         <button 
           className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${sidebarTab === 'units' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-800'}`} 
           onClick={() => { setSidebarTab('units'); setConnectionMode(false); }}
@@ -597,10 +606,10 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
         >
           🎯 Mapping
         </button>
-      </div>
+      </div>}
 
       {/* Scrollable Tab Content */}
-      <div className="overflow-y-auto flex-1">
+      {!showWhiteboardControls && <div className="overflow-y-auto flex-1">
         {/* Phase 1: UNITS */}
         {sidebarTab === 'units' && (
           <div className="animate-fade-in">
@@ -798,7 +807,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
             </div>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 };
