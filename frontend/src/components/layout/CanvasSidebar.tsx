@@ -3,6 +3,7 @@ import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
 import { usePathwayStore } from "../../stores/usePathwayStore";
+import { useCoursePathwayTypeStore } from "../../stores/useCoursePathwayTypeStore";
 import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
 import { PathwayManagerModal } from "../common/PathwayManagerModal";
 import { getTagColor } from "../common/themeViewConstants";
@@ -62,6 +63,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   const { currentCLOs } = useCLOStore() as any;
   const { existingTags, createTag } = useTagStore() as any;
   const { pathways, activePathwayId, setActivePathway, secondaryPathwayId, setSecondaryPathway } = usePathwayStore();
+  const { getTypeByLabel } = useCoursePathwayTypeStore();
 
   // Local state purely for the sidebar
   const [newTag, setNewTag] = useState<string>("");
@@ -69,6 +71,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   const [pathwayManagerOpen, setPathwayManagerOpen] = useState(false);
   const [pathwayDropdownOpen, setPathwayDropdownOpen] = useState(false);
   const [secondaryDropdownOpen, setSecondaryDropdownOpen] = useState(false);
+  const [showSecondary, setShowSecondary] = useState(false);
   const pathwayDropdownRef = useRef<HTMLDivElement>(null);
   const secondaryDropdownRef = useRef<HTMLDivElement>(null);
   const handlers = getWhiteboardHandlers();
@@ -122,6 +125,11 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
     ENTRY_POINT: "bg-emerald-100 text-emerald-700",
   };
 
+  const pathwayTypeBadgeStyle = (typeLabel: string): React.CSSProperties => {
+    const color = getTypeByLabel(typeLabel)?.color ?? "#6B7280";
+    return { backgroundColor: `${color}22`, color };
+  };
+
   return (
     <div className="bg-white p-4 w-full h-full flex flex-col">
       <button className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full mb-4 shadow-sm transition-colors" onClick={handleSaveCanvas}>
@@ -129,9 +137,24 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
       </button>
 
       <div className="mb-4" ref={pathwayDropdownRef}>
-        <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
-          Pathway
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Pathway
+          </label>
+          {!showSecondary && secondaryDropdownPathways.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowSecondary(true)}
+              className="flex items-center gap-0.5 text-[10px] font-semibold text-gray-400 hover:text-blue-500 transition-colors"
+              title="Add secondary pathway overlay"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              pathway
+            </button>
+          )}
+        </div>
         <div className="relative">
           <button
             type="button"
@@ -142,7 +165,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
               }
               setPathwayDropdownOpen((o) => !o);
             }}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md text-sm text-left hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+            className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-md text-sm text-left hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
             aria-haspopup="listbox"
             aria-expanded={pathwayDropdownOpen}
           >
@@ -252,123 +275,132 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
           )}
         </div>
 
-        {/* Secondary pathway dropdown */}
-        <div className="mt-2" ref={secondaryDropdownRef}>
-          <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
-            Secondary Pathway
-          </label>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setSecondaryDropdownOpen((o) => !o)}
-              className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm text-left hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-purple-300 transition-colors"
-              aria-haspopup="listbox"
-              aria-expanded={secondaryDropdownOpen}
-            >
-              <span className="flex items-center gap-2 min-w-0">
-                {secondaryPathway ? (
-                  <>
-                    <span className="truncate font-medium text-gray-700">{secondaryPathway.name}</span>
-                    <span
-                      className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${
-                        pathwayTypeBadge[secondaryPathway.type] ?? "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {secondaryPathway.type}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-gray-400 italic">None</span>
-                )}
-              </span>
-              <svg
-                className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${
-                  secondaryDropdownOpen ? "rotate-180" : ""
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {secondaryDropdownOpen && (
-              <div
-                className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 overflow-hidden"
-                role="listbox"
-              >
-                <div className="max-h-60 overflow-y-auto py-1">
-                  {/* None option */}
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={secondaryPathwayId === null}
-                    onClick={() => {
-                      setSecondaryPathway(null);
-                      setSecondaryDropdownOpen(false);
-                    }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
-                      secondaryPathwayId === null ? "bg-purple-50 text-purple-700" : "text-gray-500 hover:bg-gray-50"
-                    }`}
+        {/* Secondary pathway — only shown after clicking "+ pathway" */}
+        {(showSecondary || secondaryPathwayId !== null) && (
+          <div className="mt-1.5" ref={secondaryDropdownRef}>
+            <div className="flex items-center gap-1.5">
+              <div className="relative flex-1">
+                <button
+                  type="button"
+                  onClick={() => setSecondaryDropdownOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-white border border-dashed border-gray-300 rounded-md text-sm text-left hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-300 transition-colors"
+                  aria-haspopup="listbox"
+                  aria-expanded={secondaryDropdownOpen}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    {secondaryPathway ? (
+                      <>
+                        <span className="truncate font-medium text-gray-700">{secondaryPathway.name}</span>
+                        <span
+                          className="px-1.5 py-0.5 text-[10px] font-semibold rounded"
+                          style={pathwayTypeBadgeStyle(secondaryPathway.type)}
+                        >
+                          {secondaryPathway.type}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-gray-400 text-xs italic">Select secondary…</span>
+                    )}
+                  </span>
+                  <svg
+                    className={`w-3.5 h-3.5 text-gray-400 shrink-0 transition-transform ${secondaryDropdownOpen ? "rotate-180" : ""}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
                   >
-                    <span className="w-4 shrink-0">
-                      {secondaryPathwayId === null && (
-                        <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="italic">None</span>
-                  </button>
-                  {secondaryDropdownPathways.map((p) => {
-                    const isSelected = p.pathwayId === secondaryPathwayId;
-                    return (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {secondaryDropdownOpen && (
+                  <div
+                    className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 overflow-hidden"
+                    role="listbox"
+                  >
+                    <div className="max-h-60 overflow-y-auto py-1">
+                      {/* None — always present so the user can revert */}
                       <button
                         type="button"
-                        key={p.pathwayId}
                         role="option"
-                        aria-selected={isSelected}
+                        aria-selected={secondaryPathwayId === null}
                         onClick={() => {
-                          setSecondaryPathway(p.pathwayId);
+                          setSecondaryPathway(null);
                           setSecondaryDropdownOpen(false);
                         }}
-                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition-colors ${
-                          isSelected ? "bg-purple-50 text-purple-700" : "text-gray-700 hover:bg-gray-50"
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                          secondaryPathwayId === null ? "bg-purple-50 text-purple-700" : "text-gray-500 hover:bg-gray-50"
                         }`}
                       >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <span className="w-4 shrink-0">
-                            {isSelected && (
-                              <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </span>
-                          <span className="truncate">{p.name}</span>
+                        <span className="w-4 shrink-0">
+                          {secondaryPathwayId === null && (
+                            <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
                         </span>
-                        <span
-                          className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${
-                            pathwayTypeBadge[p.type] ?? "bg-gray-100 text-gray-600"
-                          }`}
-                        >
-                          {p.type}
-                        </span>
+                        <span className="italic">None</span>
                       </button>
-                    );
-                  })}
-                </div>
+                      {secondaryDropdownPathways.map((p) => {
+                        const isSelected = p.pathwayId === secondaryPathwayId;
+                        return (
+                          <button
+                            type="button"
+                            key={p.pathwayId}
+                            role="option"
+                            aria-selected={isSelected}
+                            onClick={() => {
+                              setSecondaryPathway(p.pathwayId);
+                              setSecondaryDropdownOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                              isSelected ? "bg-purple-50 text-purple-700" : "text-gray-700 hover:bg-gray-50"
+                            }`}
+                          >
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="w-4 shrink-0">
+                                {isSelected && (
+                                  <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </span>
+                              <span className="truncate">{p.name}</span>
+                            </span>
+                            <span
+                              className="px-1.5 py-0.5 text-[10px] font-semibold rounded"
+                              style={pathwayTypeBadgeStyle(p.type)}
+                            >
+                              {p.type}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Remove secondary */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSecondaryPathway(null);
+                  setSecondaryDropdownOpen(false);
+                  setShowSecondary(false);
+                }}
+                className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                title="Remove secondary pathway"
+              >
+                ×
+              </button>
+            </div>
+
+            {secondaryPathwayConflict && (
+              <div className="mt-1.5 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+                <svg className="mt-0.5 w-3 h-3 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                Not compatible with current pathway
               </div>
             )}
-          </div>
-        </div>
-
-        {secondaryPathwayConflict && (
-          <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
-            <svg className="mt-0.5 w-3.5 h-3.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
-            Not compatible with current pathway
           </div>
         )}
 
