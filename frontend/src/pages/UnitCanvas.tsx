@@ -808,7 +808,7 @@ export const CanvasPage: React.FC = () => {
 
           // Check if dropped on another junction
           const otherJunction = placeholderBoxesRef.current.find((p) => {
-            if (p.id === junctionId || p.placeholderType !== 'JUNCTION') return false;
+            if (p.id === junctionId || (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND')) return false;
             const approxH = 80 + ((p.unitOptions?.length ?? 0) + (p.options?.length ?? 0)) * 60 + 48;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
@@ -1013,7 +1013,7 @@ export const CanvasPage: React.FC = () => {
           // Check if dropped onto a junction placeholder
           const PLACEHOLDER_W = UNIT_BOX_WIDTH; // same as placeholder width
           const junctionHit = placeholderBoxesRef.current.find((p) => {
-            if (p.placeholderType !== 'JUNCTION') return false;
+            if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
             const approxHeight = 40 + (p.options?.length ?? 2) * 52 + 36;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + PLACEHOLDER_W &&
@@ -1317,7 +1317,7 @@ export const CanvasPage: React.FC = () => {
       if (canvasRef.current && unit?.unitId) {
         const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
         const junctionHit = placeholderBoxesRef.current.find((p) => {
-          if (p.placeholderType !== 'JUNCTION') return false;
+          if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
           const approxHeight = 80 + (p.options?.length ?? 2) * 52 + 36;
           return (
             canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&

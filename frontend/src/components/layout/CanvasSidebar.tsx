@@ -623,9 +623,11 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
               <div className="flex flex-col gap-2">
                 {(
                   [
-                    { type: 'CORE' as const,     icon: '◆', label: 'Core Unit',  border: 'border-blue-400',   bg: 'bg-blue-50',   text: 'text-blue-800'   },
-                    { type: 'ELECTIVE' as const,  icon: '✦', label: 'Elective',   border: 'border-amber-400',  bg: 'bg-amber-50',  text: 'text-amber-800'  },
-                    { type: 'JUNCTION' as const,  icon: '⑂', label: 'OR Junction', border: 'border-purple-400', bg: 'bg-purple-50', text: 'text-purple-800' },
+                    { type: 'CORE' as const,               icon: '◆', label: 'Core Unit',          border: 'border-blue-400',    bg: 'bg-blue-50',    text: 'text-blue-800'    },
+                    { type: 'ELECTIVE' as const,            icon: '✦', label: 'Free Elective',       border: 'border-amber-400',   bg: 'bg-amber-50',   text: 'text-amber-800'   },
+                    { type: 'SELECTIVE_ELECTIVE' as const,  icon: '⊞', label: 'Selective Elective',  border: 'border-orange-400',  bg: 'bg-orange-50',  text: 'text-orange-800'  },
+                    { type: 'JUNCTION' as const,            icon: '⑂', label: 'OR Junction',         border: 'border-purple-400',  bg: 'bg-purple-50',  text: 'text-purple-800'  },
+                    { type: 'AND' as const,                 icon: '⊕', label: 'AND Junction',        border: 'border-emerald-400', bg: 'bg-emerald-50', text: 'text-emerald-800' },
                   ]
                 ).map(({ type, icon, label, border, bg, text }) => (
                   <div
@@ -644,7 +646,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
 
             <div className="relative mb-4">
               <label className="block text-gray-500 text-xs font-bold mb-2 uppercase tracking-wide">Search & Drag Existing Units</label>
-              <input type="text" placeholder="Search to drag..." className="shadow-sm border border-gray-300 rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all" value={searchTerm} onChange={handleSearchChange} onFocus={() => setShowSearchResults(true)} />
+              <input type="text" placeholder="Search to drag..." className="shadow-sm border border-gray-300 rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all" value={searchTerm} onChange={handleSearchChange} onFocus={() => setShowSearchResults(true)} onBlur={() => setTimeout(() => setShowSearchResults(false), 150)} />
               
               {showSearchResults && searchTerm.length > 0 && searchResults.length > 0 && (
                 <div className="absolute left-0 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-xl z-50 max-h-60 overflow-y-auto">
