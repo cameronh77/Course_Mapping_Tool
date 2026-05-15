@@ -111,6 +111,7 @@ export const CanvasPage: React.FC = () => {
   const {
     pathways,
     activePathwayId,
+    secondaryPathwayId,
     visiblePathwayIds,
     fetchPathways,
     setActivePathway,
@@ -134,6 +135,16 @@ export const CanvasPage: React.FC = () => {
     () => pathways.find((p) => p.pathwayId === activePathwayId) ?? null,
     [pathways, activePathwayId]
   );
+
+  // True when every secondary pathway unit sits in a grid cell not already occupied by the primary pathway.
+  const secondaryCompatible = useMemo(() => {
+    if (!secondaryPathwayId) return true;
+    const primary = unitBoxes.filter((u) => u.pathwayId === activePathwayId && !u.unallocated);
+    const secondary = unitBoxes.filter((u) => u.pathwayId === secondaryPathwayId && !u.unallocated);
+    return secondary.every(
+      (su) => !primary.some((pu) => Math.abs(pu.x - su.x) < 1 && Math.abs(pu.y - su.y) < 1)
+    );
+  }, [unitBoxes, activePathwayId, secondaryPathwayId]);
 
   const entryPointParent = useMemo(() => {
     if (!activePathwayObj) return null;
@@ -1682,6 +1693,7 @@ const yearsCount =
               credits: u.credits ?? 0,
               semestersOffered: u.semestersOffered ?? [],
             }))}
+          secondaryPathwayConflict={secondaryPathwayId !== null && !secondaryCompatible}
           onDeleteUnallocated={(unitId) => {
             const target = unitBoxes.find((u) => u.unitId === unitId && u.unallocated);
             if (target) deleteUnit(target.id);
@@ -1878,6 +1890,56 @@ const yearsCount =
 
           ))}
 
+          {/* Secondary pathway — incompatibility banner */}
+          {secondaryPathwayId !== null && !secondaryCompatible && (
+            <div
+              className="absolute flex items-center gap-2 px-4 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-xs font-medium shadow-md pointer-events-none"
+              style={{ top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 20 }}
+            >
+              <svg className="w-4 h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              Not compatible with current pathway — one or more units conflict with an occupied slot
+            </div>
+          )}
+
+          {/* Secondary pathway units — read-only overlay */}
+          {secondaryPathwayId !== null && secondaryCompatible && (
+            <div className="pointer-events-none" style={{ opacity: 0.45 }}>
+              {unitBoxes
+                .filter((unit) => unit.pathwayId === secondaryPathwayId && isUnitVisible(unit.unitId) && !unit.unallocated)
+                .map((unit) => (
+                  <UnitBox
+                    key={`secondary-${unit.id}`}
+                    unit={unit}
+                    draggedUnit={null}
+                    selectedUnits={[]}
+                    connectionMode={false}
+                    connectionSource={null}
+                    isExpanded={false}
+                    activeTab="info"
+                    unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
+                    currentCLOs={currentCLOs || []}
+                    onMouseDown={() => {}}
+                    onDoubleClick={() => {}}
+                    onClick={() => {}}
+                    onMouseEnter={() => {}}
+                    onMouseLeave={() => {}}
+                    onContextMenu={() => {}}
+                    onDrop={() => {}}
+                    toggleExpand={() => {}}
+                    setActiveTab={() => {}}
+                    deleteUnit={() => {}}
+                    getCLOColor={getCLOColor}
+                    existingTags={existingTags || []}
+                    isBlocked={false}
+                    isHighlighted={false}
+                    onStartConnection={() => {}}
+                  />
+                ))}
+            </div>
+          )}
+
           {/* Placeholder boxes */}
           {placeholderBoxes.map((box) => (
             <CanvasPlaceholder
@@ -1895,13 +1957,26 @@ const yearsCount =
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
             <ConnectionLines
               relationships={relationships.filter(
-                (r) => isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
+                (r) => r.pathwayId === activePathwayId && isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
               )}
               unitBoxes={unitBoxes}
               numberTeachingPeriods={semPerYear}
               hoveredUnit={hoveredUnit}
               onDeleteRelationship={handleDeleteRelationship}
             />
+            {secondaryPathwayId !== null && secondaryCompatible && (
+              <g opacity={0.4}>
+                <ConnectionLines
+                  relationships={relationships.filter(
+                    (r) => r.pathwayId === secondaryPathwayId && isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
+                  )}
+                  unitBoxes={unitBoxes}
+                  numberTeachingPeriods={semPerYear}
+                  hoveredUnit={null}
+                  onDeleteRelationship={() => {}}
+                />
+              </g>
+            )}
           </svg>
 
           {drawerUnitId !== null && (() => {

@@ -5,10 +5,12 @@ import type { Pathway } from "../types";
 interface PathwayState {
   pathways: Pathway[];
   activePathwayId: number | null;
+  secondaryPathwayId: number | null;
   visiblePathwayIds: number[];
   _courseId: string | null;
   fetchPathways: (courseId: string) => Promise<void>;
   setActivePathway: (pathwayId: number) => void;
+  setSecondaryPathway: (pathwayId: number | null) => void;
   togglePathwayVisibility: (pathwayId: number) => void;
   createPathway: (name: string, type: string, courseId: string) => Promise<Pathway>;
   deletePathway: (pathwayId: number) => Promise<void>;
@@ -20,18 +22,23 @@ const selectionKey = (courseId: string) => `pathway_selection_${courseId}`;
 const loadPersistedSelection = (
   courseId: string,
   pathways: Pathway[]
-): { activePathwayId: number; visiblePathwayIds: number[] } | null => {
+): { activePathwayId: number; secondaryPathwayId: number | null; visiblePathwayIds: number[] } | null => {
   try {
     const raw = localStorage.getItem(selectionKey(courseId));
     if (!raw) return null;
-    const { activePathwayId, visiblePathwayIds } = JSON.parse(raw) as {
+    const { activePathwayId, visiblePathwayIds, secondaryPathwayId } = JSON.parse(raw) as {
       activePathwayId: number;
       visiblePathwayIds: number[];
+      secondaryPathwayId?: number | null;
     };
     const validIds = new Set(pathways.map((p) => p.pathwayId));
     const validVisible = visiblePathwayIds.filter((id) => validIds.has(id));
     if (validVisible.length > 0 && validIds.has(activePathwayId)) {
-      return { activePathwayId, visiblePathwayIds: validVisible };
+      const validSecondary =
+        secondaryPathwayId != null && validIds.has(secondaryPathwayId) && secondaryPathwayId !== activePathwayId
+          ? secondaryPathwayId
+          : null;
+      return { activePathwayId, secondaryPathwayId: validSecondary, visiblePathwayIds: validVisible };
     }
   } catch { /* ignore */ }
   return null;
@@ -54,6 +61,7 @@ const persistSelection = (
 export const usePathwayStore = create<PathwayState>((set) => ({
   pathways: [],
   activePathwayId: null,
+  secondaryPathwayId: null,
   visiblePathwayIds: [],
   _courseId: null,
 
@@ -94,11 +102,21 @@ export const usePathwayStore = create<PathwayState>((set) => ({
 
   setActivePathway: (pathwayId: number) =>
     set((state) => {
-      const newVisible = state.visiblePathwayIds.includes(pathwayId)
-        ? state.visiblePathwayIds
-        : [...state.visiblePathwayIds, pathwayId];
+      // Clear secondary if it matches the new active pathway.
+      const secondaryId = state.secondaryPathwayId !== pathwayId ? state.secondaryPathwayId : null;
+      const newVisible = [pathwayId, ...(secondaryId ? [secondaryId] : [])];
       persistSelection(state._courseId, pathwayId, newVisible);
-      return { activePathwayId: pathwayId, visiblePathwayIds: newVisible };
+      return { activePathwayId: pathwayId, secondaryPathwayId: secondaryId, visiblePathwayIds: newVisible };
+    }),
+
+  setSecondaryPathway: (pathwayId: number | null) =>
+    set((state) => {
+      const newVisible = [
+        ...(state.activePathwayId ? [state.activePathwayId] : []),
+        ...(pathwayId ? [pathwayId] : []),
+      ];
+      persistSelection(state._courseId, state.activePathwayId, newVisible);
+      return { secondaryPathwayId: pathwayId, visiblePathwayIds: newVisible };
     }),
 
   togglePathwayVisibility: (pathwayId: number) =>
