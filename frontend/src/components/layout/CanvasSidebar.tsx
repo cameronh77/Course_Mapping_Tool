@@ -139,6 +139,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
     MINOR: "bg-amber-100 text-amber-700",
     SPECIALISATION: "bg-rose-100 text-rose-700",
     ENTRY_POINT: "bg-emerald-100 text-emerald-700",
+    CUSTOM: "bg-teal-100 text-teal-700",
   };
 
   const pathwayTypeBadgeStyle = (typeLabel: string): React.CSSProperties => {

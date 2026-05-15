@@ -7,7 +7,7 @@ interface PathwayManagerModalProps {
   onClose: () => void;
 }
 
-const TYPES: PathwayType[] = ["CORE", "MAJOR", "MINOR", "SPECIALISATION"];
+const TYPES: PathwayType[] = ["CORE", "MAJOR", "MINOR", "SPECIALISATION", "CUSTOM"];
 
 export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ courseId, onClose }) => {
   const { pathways, createPathway, updatePathway, deletePathway } = usePathwayStore();
