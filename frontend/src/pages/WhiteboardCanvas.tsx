@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Hand, ZoomIn, ZoomOut } from "lucide-react";
 import { axiosInstance } from "../lib/axios";
 import { CanvasSidebar } from "../components/layout/CanvasSidebar";
 import UnitForm, { type UnitFormData } from "../components/common/UnitForm";
@@ -6,11 +7,16 @@ import { UnitBox } from "../components/common/UnitBox";
 import { CLOBox } from "../components/common/CLOBox";
 import { ULOBox } from "../components/common/ULOBox.tsx";
 import { AssessmentBox } from "../components/common/AssessmentBox";
+import { TeachingActivityBox } from "../components/common/TeachingActivityBox";
+import TeachingActivityForm from "../components/common/TeachingActivityForm";
+import UnitLearningOutcomeForm from "../components/common/ULOForm";
+import AssessmentForm from "../components/common/AssessmentForm";
 import { registerWhiteboardHandlers, clearWhiteboardHandlers } from "../lib/whiteboardHandlers";
 import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
 import { useTagStore } from "../stores/useTagStore";
+import { usePathwayStore } from "../stores/usePathwayStore";
 import type {
   Unit,
   UnitBox as UnitBoxType,
@@ -21,8 +27,8 @@ import type {
   UnitMappings,
 } from "../types";
 
-const NUM_COLUMNS = 9;
-const CANVAS_WIDTH_MULTIPLIER = 1.5;
+const NUM_COLUMNS = 5;
+const CANVAS_WIDTH_MULTIPLIER = 1.0;
 const CLO_BOX_SIZE = 72;
 const UNIT_WIDTH_RATIO = 0.9;
 const ULO_WIDTH_RATIO = 0.8;
@@ -30,12 +36,10 @@ const ULO_VERTICAL_SPACING = 90;
 const ASSESSMENT_WIDTH_RATIO = 0.8;
 const CLO_WIDTH_RATIO = 0.4;
 const SNAPSHOT_UNIT_GAP = 120;
-const UNIT_LEFT_COLUMN = 0;
-const UNIT_RIGHT_COLUMN = 8;
-const ASSESSMENT_LEFT_COLUMN = 2;
-const ASSESSMENT_RIGHT_COLUMN = 6;
-const ULO_LEFT_COLUMN = 3;
-const ULO_RIGHT_COLUMN = 5;
+const UNIT_COLUMN = 0;
+const TEACHING_ACTIVITY_COLUMN = 1; // reserved — not yet populated from DB
+const ASSESSMENT_COLUMN = 2;
+const ULO_COLUMN = 3;
 const CLO_COLUMN = 4;
 
 type CLOBoxItem = {
@@ -111,8 +115,10 @@ export const WhiteboardCanvas: React.FC = () => {
   const [selectedCLOId, setSelectedCLOId] = useState<number | null>(null);
   const [draggedULOId, setDraggedULOId] = useState<number | null>(null);
   const [selectedULOId, setSelectedULOId] = useState<number | null>(null);
+  const [editingULOBoxId, setEditingULOBoxId] = useState<number | null>(null);
   const [draggedAssessmentId, setDraggedAssessmentId] = useState<number | null>(null);
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<number | null>(null);
+  const [editingAssessmentBoxId, setEditingAssessmentBoxId] = useState<number | null>(null);
   const [hoveredUnitId, setHoveredUnitId] = useState<string | null>(null);
   const [hoveredAssessmentBoxId, setHoveredAssessmentBoxId] = useState<number | null>(null);
   const [hoveredUloBoxId, setHoveredUloBoxId] = useState<number | null>(null);
@@ -204,6 +210,7 @@ export const WhiteboardCanvas: React.FC = () => {
   const { currentCourse } = courseStore;
   const { currentCLOs, viewCLOsByCourse } = cloStore;
   const { existingTags, addUnitTags, viewCourseTags } = tagStore;
+  const { activePathwayId, fetchPathways } = usePathwayStore();
 
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
   const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
@@ -222,6 +229,16 @@ export const WhiteboardCanvas: React.FC = () => {
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState<boolean>(false);
+
+  type AddItemType = 'teaching-activity' | 'assessment' | 'ulo' | 'clo' | null;
+  const [addItemType, setAddItemType] = useState<AddItemType>(null);
+  const [addItemUnitId, setAddItemUnitId] = useState<string>('');
+
+  type TABoxItem = { id: number; name: string; description: string; activityType: string; unitId: string; x: number; y: number };
+  const [teachingActivityBoxes, setTeachingActivityBoxes] = useState<TABoxItem[]>([]);
+  const [draggedTAId, setDraggedTAId] = useState<number | null>(null);
+  const [taAssessmentLinks, setTaAssessmentLinks] = useState<{ activityId: number; assessmentId: number }[]>([]);
+  const [taUloLinks, setTaUloLinks] = useState<{ activityId: number; uloId: number }[]>([]);
 
   const [selectedUnits] = useState<string[]>([]);
   const [connectionMode, setConnectionMode] = useState<boolean>(false);
@@ -515,6 +532,57 @@ export const WhiteboardCanvas: React.FC = () => {
     });
   });
 
+  // Unit → Teaching Activity connectors
+  const unitToTAConnectorPaths = teachingActivityBoxes.map((ta) => {
+    const unit = displayedUnitBoxes.find((u) => u.unitId === ta.unitId);
+    if (!unit) return null;
+    const unitW = unit.width ?? columnWidth * UNIT_WIDTH_RATIO;
+    const sx = unit.x + unitW;
+    const sy = unit.y + 40;
+    const tx = ta.x;
+    const ty = ta.y + 35;
+    const midX = (sx + tx) / 2;
+    return { key: `u-ta-${unit.unitId}-${ta.id}`, d: `M ${sx} ${sy} C ${midX} ${sy}, ${midX} ${ty}, ${tx} ${ty}`, color: unit.color || '#94A3B8' };
+  }).filter(Boolean) as { key: string; d: string; color: string }[];
+
+  // Teaching Activity → Assessment connectors (same unitId — implicit connection)
+  const taById = new Map(teachingActivityBoxes.map((t) => [t.id, t]));
+  const taToAssessmentConnectorPaths = teachingActivityBoxes.flatMap((ta) => {
+    const unitAssessments = displayedAssessmentBoxes.filter(
+      (a) => a.assessment.unitId === ta.unitId
+    );
+    const taW = columnWidth * 0.9;
+    const unit = displayedUnitBoxes.find((u) => u.unitId === ta.unitId);
+    return unitAssessments.map((aBox) => {
+      const sx = ta.x + taW;
+      const sy = ta.y + 40;
+      const tx = aBox.x;
+      const ty = aBox.y + assessmentRenderHeight / 2;
+      const midX = (sx + tx) / 2;
+      return {
+        key: `ta-a-${ta.id}-${aBox.id}`,
+        d: `M ${sx} ${sy} C ${midX} ${sy}, ${midX} ${ty}, ${tx} ${ty}`,
+        color: unit?.color || '#94A3B8',
+      };
+    });
+  });
+
+  // Teaching Activity → ULO connectors (via TA links)
+  const uloBoxById2 = new Map(displayedUloBoxes.map((u) => [u.id, u]));
+  const taToULOConnectorPaths = taUloLinks.flatMap(({ activityId, uloId }) => {
+    const ta = taById.get(activityId);
+    const uloBox = uloBoxById2.get(uloId) ?? displayedUloBoxes.find((u) => u.ulo.uloId === uloId);
+    if (!ta || !uloBox) return [];
+    const taW = columnWidth * 0.9;
+    const sx = ta.x + taW;
+    const sy = ta.y + 35;
+    const tx = uloBox.x;
+    const ty = uloBox.y + uloRenderHeight / 2;
+    const midX = (sx + tx) / 2;
+    const unit = displayedUnitBoxes.find((u) => u.unitId === ta.unitId);
+    return [{ key: `ta-ulo-${activityId}-${uloId}`, d: `M ${sx} ${sy} C ${midX} ${sy}, ${midX} ${ty}, ${tx} ${ty}`, color: unit?.color || '#94A3B8' }];
+  });
+
   const focusUnitIds = new Set<string>();
   const focusAssessmentBoxIds = new Set<number>();
   const hoveredAssessmentIds = new Set<number>();
@@ -741,10 +809,16 @@ export const WhiteboardCanvas: React.FC = () => {
 
   // Load saved canvas units and their CLO/Tag mappings when course is loaded
   useEffect(() => {
+    if (currentCourse?.courseId) fetchPathways(currentCourse.courseId);
+  }, [currentCourse?.courseId]);
+
+  useEffect(() => {
     const loadAndPlaceSavedCanvasUnits = async () => {
-      if (!currentCourse?.courseId || !canvasRef.current) return;
+      if (!currentCourse?.courseId || !canvasRef.current || !activePathwayId) return;
       try {
-        const response = await axiosInstance.get(`/course-unit/view?courseId=${currentCourse.courseId}`);
+        const response = await axiosInstance.get(
+          `/course-unit/view?courseId=${currentCourse.courseId}&pathwayId=${activePathwayId}`
+        );
         const courseUnits = response.data;
         const width = canvasRef.current.offsetWidth * CANVAS_WIDTH_MULTIPLIER;
         const columnWidth = width / NUM_COLUMNS;
@@ -803,21 +877,14 @@ export const WhiteboardCanvas: React.FC = () => {
 
         const placed: UnitBoxType[] = [];
         const unitWidth = columnWidth * UNIT_WIDTH_RATIO;
-        const unitColumnX: Record<1 | 2, number> = {
-          1: getColumnAlignedX(width, UNIT_LEFT_COLUMN, unitWidth),
-          2: getColumnAlignedX(width, UNIT_RIGHT_COLUMN, unitWidth),
-        };
+        const unitX = getColumnAlignedX(width, UNIT_COLUMN, unitWidth);
         const semesterSpacing = 120;
         let currentY = 40;
         for (const year of Object.keys(unitsByYear).map(Number).sort((a, b) => a - b)) {
           const yearUnits = unitsByYear[year];
-          const sem1Units = yearUnits.filter((u) => u.semester == 1);
-          const sem2Units = yearUnits.filter((u) => u.semester == 2);
 
-          // Place semester 1 units in leftmost column, spaced vertically
-          let semester1Y = currentY;
-          const sem1YPositions: number[] = [];
-          for (const cu of sem1Units) {
+          // All units (both semesters) stacked in column 0
+          for (const cu of yearUnits) {
             placed.push({
               id: Date.now() + Math.random(),
               name: cu.unit.unitName,
@@ -825,49 +892,17 @@ export const WhiteboardCanvas: React.FC = () => {
               description: cu.unit.unitDesc,
               credits: cu.unit.credits,
               semestersOffered: cu.unit.semestersOffered,
-                x: unitColumnX[1],
-              y: semester1Y,
+              x: unitX,
+              y: currentY,
               color: cu.color || "#3B82F6",
-                width: unitWidth,
+              width: unitWidth,
               semester: cu.semester || 0,
               year: cu.year || 0,
             });
-            sem1YPositions.push(semester1Y);
-            semester1Y += semesterSpacing;
+            currentY += semesterSpacing;
           }
 
-          // Place semester 2 units in rightmost column
-          // First semester 2 unit aligns y with first semester 1 unit, rest spaced below
-          let semester2Y = sem1YPositions.length > 0 ? sem1YPositions[0] : currentY;
-          let isFirstSem2 = true;
-          for (const cu of sem2Units) {
-            placed.push({
-              id: Date.now() + Math.random(),
-              name: cu.unit.unitName,
-              unitId: cu.unitId,
-              description: cu.unit.unitDesc,
-              credits: cu.unit.credits,
-              semestersOffered: cu.unit.semestersOffered,
-                x: unitColumnX[2],
-              y: semester2Y,
-              color: cu.color || "#3B82F6",
-                width: unitWidth,
-              semester: cu.semester || 0,
-              year: cu.year || 0,
-            });
-            if (isFirstSem2) {
-              semester2Y += semesterSpacing;
-              isFirstSem2 = false;
-            } else {
-              semester2Y += semesterSpacing;
-            }
-          }
-
-          // Update currentY for next year (max of last y used in this year + spacing)
-          const lastY = Math.max(
-            sem1YPositions.length > 0 ? sem1YPositions[sem1YPositions.length - 1] : currentY,
-            semester2Y - semesterSpacing
-          );
+          const lastY = currentY - semesterSpacing;
           currentY = lastY + semesterSpacing;
         }
         // Load existing CLO and Tag mappings for each unit
@@ -920,29 +955,19 @@ export const WhiteboardCanvas: React.FC = () => {
 
         const uloWidth = columnWidth * ULO_WIDTH_RATIO;
         const assessmentWidth = columnWidth * ASSESSMENT_WIDTH_RATIO;
-        const uloColumnX: Record<1 | 2, number> = {
-          1: getColumnAlignedX(width, ULO_LEFT_COLUMN, uloWidth),
-          2: getColumnAlignedX(width, ULO_RIGHT_COLUMN, uloWidth),
-        };
-        const assessmentColumnX: Record<1 | 2, number> = {
-          1: getColumnAlignedX(width, ASSESSMENT_LEFT_COLUMN, assessmentWidth),
-          2: getColumnAlignedX(width, ASSESSMENT_RIGHT_COLUMN, assessmentWidth),
-        };
+        const uloX = getColumnAlignedX(width, ULO_COLUMN, uloWidth);
+        const assessmentX = getColumnAlignedX(width, ASSESSMENT_COLUMN, assessmentWidth);
 
         const orderedUloBoxes: ULOBoxItem[] = [];
         const orderedAssessmentBoxes: AssessmentBoxItem[] = [];
         const unitYByUnitId = new Map<string, number>();
-        const nextBlockYBySemester: Record<1 | 2, number> = { 1: 40, 2: 40 };
-        const toSemester = (value: unknown): 1 | 2 => (value === 2 ? 2 : 1);
+        let nextBlockY = 40;
         const orderedYears = Object.keys(unitsByYear).map(Number).sort((a, b) => a - b);
 
         for (const year of orderedYears) {
           const yearUnits = unitsByYear[year] || [];
 
-          for (const semester of [1, 2] as const) {
-            const semesterUnits = yearUnits.filter((cu: any) => toSemester(cu.semester) === semester);
-
-            for (const cu of semesterUnits) {
+          for (const cu of yearUnits) {
             const ulosForUnit = allULOsWithAssessmentIds
               .filter((ulo: any) => courseUnitIds.has(ulo.unitId) && ulo.unitId === cu.unitId)
               .sort((a: any, b: any) => {
@@ -960,7 +985,7 @@ export const WhiteboardCanvas: React.FC = () => {
               });
 
             const slotCount = Math.max(1, ulosForUnit.length, assessmentsForUnit.length);
-            const blockTopY = nextBlockYBySemester[semester];
+            const blockTopY = nextBlockY;
             const blockHeight = (slotCount - 1) * ULO_VERTICAL_SPACING;
 
             const getStartY = (itemCount: number) => {
@@ -972,12 +997,9 @@ export const WhiteboardCanvas: React.FC = () => {
             const uloStartY = getStartY(ulosForUnit.length);
             ulosForUnit.forEach((ulo: any, index: number) => {
               orderedUloBoxes.push({
-                id:
-                  typeof ulo.uloId === "number"
-                    ? ulo.uloId
-                    : Date.now() + Math.floor(Math.random() * 1000),
+                id: typeof ulo.uloId === "number" ? ulo.uloId : Date.now() + Math.floor(Math.random() * 1000),
                 ulo,
-                x: uloColumnX[semester],
+                x: uloX,
                 y: uloStartY + index * ULO_VERTICAL_SPACING,
               });
             });
@@ -985,40 +1007,26 @@ export const WhiteboardCanvas: React.FC = () => {
             const assessmentStartY = getStartY(assessmentsForUnit.length);
             assessmentsForUnit.forEach((assessment: any, index: number) => {
               orderedAssessmentBoxes.push({
-                id:
-                  typeof assessment.assessmentId === "number"
-                    ? assessment.assessmentId
-                    : Date.now() + Math.floor(Math.random() * 1000),
+                id: typeof assessment.assessmentId === "number" ? assessment.assessmentId : Date.now() + Math.floor(Math.random() * 1000),
                 assessment: {
-                  assessmentId:
-                    typeof assessment.assessmentId === "number" ? assessment.assessmentId : null,
-                  aDesc:
-                    assessment.aDesc || assessment.assessmentDesc || assessment.assessmentName || "Assessment",
+                  assessmentId: typeof assessment.assessmentId === "number" ? assessment.assessmentId : null,
+                  aDesc: assessment.aDesc || assessment.assessmentDesc || assessment.assessmentName || "Assessment",
                   unitId: assessment.unitId || "",
                   assessmentType: assessment.assessmentType || "General",
                   assessmentConditions: assessment.assessmentConditions || "",
                   hurdleReq: typeof assessment.hurdleReq === "number" ? assessment.hurdleReq : null,
                   unitLosIds: Array.isArray(assessment.unitLos)
-                    ? assessment.unitLos
-                        .map((link: any) => Number(link.uloId))
-                        .filter((id: number) => Number.isInteger(id) && id > 0)
+                    ? assessment.unitLos.map((link: any) => Number(link.uloId)).filter((id: number) => Number.isInteger(id) && id > 0)
                     : [],
                 },
-                x: assessmentColumnX[semester],
+                x: assessmentX,
                 y: assessmentStartY + index * ULO_VERTICAL_SPACING,
               });
             });
 
-            const unitCenterY = blockTopY + blockHeight / 2;
-            unitYByUnitId.set(cu.unitId, Math.max(0, unitCenterY));
-
-            nextBlockYBySemester[semester] += blockHeight + ULO_VERTICAL_SPACING;
-            }
+            unitYByUnitId.set(cu.unitId, Math.max(0, blockTopY + blockHeight / 2));
+            nextBlockY += blockHeight + ULO_VERTICAL_SPACING;
           }
-
-          const nextYearStartY = Math.max(nextBlockYBySemester[1], nextBlockYBySemester[2]);
-          nextBlockYBySemester[1] = nextYearStartY;
-          nextBlockYBySemester[2] = nextYearStartY;
         }
 
         setUloBoxes(orderedUloBoxes);
@@ -1036,6 +1044,48 @@ export const WhiteboardCanvas: React.FC = () => {
         });
 
         setUnitBoxes(unitsAlignedToBlockCenter);
+
+        // Load teaching activities and their links for all units in the pathway
+        const taWidth = columnWidth * 0.9;
+        const allTABoxes: TABoxItem[] = [];
+        const allTAAssessmentLinks: { activityId: number; assessmentId: number }[] = [];
+        const allTAUloLinks: { activityId: number; uloId: number }[] = [];
+        const taBlockY: Record<string, number> = {};
+
+        for (const unitBox of unitsAlignedToBlockCenter) {
+          if (!unitBox.unitId) continue;
+          try {
+            const taRes = await axiosInstance.get(`/teaching-activity/viewAll/${unitBox.unitId}`);
+            const tas: any[] = taRes.data || [];
+            let taY = unitBox.y;
+            for (const ta of tas) {
+              allTABoxes.push({
+                id: ta.activityId,
+                name: ta.activityName,
+                description: ta.activityDesc || '',
+                activityType: ta.activityType || '',
+                unitId: unitBox.unitId,
+                x: getColumnAlignedX(width, TEACHING_ACTIVITY_COLUMN, taWidth),
+                y: taY,
+              });
+              taY += 110;
+            }
+            taBlockY[unitBox.unitId] = taY;
+          } catch { /* no TAs for this unit */ }
+
+          try {
+            const [aLinkRes, uLinkRes] = await Promise.all([
+              axiosInstance.get(`/teaching-activity-links/assessment/view?unitId=${unitBox.unitId}`),
+              axiosInstance.get(`/teaching-activity-links/ulo/view?unitId=${unitBox.unitId}`),
+            ]);
+            for (const l of (aLinkRes.data || [])) allTAAssessmentLinks.push({ activityId: l.activityId, assessmentId: l.assessmentId });
+            for (const l of (uLinkRes.data || [])) allTAUloLinks.push({ activityId: l.activityId, uloId: l.uloId });
+          } catch { /* no links */ }
+        }
+
+        setTeachingActivityBoxes(allTABoxes);
+        setTaAssessmentLinks(allTAAssessmentLinks);
+        setTaUloLinks(allTAUloLinks);
 
         let allTagsForCourse: any[] = [];
         try {
@@ -1068,7 +1118,7 @@ export const WhiteboardCanvas: React.FC = () => {
       }
     };
     loadAndPlaceSavedCanvasUnits();
-  }, [currentCourse?.courseId]);
+  }, [currentCourse?.courseId, activePathwayId]);
 
   useEffect(() => {
     if (currentCourse?.courseId) {
@@ -1080,11 +1130,13 @@ export const WhiteboardCanvas: React.FC = () => {
   useEffect(() => {
     registerWhiteboardHandlers({
       addUnit: addPlaygroundUnit,
-      addCLO: addPlaygroundCLO,
-      addULO: addPlaygroundULO,
+      addTeachingActivity: () => openAddModal('teaching-activity'),
+      addCLO: () => openAddModal('clo'),
+      addULO: () => openAddModal('ulo'),
+      addAssessment: () => openAddModal('assessment'),
     });
     return () => clearWhiteboardHandlers();
-  }, []);
+  }, [savedCourseUnits, hoveredUnitId]);
 
   useEffect(() => {
     if (!currentCourse?.courseId) return;
@@ -1401,6 +1453,43 @@ export const WhiteboardCanvas: React.FC = () => {
     ]);
   };
 
+  const handleTAMouseDown = (e: React.MouseEvent, id: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const ta = teachingActivityBoxes.find((t) => t.id === id);
+    if (!ta || !canvasRef.current) return;
+
+    const { x: mouseX, y: mouseY } = getMouseCoords(e, canvasRef.current);
+    const offset = { x: mouseX - ta.x, y: mouseY - ta.y };
+    setDraggedTAId(id);
+
+    const taWidth = columnWidth * 0.9;
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      if (!canvasRef.current) return;
+      const { x: newMouseX, y: newMouseY } = getMouseCoords(moveEvent, canvasRef.current);
+      setTeachingActivityBoxes((prev) =>
+        prev.map((box) =>
+          box.id !== id ? box : {
+            ...box,
+            x: Math.max(0, Math.min(newMouseX - offset.x, canvasRef.current!.scrollWidth - taWidth)),
+            y: Math.max(0, Math.min(newMouseY - offset.y, canvasRef.current!.scrollHeight - 80)),
+          }
+        )
+      );
+    };
+
+    const handleUp = () => {
+      setDraggedTAId(null);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
   const handleULOMouseDown = (e: React.MouseEvent, id: number) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1494,6 +1583,112 @@ export const WhiteboardCanvas: React.FC = () => {
   const startEdit = (id: number) => {
     setEditingId(id);
     setShowForm(true);
+  };
+
+  const openAddModal = (type: Exclude<typeof addItemType, null>) => {
+    const defaultUnit = hoveredUnitId ?? savedCourseUnits[0]?.unitId ?? '';
+    setAddItemUnitId(defaultUnit);
+    setAddItemType(type);
+  };
+
+  const closeAddModal = () => setAddItemType(null);
+
+  const getCanvasWidth = () =>
+    canvasRef.current ? canvasRef.current.offsetWidth * CANVAS_WIDTH_MULTIPLIER : 0;
+
+  const handleAddTA = async (data: { name: string; description: string; type: string }) => {
+    if (!addItemUnitId || !currentCourse?.courseId) return;
+    const w = getCanvasWidth();
+    const taWidth = columnWidth * 0.9;
+    const x = getColumnAlignedX(w, TEACHING_ACTIVITY_COLUMN, taWidth);
+    const y = 40 + teachingActivityBoxes.filter((t) => t.unitId === addItemUnitId).length * 110;
+    try {
+      const res = await axiosInstance.post('/teaching-activity/create', {
+        name: data.name,
+        description: data.description,
+        type: data.type,
+        unitId: addItemUnitId,
+        position: { x, y },
+      });
+      setTeachingActivityBoxes((prev) => [
+        ...prev,
+        { id: res.data.activityId, name: data.name, description: data.description, activityType: data.type, unitId: addItemUnitId, x, y },
+      ]);
+    } catch (err) { console.error('Failed to create teaching activity', err); }
+    closeAddModal();
+  };
+
+  const handleAddULO = async (description: string) => {
+    if (!addItemUnitId || !currentCourse?.courseId) return;
+    const w = getCanvasWidth();
+    const uloWidth = columnWidth * ULO_WIDTH_RATIO;
+    const x = getColumnAlignedX(w, ULO_COLUMN, uloWidth);
+    const y = 40 + uloBoxes.filter((u) => u.ulo.unitId === addItemUnitId).length * ULO_VERTICAL_SPACING;
+    try {
+      const res = await axiosInstance.post('/ULO/create', { uloDesc: description, unitId: addItemUnitId, position: { x, y } });
+      setUloBoxes((prev) => [
+        ...prev,
+        { id: res.data.uloId, ulo: { uloId: res.data.uloId, uloDesc: description, unitId: addItemUnitId, cloId: null, cloIds: [], assessmentIds: [] }, x, y },
+      ]);
+    } catch (err) { console.error('Failed to create ULO', err); }
+    closeAddModal();
+  };
+
+  const handleAddAssessment = async (data: import('../types').Assessment) => {
+    if (!addItemUnitId || !currentCourse?.courseId) return;
+    const w = getCanvasWidth();
+    const aWidth = columnWidth * ASSESSMENT_WIDTH_RATIO;
+    const x = getColumnAlignedX(w, ASSESSMENT_COLUMN, aWidth);
+    const y = 40 + assessmentBoxes.filter((a) => a.assessment.unitId === addItemUnitId).length * ULO_VERTICAL_SPACING;
+    try {
+      const res = await axiosInstance.post('/assessment/create', {
+        assessmentName: data.name,
+        assessmentDesc: data.description || data.aDesc,
+        assessmentType: data.type || data.assessmentType,
+        value: data.value ?? 0,
+        hurdleReq: data.hurdleReq ?? null,
+        dueWeek: data.dueWeek ?? [],
+        assessmentConditions: data.conditions || data.assessmentConditions || '',
+        feedbackWeek: data.feedbackWeek ?? [],
+        feedbackDetails: data.feedbackDetails ?? [],
+        unitId: addItemUnitId,
+        position: { x, y },
+      });
+      const id = res.data.assessmentId;
+      setAssessmentBoxes((prev) => [
+        ...prev,
+        {
+          id,
+          assessment: {
+            assessmentId: id,
+            aDesc: data.description || data.aDesc || '',
+            unitId: addItemUnitId,
+            assessmentType: String(data.type || data.assessmentType || ''),
+            assessmentConditions: data.conditions || data.assessmentConditions || '',
+            hurdleReq: data.hurdleReq ?? null,
+            unitLosIds: [],
+          },
+          x, y,
+        },
+      ]);
+    } catch (err) { console.error('Failed to create assessment', err); }
+    closeAddModal();
+  };
+
+  const handleAddCLO = async (description: string) => {
+    if (!currentCourse?.courseId) return;
+    const w = getCanvasWidth();
+    const cloWidth = (w / NUM_COLUMNS) * CLO_WIDTH_RATIO;
+    const x = getColumnAlignedX(w, CLO_COLUMN, cloWidth);
+    const y = 40 + cloBoxes.filter((c) => !c.isCustom).length * 80;
+    try {
+      const res = await axiosInstance.post('/CLO/create', { cloDesc: description, courseId: currentCourse.courseId });
+      setCloBoxes((prev) => [
+        ...prev,
+        { id: res.data.cloId, clo: res.data, x, y },
+      ]);
+    } catch (err) { console.error('Failed to create CLO', err); }
+    closeAddModal();
   };
 
   const handleFormSave = (formData: UnitFormData) => {
@@ -1765,6 +1960,7 @@ export const WhiteboardCanvas: React.FC = () => {
         <CanvasSidebar
           sidebarTab={sidebarTab}
           setSidebarTab={setSidebarTab}
+          showWhiteboardControls={true}
           handleSaveCanvas={handleSaveCanvas}
           setShowCreateForm={setShowCreateForm}
           searchTerm={searchTerm}
@@ -1787,88 +1983,58 @@ export const WhiteboardCanvas: React.FC = () => {
 
       {/* Canvas: 5/6 width, right */}
       <div ref={canvasRef} className="w-5/6 bg-white overflow-auto relative" style={{ userSelect: "none" }}>
-        <div className="sticky left-3 top-3 z-[90] w-fit pointer-events-none">
-          {zoomPaletteOpen && (
-            <div className="mb-2 flex items-center gap-2 rounded-full border border-gray-200 bg-white/95 p-2 shadow-2xl backdrop-blur-sm pointer-events-auto">
-              <button
-                className={`h-10 w-10 rounded-full border transition-colors ${
-                  canvasTool === "hand"
-                    ? "bg-blue-50 text-blue-700 border-blue-300"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                }`}
-                onClick={handleSelectHandTool}
-                title="Hand tool"
-              >
-                <svg className="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M8 11V7a1 1 0 0 1 2 0v4" />
-                  <path d="M10 11V6a1 1 0 0 1 2 0v5" />
-                  <path d="M12 11V5a1 1 0 0 1 2 0v6" />
-                  <path d="M14 11V7a1 1 0 0 1 2 0v4" />
-                  <path d="M8 11c0-1 0-2 0-2a1 1 0 0 1 2 0v2" />
-                  <path d="M16 11v3c0 3-2 5-5 5s-5-2-5-5v-4" />
-                </svg>
-              </button>
-              <button
-                className={`h-10 w-10 rounded-full border transition-colors ${
-                  canvasTool === "out"
-                    ? "bg-blue-50 text-blue-700 border-blue-300"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                }`}
-                onClick={() => handleSelectZoomTool("out")}
-                title="Select zoom out tool"
-              >
-                <svg className="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M20 20l-3.5-3.5" />
-                  <path d="M8 11h6" />
-                </svg>
-              </button>
-              <button
-                className={`h-10 w-10 rounded-full border transition-colors ${
-                  canvasTool === "in"
-                    ? "bg-blue-50 text-blue-700 border-blue-300"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                }`}
-                onClick={() => handleSelectZoomTool("in")}
-                title="Select zoom in tool"
-              >
-                <svg className="mx-auto h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M20 20l-3.5-3.5" />
-                  <path d="M11 8v6" />
-                  <path d="M8 11h6" />
-                </svg>
-              </button>
-              <button
-                className="h-10 rounded-full border border-gray-300 bg-white px-3 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-100"
-                onClick={handleResetZoom}
-                title="Reset zoom"
-              >
-                Reset
-              </button>
-            </div>
-          )}
+        <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
+          <span className="text-xs text-gray-400 font-medium mr-1">Tools:</span>
           <button
-            className={`pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border shadow-xl transition-colors ${
-              zoomPaletteOpen ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+              canvasTool === "hand"
+                ? "bg-gray-900 text-white shadow-sm"
+                : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
             }`}
-            onClick={handleZoomBrushClick}
-            title="Zoom tools"
+            onClick={handleSelectHandTool}
+            title="Hand tool"
+            aria-label="Hand tool"
           >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M4 20l5.5-5.5" />
-              <path d="M13 5l6 6" />
-              <path d="M6 18l-1 1" />
-              <path d="M14 4l6 6" />
-              <path d="M9 15l-2 2" />
-              <path d="M15 3l6 6" />
-            </svg>
+            <Hand className="size-4" aria-hidden="true" />
+          </button>
+          <button
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+              canvasTool === "out"
+                ? "bg-gray-900 text-white shadow-sm"
+                : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
+            }`}
+            onClick={() => handleSelectZoomTool("out")}
+            title="Select zoom out tool"
+            aria-label="Zoom out tool"
+          >
+            <ZoomOut className="size-4" aria-hidden="true" />
+          </button>
+          <button
+            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+              canvasTool === "in"
+                ? "bg-gray-900 text-white shadow-sm"
+                : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
+            }`}
+            onClick={() => handleSelectZoomTool("in")}
+            title="Select zoom in tool"
+            aria-label="Zoom in tool"
+          >
+            <ZoomIn className="size-4" aria-hidden="true" />
           </button>
         </div>
         <div
           className="relative"
           onMouseDown={handleCanvasMouseDown}
-          onClick={handleCanvasZoomClick}
+          onClick={(e) => {
+            handleCanvasZoomClick(e);
+            // Clear all focus when clicking the empty canvas background
+            if (e.target === e.currentTarget) {
+              setHoveredUnitId(null);
+              setHoveredAssessmentBoxId(null);
+              setHoveredUloBoxId(null);
+              setHoveredCloBoxId(null);
+            }
+          }}
           style={{
             width: `${CANVAS_WIDTH_MULTIPLIER * 100}%`,
             height: `${innerHeight}px`,
@@ -1890,13 +2056,13 @@ export const WhiteboardCanvas: React.FC = () => {
             backgroundPosition: '0 0',
           }}
         >
-          {/* 9 column separators matching canvas width */}
-          {Array.from({ length: 8 }).map((_, i) => (
+          {/* Column separators */}
+          {Array.from({ length: NUM_COLUMNS - 1 }).map((_, i) => (
             <div
               key={`col-separator-${i}`}
               style={{
                 position: 'absolute',
-                left: `calc(${((i + 1) / 9) * 100}% )`,
+                left: `${((i + 1) / NUM_COLUMNS) * 100}%`,
                 top: 0,
                 bottom: 0,
                 width: '1px',
@@ -1995,6 +2161,23 @@ export const WhiteboardCanvas: React.FC = () => {
                 }
               />
             ))}
+            {/* Unit → Teaching Activity */}
+            {unitToTAConnectorPaths.map((path) => (
+              <path key={path.key} d={path.d} fill="none" stroke={path.color}
+                strokeWidth="1.25" strokeDasharray="2 4" strokeLinecap="round" opacity="0.5" />
+            ))}
+
+            {/* Teaching Activity → Assessment */}
+            {taToAssessmentConnectorPaths.map((path) => (
+              <path key={path.key} d={path.d} fill="none" stroke={path.color}
+                strokeWidth="1.25" strokeDasharray="2 4" strokeLinecap="round" opacity="0.5" />
+            ))}
+
+            {/* Teaching Activity → ULO */}
+            {taToULOConnectorPaths.map((path) => (
+              <path key={path.key} d={path.d} fill="none" stroke={path.color}
+                strokeWidth="1.25" strokeDasharray="2 4" strokeLinecap="round" opacity="0.5" />
+            ))}
           </svg>
 
           {displayedUnitBoxes.map((unit) => {
@@ -2006,7 +2189,20 @@ export const WhiteboardCanvas: React.FC = () => {
             };
 
             return (
-              <div key={unit.id} style={getNodeStateStyle(isRelated)}>
+              <div
+                key={unit.id}
+                style={getNodeStateStyle(isRelated)}
+                onClick={(e) => {
+                  if (isDragging) return;
+                  e.stopPropagation();
+                  const uid = unit.unitId;
+                  if (!uid) return;
+                  setHoveredAssessmentBoxId(null);
+                  setHoveredUloBoxId(null);
+                  setHoveredCloBoxId(null);
+                  setHoveredUnitId((prev) => (prev === uid ? null : uid));
+                }}
+              >
                 <UnitBox
                   unit={{ ...unit, width: columnWidth * UNIT_WIDTH_RATIO }}
                   draggedUnit={draggedUnit}
@@ -2023,13 +2219,8 @@ export const WhiteboardCanvas: React.FC = () => {
                     startEdit(unitId);
                   }}
                   onClick={() => undefined}
-                  onMouseEnter={(unitId) => {
-                    setHoveredAssessmentBoxId(null);
-                    setHoveredUloBoxId(null);
-                    setHoveredCloBoxId(null);
-                    setHoveredUnitId(unitId);
-                  }}
-                  onMouseLeave={() => setHoveredUnitId(null)}
+                  onMouseEnter={() => {}}
+                  onMouseLeave={() => {}}
                   onContextMenu={handleUnitRightClick}
                   onDrop={handleUnitBoxDrop}
                   toggleExpand={toggleExpand}
@@ -2051,6 +2242,35 @@ export const WhiteboardCanvas: React.FC = () => {
             );
           })}
 
+          {/* Teaching activity boxes — column 1 */}
+          {teachingActivityBoxes.map((ta) => {
+            const unitColor = displayedUnitBoxes.find((u) => u.unitId === ta.unitId)?.color ?? "#10B981";
+            return (
+              <TeachingActivityBox
+                key={ta.id}
+                activity={{
+                  id: ta.id,
+                  activityId: ta.id,
+                  name: ta.name,
+                  description: ta.description,
+                  type: ta.activityType,
+                  unitId: ta.unitId,
+                  x: ta.x,
+                  y: ta.y,
+                }}
+                width={columnWidth * 0.9}
+                color={unitColor}
+                draggedActivity={draggedTAId}
+                onMouseDown={handleTAMouseDown}
+                onDoubleClick={() => {}}
+                onClick={() => {}}
+                deleteActivity={(id) =>
+                  setTeachingActivityBoxes((prev) => prev.filter((t) => t.id !== id))
+                }
+              />
+            );
+          })}
+
           {displayedCloBoxes.map((cloBox) => {
             const cloId = cloBox.clo.cloId;
             const isRelated = !hasHoverFocus || (typeof cloId === "number" && hoveredCloIds.has(cloId));
@@ -2063,13 +2283,17 @@ export const WhiteboardCanvas: React.FC = () => {
               <div
                 key={cloBox.id}
                 style={getNodeStateStyle(isRelated)}
-                onMouseEnter={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setHoveredAssessmentBoxId(null);
                   setHoveredUloBoxId(null);
                   setHoveredUnitId(null);
-                  setHoveredCloBoxId(cloBox.id);
+                  setHoveredCloBoxId((prev) => (prev === cloBox.id ? null : cloBox.id));
                 }}
-                onMouseLeave={() => setHoveredCloBoxId(null)}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedCLOId(cloBox.id);
+                }}
               >
                 <CLOBox
                   clo={cloBox.clo}
@@ -2080,7 +2304,7 @@ export const WhiteboardCanvas: React.FC = () => {
                   isSelected={selectedCLOId === cloBox.id}
                   color={getCLOColor(cloBox.clo.cloId || 0)}
                   onMouseDown={handleCLOMouseDownGuarded}
-                  onClick={() => setSelectedCLOId((prev) => (prev === cloBox.id ? null : cloBox.id))}
+                  onClick={() => {}}
                   onDescriptionUpdate={(newDescription) => {
                     // Update local state
                     setCloBoxes((prev) =>
@@ -2122,24 +2346,33 @@ export const WhiteboardCanvas: React.FC = () => {
             };
 
             return (
-            <div key={uloBox.id} style={getNodeStateStyle(isRelated)}>
+            <div
+              key={uloBox.id}
+              style={getNodeStateStyle(isRelated)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setHoveredAssessmentBoxId(null);
+                setHoveredUnitId(null);
+                setHoveredCloBoxId(null);
+                setHoveredUloBoxId((prev) => (prev === uloBox.id ? null : uloBox.id));
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setEditingULOBoxId(uloBox.id);
+              }}
+            >
             <ULOBox
               ulo={uloBox.ulo}
               x={uloBox.x}
               y={uloBox.y}
               width={columnWidth * ULO_WIDTH_RATIO}
               isDragging={draggedULOId === uloBox.id}
-              isSelected={selectedULOId === uloBox.id}
+              isSelected={false}
               color={uloColor}
               onMouseDown={handleULOMouseDownGuarded}
-              onClick={() => setSelectedULOId((prev) => (prev === uloBox.id ? null : uloBox.id))}
-              onHoverStart={() => {
-                setHoveredAssessmentBoxId(null);
-                setHoveredUnitId(null);
-                setHoveredCloBoxId(null);
-                setHoveredUloBoxId(uloBox.id);
-              }}
-              onHoverEnd={() => setHoveredUloBoxId(null)}
+              onClick={() => {}}
+              onHoverStart={() => {}}
+              onHoverEnd={() => {}}
               availableUnits={savedCourseUnits}
               availableCLOs={((currentCLOs || []) as CourseLearningOutcome[]).filter(
                 (clo): clo is CourseLearningOutcome & { cloId: number } => typeof clo.cloId === "number"
@@ -2264,26 +2497,31 @@ export const WhiteboardCanvas: React.FC = () => {
             };
 
             return (
-              <div key={assessmentBox.id} style={getNodeStateStyle(isRelated)}>
+              <div
+                key={assessmentBox.id}
+                style={getNodeStateStyle(isRelated)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setHoveredUloBoxId(null);
+                  setHoveredCloBoxId(null);
+                  setHoveredUnitId(null);
+                  setHoveredAssessmentBoxId((prev) => (prev === assessmentBox.id ? null : assessmentBox.id));
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditingAssessmentBoxId(assessmentBox.id);
+                }}
+              >
               <AssessmentBox
                 assessment={assessmentBox.assessment}
                 x={assessmentBox.x}
                 y={assessmentBox.y}
                   width={columnWidth * ASSESSMENT_WIDTH_RATIO}
                 isDragging={draggedAssessmentId === assessmentBox.id}
-                isSelected={selectedAssessmentId === assessmentBox.id}
+                isSelected={false}
                 color={assessmentColor}
                 onMouseDown={handleAssessmentMouseDownGuarded}
-                onClick={() =>
-                  setSelectedAssessmentId((prev) => (prev === assessmentBox.id ? null : assessmentBox.id))
-                }
-                onMouseEnter={() => {
-                  setHoveredUloBoxId(null);
-                  setHoveredCloBoxId(null);
-                  setHoveredUnitId(null);
-                  setHoveredAssessmentBoxId(assessmentBox.id);
-                }}
-                onMouseLeave={() => setHoveredAssessmentBoxId(null)}
+                onClick={() => {}}
                 availableUnits={savedCourseUnits}
                 availableULOs={uloBoxes
                   .map((box) => ({
@@ -2455,6 +2693,167 @@ export const WhiteboardCanvas: React.FC = () => {
             );
           })}
         </div>
+
+        {/* Edit ULO modal */}
+        {editingULOBoxId !== null && (() => {
+          const uloBox = uloBoxes.find((u) => u.id === editingULOBoxId);
+          if (!uloBox) return null;
+          return (
+            <div
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] backdrop-blur-sm"
+              onClick={() => setEditingULOBoxId(null)}
+            >
+              <div
+                className="bg-white rounded-xl shadow-2xl p-6 w-[480px] max-h-[85vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-semibold text-gray-800">Edit Unit Learning Outcome</h2>
+                  <button type="button" onClick={() => setEditingULOBoxId(null)} className="text-gray-400 hover:text-gray-600 text-lg">×</button>
+                </div>
+                <UnitLearningOutcomeForm
+                  initialData={uloBox.ulo.uloDesc}
+                  onSave={async (description) => {
+                    const id = uloBox.ulo.uloId;
+                    if (!id) return;
+                    try {
+                      await axiosInstance.put(`/ULO/update/${id}`, {
+                        uloDesc: description,
+                        unitId: uloBox.ulo.unitId,
+                      });
+                      setUloBoxes((prev) =>
+                        prev.map((b) =>
+                          b.id !== editingULOBoxId ? b : {
+                            ...b,
+                            ulo: { ...b.ulo, uloDesc: description },
+                          }
+                        )
+                      );
+                    } catch (err) { console.error('Failed to update ULO', err); }
+                    setEditingULOBoxId(null);
+                  }}
+                  onCancel={() => setEditingULOBoxId(null)}
+                />
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Edit assessment modal */}
+        {editingAssessmentBoxId !== null && (() => {
+          const aBox = assessmentBoxes.find((a) => a.id === editingAssessmentBoxId);
+          if (!aBox) return null;
+          const { assessment } = aBox;
+          return (
+            <div
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] backdrop-blur-sm"
+              onClick={() => setEditingAssessmentBoxId(null)}
+            >
+              <div
+                className="bg-white rounded-xl shadow-2xl p-6 w-[540px] max-h-[85vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-semibold text-gray-800">Edit Assessment</h2>
+                  <button type="button" onClick={() => setEditingAssessmentBoxId(null)} className="text-gray-400 hover:text-gray-600 text-lg">×</button>
+                </div>
+                <AssessmentForm
+                  initialData={{
+                    assessmentId: assessment.assessmentId,
+                    aDesc: assessment.aDesc,
+                    name: assessment.aDesc,
+                    description: assessment.aDesc,
+                    unitId: assessment.unitId,
+                    assessmentType: assessment.assessmentType,
+                    assessmentConditions: assessment.assessmentConditions,
+                    hurdleReq: assessment.hurdleReq,
+                    unitLosIds: assessment.unitLosIds,
+                  }}
+                  onSave={async (data) => {
+                    const id = assessment.assessmentId;
+                    if (!id) return;
+                    try {
+                      await axiosInstance.put(`/assessment/update/${id}`, {
+                        name: data.name || data.aDesc,
+                        description: data.description || data.aDesc,
+                        type: data.type || data.assessmentType,
+                        value: data.value ?? 0,
+                        hurdleReq: data.hurdleReq ?? null,
+                        dueWeek: data.dueWeek ?? [],
+                        conditions: data.conditions || data.assessmentConditions || '',
+                        feedbackWeek: data.feedbackWeek ?? [],
+                        feedbackDetails: data.feedbackDetails ?? [],
+                      });
+                      setAssessmentBoxes((prev) =>
+                        prev.map((b) =>
+                          b.id !== editingAssessmentBoxId ? b : {
+                            ...b,
+                            assessment: {
+                              ...b.assessment,
+                              aDesc: data.name || data.aDesc || b.assessment.aDesc,
+                              assessmentType: String(data.type || data.assessmentType || b.assessment.assessmentType),
+                              assessmentConditions: data.conditions || data.assessmentConditions || '',
+                              hurdleReq: data.hurdleReq ?? null,
+                              unitLosIds: data.unitLosIds ?? b.assessment.unitLosIds,
+                            },
+                          }
+                        )
+                      );
+                    } catch (err) { console.error('Failed to update assessment', err); }
+                    setEditingAssessmentBoxId(null);
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Add-item modal */}
+        {addItemType && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] backdrop-blur-sm" onClick={closeAddModal}>
+            <div className="bg-white rounded-xl shadow-2xl p-6 w-[520px] max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-semibold text-gray-800">
+                  {addItemType === 'teaching-activity' && 'Add Teaching Activity'}
+                  {addItemType === 'ulo' && 'Add Unit Learning Outcome'}
+                  {addItemType === 'assessment' && 'Add Assessment'}
+                  {addItemType === 'clo' && 'Add Course Learning Outcome'}
+                </h2>
+                <button type="button" onClick={closeAddModal} className="text-gray-400 hover:text-gray-600 text-lg">×</button>
+              </div>
+
+              {/* Unit selector for TA / ULO / Assessment */}
+              {addItemType !== 'clo' && (
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Unit</label>
+                  <select
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+                    value={addItemUnitId}
+                    onChange={(e) => setAddItemUnitId(e.target.value)}
+                  >
+                    <option value="">— select unit —</option>
+                    {savedCourseUnits.map((u) => (
+                      <option key={u.unitId} value={u.unitId}>{u.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {addItemType === 'teaching-activity' && (
+                <TeachingActivityForm onSave={handleAddTA} onCancel={closeAddModal} />
+              )}
+              {addItemType === 'ulo' && (
+                <UnitLearningOutcomeForm onSave={handleAddULO} onCancel={closeAddModal} />
+              )}
+              {addItemType === 'assessment' && (
+                <AssessmentForm onSave={handleAddAssessment} />
+              )}
+              {addItemType === 'clo' && (
+                <UnitLearningOutcomeForm onSave={handleAddCLO} onCancel={closeAddModal} />
+              )}
+            </div>
+          </div>
+        )}
 
         {showForm && editingId && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">

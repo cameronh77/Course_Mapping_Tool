@@ -7,6 +7,7 @@ interface TeachingActivityBoxProps {
   activity: TeachingActivity;
   draggedActivity?: number | null;
   color?: string;
+  width?: number;
   onMouseDown: (e: React.MouseEvent, id: number) => void;
   onDoubleClick: (id: number) => void;
   onClick: (id: number) => void;
@@ -17,6 +18,7 @@ export const TeachingActivityBox: React.FC<TeachingActivityBoxProps> = ({
   activity,
   draggedActivity,
   color = "#10B981",
+  width = BOX_WIDTH,
   onMouseDown,
   onDoubleClick,
   onClick,
@@ -32,7 +34,7 @@ export const TeachingActivityBox: React.FC<TeachingActivityBoxProps> = ({
       style={{
         left: `${activity.x}px`,
         top: `${activity.y}px`,
-        width: `${BOX_WIDTH}px`,
+        width: `${width}px`,
         minHeight: "80px",
       }}
       onClick={() => onClick(activity.id)}

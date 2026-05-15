@@ -4,7 +4,8 @@ import { useCourseStore } from "../stores/useCourseStore";
 import { useUnitStore } from "../stores/useUnitStore";
 
 const VIEW_TABS = [
-  { path: "/UnitCanvas", label: "Unit Structure" },
+  { path: "/UnitCanvas", label: "Timeline View", view: "grid" },
+  { path: "/UnitCanvas", label: "Theme View", view: "theme" },
   { path: "/WhiteboardCanvas", label: "Teaching Activities" },
 ] as const;
 
@@ -19,9 +20,12 @@ const Navbar = () => {
     currentUnit: { unitId?: string } | null;
   };
 
+  const currentView = new URLSearchParams(location.search).get("view") ?? "grid";
   const isInternal = location.pathname === "/UnitInternalCanvas";
   const activeTab = isInternal
-    ? "/UnitCanvas"
+    ? "/UnitCanvas:grid"
+    : location.pathname === "/UnitCanvas"
+    ? `/UnitCanvas:${currentView}`
     : VIEW_TABS.find((t) => t.path === location.pathname)?.path;
 
   const handleBackToCourses = () => {
@@ -84,13 +88,15 @@ const Navbar = () => {
             className="inline-flex items-center gap-1 rounded-lg bg-white/10 p-1"
           >
             {VIEW_TABS.map((tab) => {
-              const active = activeTab === tab.path;
+              const tabKey = tab.view ? `${tab.path}:${tab.view}` : tab.path;
+              const active = activeTab === tabKey;
+              const nextPath = tab.view ? `${tab.path}?view=${tab.view}` : tab.path;
               return (
                 <button
-                  key={tab.path}
+                  key={tabKey}
                   role="tab"
                   aria-selected={active}
-                  onClick={() => navigate(tab.path)}
+                  onClick={() => navigate(nextPath)}
                   className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     active
                       ? "bg-white text-slate-900 shadow"

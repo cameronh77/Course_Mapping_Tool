@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useCourseStore } from "../../stores/useCourseStore";
 import { useCLOStore } from "../../stores/useCLOStore";
 import { useTagStore } from "../../stores/useTagStore";
 import { usePathwayStore } from "../../stores/usePathwayStore";
+import { useCoursePathwayTypeStore } from "../../stores/useCoursePathwayTypeStore";
 import { getWhiteboardHandlers } from "../../lib/whiteboardHandlers";
 import { PathwayManagerModal } from "../common/PathwayManagerModal";
 import { getTagColor } from "../common/themeViewConstants";
@@ -11,6 +12,8 @@ import type { Tag, Unit, PlaceholderType } from "../../types";
 interface CanvasSidebarProps {
   sidebarTab: 'units' | 'connections' | 'mapping';
   setSidebarTab: (tab: 'units' | 'connections' | 'mapping') => void;
+  showWhiteboardControls?: boolean;
+  connectionMode?: boolean;
   handleSaveCanvas: () => void;
   setShowCreateForm: (show: boolean) => void;
   searchTerm: string;
@@ -20,6 +23,9 @@ interface CanvasSidebarProps {
   searchResults: Unit[];
   handleNewUnitMouseDown: (e: React.MouseEvent, unit: Unit) => void;
   setConnectionMode: (mode: boolean) => void;
+  setConnectionSource?: (source: string | null) => void;
+  selectedRelationType?: string;
+  setSelectedRelationType?: (type: string) => void;
   getCLOColor: (cloId: number) => string;
   selectedTagFilters?: number[];
   onToggleTagFilter?: (tagId: number) => void;
@@ -27,11 +33,14 @@ interface CanvasSidebarProps {
   handlePlaceholderMouseDown?: (e: React.MouseEvent, type: PlaceholderType) => void;
   unallocatedUnits?: Unit[];
   onDeleteUnallocated?: (unitId: string) => void;
+  secondaryPathwayConflict?: boolean;
+  onCopyFromPathway?: (sourcePathwayId: number) => Promise<void>;
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   sidebarTab,
   setSidebarTab,
+  showWhiteboardControls = false,
   handleSaveCanvas,
   setShowCreateForm,
   searchTerm,
@@ -48,19 +57,28 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   handlePlaceholderMouseDown,
   unallocatedUnits = [],
   onDeleteUnallocated,
+  secondaryPathwayConflict = false,
+  onCopyFromPathway,
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore() as any;
   const { currentCLOs } = useCLOStore() as any;
   const { existingTags, createTag } = useTagStore() as any;
-  const { pathways, activePathwayId, setActivePathway } = usePathwayStore();
+  const { pathways, activePathwayId, setActivePathway, secondaryPathwayId, setSecondaryPathway } = usePathwayStore();
+  const { getTypeByLabel } = useCoursePathwayTypeStore();
 
   // Local state purely for the sidebar
   const [newTag, setNewTag] = useState<string>("");
   const [addDropdownOpen, setAddDropdownOpen] = useState(false);
   const [pathwayManagerOpen, setPathwayManagerOpen] = useState(false);
   const [pathwayDropdownOpen, setPathwayDropdownOpen] = useState(false);
+  const [secondaryDropdownOpen, setSecondaryDropdownOpen] = useState(false);
+  const [showSecondary, setShowSecondary] = useState(false);
+  const [copyFromOpen, setCopyFromOpen] = useState(false);
+  const [copyFromLoading, setCopyFromLoading] = useState(false);
   const pathwayDropdownRef = useRef<HTMLDivElement>(null);
+  const secondaryDropdownRef = useRef<HTMLDivElement>(null);
+  const copyFromRef = useRef<HTMLDivElement>(null);
   const handlers = getWhiteboardHandlers();
 
   useEffect(() => {
@@ -74,13 +92,59 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [pathwayDropdownOpen]);
 
+  useEffect(() => {
+    if (!secondaryDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (secondaryDropdownRef.current && !secondaryDropdownRef.current.contains(e.target as Node)) {
+        setSecondaryDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [secondaryDropdownOpen]);
+
+  useEffect(() => {
+    if (!copyFromOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (copyFromRef.current && !copyFromRef.current.contains(e.target as Node)) {
+        setCopyFromOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [copyFromOpen]);
+
   const activePathway = pathways.find((p) => p.pathwayId === activePathwayId) ?? null;
+  const secondaryPathway = pathways.find((p) => p.pathwayId === secondaryPathwayId) ?? null;
+
+  const nonEntryPathways = useMemo(
+    () => pathways.filter((p) => p.type !== "ENTRY_POINT"),
+    [pathways]
+  );
+
+  const dropdownPathways = useMemo(
+    () => nonEntryPathways,
+    [nonEntryPathways]
+  );
+
+  // Secondary dropdown excludes the currently active primary pathway.
+  const secondaryDropdownPathways = useMemo(
+    () => nonEntryPathways.filter((p) => p.pathwayId !== activePathwayId),
+    [nonEntryPathways, activePathwayId]
+  );
+
   const pathwayTypeBadge: Record<string, string> = {
     CORE: "bg-blue-100 text-blue-700",
     MAJOR: "bg-purple-100 text-purple-700",
     MINOR: "bg-amber-100 text-amber-700",
     SPECIALISATION: "bg-rose-100 text-rose-700",
     ENTRY_POINT: "bg-emerald-100 text-emerald-700",
+    CUSTOM: "bg-teal-100 text-teal-700",
+  };
+
+  const pathwayTypeBadgeStyle = (typeLabel: string): React.CSSProperties => {
+    const color = getTypeByLabel(typeLabel)?.color ?? "#6B7280";
+    return { backgroundColor: `${color}22`, color };
   };
 
   return (
@@ -90,15 +154,82 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
       </button>
 
       <div className="mb-4" ref={pathwayDropdownRef}>
-        <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
-          Pathway
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Pathway
+          </label>
+          <div className="flex items-center gap-2">
+            {/* Copy from dropdown */}
+            {onCopyFromPathway && nonEntryPathways.filter((p) => p.pathwayId !== activePathwayId).length > 0 && (
+              <div className="relative" ref={copyFromRef}>
+                <button
+                  type="button"
+                  disabled={copyFromLoading}
+                  onClick={() => setCopyFromOpen((o) => !o)}
+                  className="flex items-center gap-0.5 text-[10px] font-semibold text-gray-400 hover:text-green-600 transition-colors disabled:opacity-50"
+                  title="Copy all units from another pathway"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  {copyFromLoading ? "Copying…" : "copy from"}
+                </button>
+                {copyFromOpen && (
+                  <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1 min-w-[160px]">
+                    {nonEntryPathways
+                      .filter((p) => p.pathwayId !== activePathwayId)
+                      .map((p) => (
+                        <button
+                          key={p.pathwayId}
+                          type="button"
+                          onClick={async () => {
+                            setCopyFromOpen(false);
+                            setCopyFromLoading(true);
+                            await onCopyFromPathway(p.pathwayId);
+                            setCopyFromLoading(false);
+                          }}
+                          className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left transition-colors"
+                        >
+                          <span className="truncate">{p.name}</span>
+                          <span
+                            className="px-1.5 py-0.5 text-[10px] font-semibold rounded shrink-0"
+                            style={pathwayTypeBadgeStyle(p.type)}
+                          >
+                            {p.type}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!showSecondary && secondaryDropdownPathways.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowSecondary(true)}
+                className="flex items-center gap-0.5 text-[10px] font-semibold text-gray-400 hover:text-blue-500 transition-colors"
+                title="Add secondary pathway overlay"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                view
+              </button>
+            )}
+          </div>
+        </div>
         <div className="relative">
           <button
             type="button"
-            onClick={() => setPathwayDropdownOpen((o) => !o)}
-            disabled={pathways.length === 0}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white border border-gray-300 rounded-md text-sm text-left hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+            onClick={() => {
+              if (pathways.length === 0) {
+                setPathwayManagerOpen(true);
+                return;
+              }
+              setPathwayDropdownOpen((o) => !o);
+            }}
+            className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-md text-sm text-left hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
             aria-haspopup="listbox"
             aria-expanded={pathwayDropdownOpen}
           >
@@ -116,7 +247,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
                 </>
               ) : (
                 <span className="text-gray-400">
-                  {pathways.length === 0 ? "No pathways" : "Select pathway"}
+                  {pathways.length === 0 ? "Add pathway" : "Select pathway"}
                 </span>
               )}
             </span>
@@ -138,7 +269,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
               role="listbox"
             >
               <div className="max-h-60 overflow-y-auto py-1">
-                {pathways.map((p) => {
+                {dropdownPathways.map((p) => {
                   const isActive = p.pathwayId === activePathwayId;
                   return (
                     <button
@@ -207,6 +338,136 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
             </div>
           )}
         </div>
+
+        {/* Secondary pathway — only shown after clicking "+ pathway" */}
+        {(showSecondary || secondaryPathwayId !== null) && (
+          <div className="mt-1.5" ref={secondaryDropdownRef}>
+            <div className="flex items-center gap-1.5">
+              <div className="relative flex-1">
+                <button
+                  type="button"
+                  onClick={() => setSecondaryDropdownOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-1.5 bg-white border border-dashed border-gray-300 rounded-md text-sm text-left hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-300 transition-colors"
+                  aria-haspopup="listbox"
+                  aria-expanded={secondaryDropdownOpen}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    {secondaryPathway ? (
+                      <>
+                        <span className="truncate font-medium text-gray-700">{secondaryPathway.name}</span>
+                        <span
+                          className="px-1.5 py-0.5 text-[10px] font-semibold rounded"
+                          style={pathwayTypeBadgeStyle(secondaryPathway.type)}
+                        >
+                          {secondaryPathway.type}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-gray-400 text-xs italic">Select secondary…</span>
+                    )}
+                  </span>
+                  <svg
+                    className={`w-3.5 h-3.5 text-gray-400 shrink-0 transition-transform ${secondaryDropdownOpen ? "rotate-180" : ""}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {secondaryDropdownOpen && (
+                  <div
+                    className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 overflow-hidden"
+                    role="listbox"
+                  >
+                    <div className="max-h-60 overflow-y-auto py-1">
+                      {/* None — always present so the user can revert */}
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={secondaryPathwayId === null}
+                        onClick={() => {
+                          setSecondaryPathway(null);
+                          setSecondaryDropdownOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                          secondaryPathwayId === null ? "bg-purple-50 text-purple-700" : "text-gray-500 hover:bg-gray-50"
+                        }`}
+                      >
+                        <span className="w-4 shrink-0">
+                          {secondaryPathwayId === null && (
+                            <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </span>
+                        <span className="italic">None</span>
+                      </button>
+                      {secondaryDropdownPathways.map((p) => {
+                        const isSelected = p.pathwayId === secondaryPathwayId;
+                        return (
+                          <button
+                            type="button"
+                            key={p.pathwayId}
+                            role="option"
+                            aria-selected={isSelected}
+                            onClick={() => {
+                              setSecondaryPathway(p.pathwayId);
+                              setSecondaryDropdownOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                              isSelected ? "bg-purple-50 text-purple-700" : "text-gray-700 hover:bg-gray-50"
+                            }`}
+                          >
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="w-4 shrink-0">
+                                {isSelected && (
+                                  <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </span>
+                              <span className="truncate">{p.name}</span>
+                            </span>
+                            <span
+                              className="px-1.5 py-0.5 text-[10px] font-semibold rounded"
+                              style={pathwayTypeBadgeStyle(p.type)}
+                            >
+                              {p.type}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Remove secondary */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSecondaryPathway(null);
+                  setSecondaryDropdownOpen(false);
+                  setShowSecondary(false);
+                }}
+                className="shrink-0 w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                title="Remove secondary pathway"
+              >
+                ×
+              </button>
+            </div>
+
+            {secondaryPathwayConflict && (
+              <div className="mt-1.5 flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+                <svg className="mt-0.5 w-3 h-3 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                Not compatible with current pathway
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
 
       {pathwayManagerOpen && currentCourse?.courseId && (
@@ -216,104 +477,117 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
         />
       )}
 
-      <div className="relative mb-4">
-        <button
-          onClick={() => setAddDropdownOpen((prev) => !prev)}
-          className="btn btn-sm w-full gap-2 transition-colors bg-green-600 text-white hover:bg-green-700"
-        >
-          <span>Add</span>
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          </svg>
-        </button>
-        {addDropdownOpen && (
-          <div className="absolute top-full left-0 right-0 mt-1 flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-xl z-50">
+      {showWhiteboardControls && (
+        <>
+          <div className="relative mb-4">
             <button
-              onClick={() => {
-                handlers.addUnit?.();
-                setAddDropdownOpen(false);
-              }}
-              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-blue-50 text-blue-600"
+              onClick={() => setAddDropdownOpen((prev) => !prev)}
+              className="btn btn-sm w-full gap-2 transition-colors bg-green-600 text-white hover:bg-green-700"
             >
-              + Unit
+              <span>Add</span>
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
             </button>
-            <button
-              onClick={() => {
-                handlers.addCLO?.();
-                setAddDropdownOpen(false);
-              }}
-              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-pink-50 text-pink-600"
-            >
-              + CLO Box
-            </button>
-            <button
-              onClick={() => {
-                handlers.addULO?.();
-                setAddDropdownOpen(false);
-              }}
-              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-cyan-50 text-cyan-600"
-            >
-              + ULO Box
-            </button>
-            <button
-              onClick={() => {
-                handlers.addAssessment?.();
-                setAddDropdownOpen(false);
-              }}
-              className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-amber-50 text-amber-700"
-            >
-              + Assessment Box
-            </button>
+            {addDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-xl z-50">
+                <button
+                  onClick={() => {
+                    handlers.addUnit?.();
+                    setAddDropdownOpen(false);
+                  }}
+                  className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-blue-50 text-blue-600"
+                >
+                  + Unit
+                </button>
+                <button
+                  onClick={() => {
+                    handlers.addTeachingActivity?.();
+                    setAddDropdownOpen(false);
+                  }}
+                  className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-indigo-50 text-indigo-600"
+                >
+                  + Teaching Activity
+                </button>
+                <button
+                  onClick={() => {
+                    handlers.addCLO?.();
+                    setAddDropdownOpen(false);
+                  }}
+                  className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-pink-50 text-pink-600"
+                >
+                  + CLO
+                </button>
+                <button
+                  onClick={() => {
+                    handlers.addULO?.();
+                    setAddDropdownOpen(false);
+                  }}
+                  className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-cyan-50 text-cyan-600"
+                >
+                  + ULO Box
+                </button>
+                <button
+                  onClick={() => {
+                    handlers.addAssessment?.();
+                    setAddDropdownOpen(false);
+                  }}
+                  className="rounded px-3 py-1.5 text-xs font-semibold text-left hover:bg-amber-50 text-amber-700"
+                >
+                  + Assessment Box
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Tag Filter</span>
-          {!!selectedTagFilters.length && (
-            <button
-              type="button"
-              className="text-[10px] font-bold text-blue-600 hover:text-blue-700"
-              onClick={onClearTagFilters}
-            >
-              Clear
-            </button>
-          )}
-        </div>
-        <p className="mb-2 text-[11px] text-gray-500">
-          Select tags to show only matching units and their connections.
-        </p>
-        <div className="max-h-28 space-y-1 overflow-y-auto pr-1">
-          {existingTags && existingTags.length > 0 ? (
-            existingTags.map((tag: Tag) => {
-              const checked = selectedTagFilters.includes(tag.tagId);
-              const tagColors = getTagColor(tag.tagId, existingTags);
-              return (
-                <label key={tag.tagId} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-gray-700 hover:bg-white">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 rounded border-gray-300"
-                    style={{ accentColor: tagColors.text }}
-                    checked={checked}
-                    onChange={() => onToggleTagFilter(tag.tagId)}
-                  />
-                  <span
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: tagColors.text }}
-                  />
-                  <span className="truncate" style={{ color: tagColors.label }}>{tag.tagName}</span>
-                </label>
-              );
-            })
-          ) : (
-            <p className="text-xs italic text-gray-400">No tags available.</p>
-          )}
-        </div>
-      </div>
+          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Tag Filter</span>
+              {!!selectedTagFilters.length && (
+                <button
+                  type="button"
+                  className="text-[10px] font-bold text-blue-600 hover:text-blue-700"
+                  onClick={onClearTagFilters}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <p className="mb-2 text-[11px] text-gray-500">
+              Select tags to show only matching units and their connections.
+            </p>
+            <div className="max-h-28 space-y-1 overflow-y-auto pr-1">
+              {existingTags && existingTags.length > 0 ? (
+                existingTags.map((tag: Tag) => {
+                  const checked = selectedTagFilters.includes(tag.tagId);
+                  const tagColors = getTagColor(tag.tagId, existingTags);
+                  return (
+                    <label key={tag.tagId} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-gray-700 hover:bg-white">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 rounded border-gray-300"
+                        style={{ accentColor: tagColors.text }}
+                        checked={checked}
+                        onChange={() => onToggleTagFilter(tag.tagId)}
+                      />
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: tagColors.text }}
+                      />
+                      <span className="truncate" style={{ color: tagColors.label }}>{tag.tagName}</span>
+                    </label>
+                  );
+                })
+              ) : (
+                <p className="text-xs italic text-gray-400">No tags available.</p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Phase Navigation Tabs */}
-      <div className="flex w-full mb-5 bg-gray-100 rounded-lg p-1 border border-gray-200 shadow-inner">
+      {!showWhiteboardControls && <div className="flex w-full mb-5 bg-gray-100 rounded-lg p-1 border border-gray-200 shadow-inner">
         <button 
           className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${sidebarTab === 'units' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-800'}`} 
           onClick={() => { setSidebarTab('units'); setConnectionMode(false); }}
@@ -332,10 +606,10 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
         >
           🎯 Mapping
         </button>
-      </div>
+      </div>}
 
       {/* Scrollable Tab Content */}
-      <div className="overflow-y-auto flex-1">
+      {!showWhiteboardControls && <div className="overflow-y-auto flex-1">
         {/* Phase 1: UNITS */}
         {sidebarTab === 'units' && (
           <div className="animate-fade-in">
@@ -533,7 +807,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
             </div>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 };
