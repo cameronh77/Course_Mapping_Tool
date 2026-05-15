@@ -61,6 +61,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   const [pathwayManagerOpen, setPathwayManagerOpen] = useState(false);
   const [pathwayDropdownOpen, setPathwayDropdownOpen] = useState(false);
   const pathwayDropdownRef = useRef<HTMLDivElement>(null);
+  const addDropdownRef = useRef<HTMLDivElement>(null);
   const handlers = getWhiteboardHandlers();
 
   useEffect(() => {
@@ -73,6 +74,17 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [pathwayDropdownOpen]);
+
+  useEffect(() => {
+    if (!addDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (addDropdownRef.current && !addDropdownRef.current.contains(e.target as Node)) {
+        setAddDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [addDropdownOpen]);
 
   const activePathway = pathways.find((p) => p.pathwayId === activePathwayId) ?? null;
   const pathwayTypeBadge: Record<string, string> = {
@@ -216,7 +228,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
         />
       )}
 
-      <div className="relative mb-4">
+      <div className="relative mb-4" ref={addDropdownRef}>
         <button
           onClick={() => setAddDropdownOpen((prev) => !prev)}
           className="btn btn-sm w-full gap-2 transition-colors bg-green-600 text-white hover:bg-green-700"
@@ -372,7 +384,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
 
             <div className="relative mb-4">
               <label className="block text-gray-500 text-xs font-bold mb-2 uppercase tracking-wide">Search & Drag Existing Units</label>
-              <input type="text" placeholder="Search to drag..." className="shadow-sm border border-gray-300 rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all" value={searchTerm} onChange={handleSearchChange} onFocus={() => setShowSearchResults(true)} />
+              <input type="text" placeholder="Search to drag..." className="shadow-sm border border-gray-300 rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all" value={searchTerm} onChange={handleSearchChange} onFocus={() => setShowSearchResults(true)} onBlur={() => setTimeout(() => setShowSearchResults(false), 150)} />
               
               {showSearchResults && searchTerm.length > 0 && searchResults.length > 0 && (
                 <div className="absolute left-0 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-xl z-50 max-h-60 overflow-y-auto">
