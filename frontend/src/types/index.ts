@@ -56,7 +56,15 @@ export interface Tag {
   courseId: string;
 }
 
-export type PathwayType = "CORE" | "MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION";
+export type PathwayType = "CORE" | "MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION" | "CUSTOM";
+
+export interface CoursePathwayType {
+  id: number;
+  courseId: string;
+  label: string;
+  color: string;
+  isBuiltIn: boolean;
+}
 
 export interface Pathway {
   pathwayId: number;

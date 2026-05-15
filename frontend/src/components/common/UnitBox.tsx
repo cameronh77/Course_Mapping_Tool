@@ -11,6 +11,7 @@ interface UnitBoxProps {
   draggedUnit: number | null;
   selectedUnits: string[];
   connectionMode: boolean;
+  paintMode?: boolean;
   connectionSource: string | null;
   isExpanded: boolean;
   activeTab: 'info' | 'clos' | 'tags';
@@ -20,7 +21,6 @@ interface UnitBoxProps {
   existingTags?: Tag[];
   isBlocked?: boolean;
   isHighlighted?: boolean;
-  pathwayBadge?: { name: string; type: string };
   
   // Event Handlers
   onMouseDown: (e: React.MouseEvent, id: number) => void;
@@ -41,6 +41,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   draggedUnit,
   selectedUnits,
   connectionMode,
+  paintMode = false,
   connectionSource,
   isExpanded,
   activeTab,
@@ -60,7 +61,6 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   existingTags = [],
   isBlocked = false,
   isHighlighted = false,
-  pathwayBadge,
   onStartConnection,
 }) => {
   const unitKey = unit.unitId || unit.id.toString();
@@ -119,8 +119,8 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   return (
     <div
       className={`absolute group transition-shadow duration-200 ${draggedUnit === unit.id ? "shadow-2xl scale-105 z-50" : (isExpanded ? "z-40 shadow-xl" : "z-10 shadow-sm hover:shadow-md")}`}
-      style={{ left: `${unit.x}px`, top: `${unit.y}px`, width: `${unit.width ?? 256}px`, height: '80px', minHeight: '80px' }}
-      onClick={connectionMode && unit.unitId ? () => onClick(unit.unitId!) : undefined}
+      style={{ left: `${unit.x}px`, top: `${unit.y}px`, width: `${unit.width ?? 256}px`, height: isExpanded ? 'auto' : '80px', minHeight: '80px', ...(paintMode ? { cursor: 'inherit' } : {}) }}
+      onClick={(connectionMode || paintMode) && unit.unitId ? () => onClick(unit.unitId!) : undefined}
       onMouseEnter={() => onMouseEnter(unit.unitId || null)}
       onMouseLeave={onMouseLeave}
       onContextMenu={(e) => onContextMenu(e, unitKey)}
@@ -141,7 +141,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
         
         {/* Draggable Header */}
         <div 
-          className="h-20 w-full flex items-center justify-between px-4 cursor-grab active:cursor-grabbing shrink-0 relative" 
+          className={`h-20 w-full flex items-center justify-between px-4 shrink-0 relative ${paintMode ? '' : 'cursor-grab active:cursor-grabbing'}`}
           style={{ backgroundColor: unit.color || "#3B82F6", color: "white" }}
           onMouseDown={(e) => onMouseDown(e, unit.id)} 
           onDoubleClick={() => onDoubleClick(unit.id)}
@@ -169,11 +169,6 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
               )}
             </div>
 
-            {pathwayBadge && (
-              <span className="absolute bottom-1 left-2 text-[8px] font-bold px-1.5 py-0.5 rounded bg-black/25 text-white/90 leading-tight">
-                {pathwayBadge.type === 'CORE' ? '◆' : pathwayBadge.type === 'MAJOR' ? '▲' : pathwayBadge.type === 'MINOR' ? '●' : pathwayBadge.type === 'SPECIALISATION' ? '★' : '→'} {pathwayBadge.name}
-              </span>
-            )}
 
           {/* Intuitive Pips & Badges for collapsed state */}
             {!isExpanded && (
@@ -238,120 +233,116 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
           </div>
         </div>
 
-      </div>
+        {/* Expanded Content Area */}
+        {isExpanded && (
+          <div className="flex flex-col flex-1 bg-white border-t border-gray-100" style={{ height: '180px' }}>
+            {/* Tabs Navigation */}
+            <div className="flex border-b text-xs text-gray-600 bg-gray-50 font-medium">
+              <button 
+                className={`flex-1 py-2 text-center transition-colors ${activeTab === 'info' ? 'bg-white font-bold text-blue-600 border-b-2 border-blue-500' : 'hover:bg-gray-100'}`}
+                onClick={(e) => { e.stopPropagation(); setActiveTab(unit.id, 'info'); }}
+              >
+                Details
+              </button>
+              <button 
+                className={`flex-1 py-2 text-center transition-colors ${activeTab === 'clos' ? 'bg-white font-bold text-blue-600 border-b-2 border-blue-500' : 'hover:bg-gray-100'}`}
+                onClick={(e) => { e.stopPropagation(); setActiveTab(unit.id, 'clos'); }}
+              >
+                Outcomes
+              </button>
+              <button 
+                className={`flex-1 py-2 text-center transition-colors ${activeTab === 'tags' ? 'bg-white font-bold text-blue-600 border-b-2 border-blue-500' : 'hover:bg-gray-100'}`}
+                onClick={(e) => { e.stopPropagation(); setActiveTab(unit.id, 'tags'); }}
+              >
+                Tags
+              </button>
+            </div>
 
-      {/* Side-panel — floats to the right in the inter-column gap */}
-      {isExpanded && (
-        <div
-          className="absolute flex flex-col bg-white border border-gray-200 shadow-xl rounded"
-          style={{
-            left: `${(unit.width ?? 256) + 8}px`,
-            top: 0,
-            width: 272,
-            height: 240,
-            borderLeft: `4px solid ${unit.color || '#3B82F6'}`,
-            zIndex: 50,
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {/* Tabs Navigation */}
-          <div className="flex border-b text-xs text-gray-600 bg-gray-50 font-medium shrink-0">
-            <button
-              className={`flex-1 py-2 text-center transition-colors ${activeTab === 'info' ? 'bg-white font-bold text-blue-600 border-b-2 border-blue-500' : 'hover:bg-gray-100'}`}
-              onClick={(e) => { e.stopPropagation(); setActiveTab(unit.id, 'info'); }}
-            >
-              Details
-            </button>
-            <button
-              className={`flex-1 py-2 text-center transition-colors ${activeTab === 'clos' ? 'bg-white font-bold text-blue-600 border-b-2 border-blue-500' : 'hover:bg-gray-100'}`}
-              onClick={(e) => { e.stopPropagation(); setActiveTab(unit.id, 'clos'); }}
-            >
-              Outcomes
-            </button>
-            <button
-              className={`flex-1 py-2 text-center transition-colors ${activeTab === 'tags' ? 'bg-white font-bold text-blue-600 border-b-2 border-blue-500' : 'hover:bg-gray-100'}`}
-              onClick={(e) => { e.stopPropagation(); setActiveTab(unit.id, 'tags'); }}
-            >
-              Tags
-            </button>
-          </div>
-
-          {/* Tabs Content */}
-          <div className="p-3 text-sm text-gray-800 flex-1 overflow-y-auto cursor-default">
-
-            {activeTab === 'info' && (
-              <div className="flex flex-col h-full">
-                <h3 className="font-bold text-gray-900 leading-tight mb-1">{unit.name}</h3>
-                <p className="text-xs text-gray-500 line-clamp-4 mb-2 flex-1">{unit.description || 'No description provided.'}</p>
-                <div className="mt-auto flex items-center justify-between text-xs font-semibold text-gray-500 bg-gray-50 p-2 rounded border border-gray-100">
-                  <span>Credits: <span className="text-gray-900">{unit.credits || 'N/A'}</span></span>
+            {/* Tabs Content */}
+            <div className="p-3 text-sm text-gray-800 flex-1 overflow-y-auto cursor-default" onMouseDown={(e) => e.stopPropagation()}>
+              
+              {activeTab === 'info' && (
+                <div className="flex flex-col h-full">
+                  <h3 className="font-bold text-gray-900 leading-tight mb-1">{unit.name}</h3>
+                  <p className="text-xs text-gray-500 line-clamp-3 mb-2 flex-1">{unit.description || 'No description provided.'}</p>
+                  <div className="mt-auto flex items-center justify-between text-xs font-semibold text-gray-500 bg-gray-50 p-2 rounded border border-gray-100">
+                    <span>Credits: <span className="text-gray-900">{unit.credits || 'N/A'}</span></span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {activeTab === 'clos' && (
-              <div className="flex flex-col gap-2 h-full">
-                {(unitMappings?.clos || []).length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 content-start">
-                    {(unitMappings?.clos || []).map(clo => {
-                      const cloColor = clo.cloId ? getCLOColor(clo.cloId) : '#9CA3AF';
-                      const borderColor = cloColor + '33';
-                      const bgColor = cloColor + '15';
-                      return (
-                        <button
-                          key={clo.cloId}
-                          type="button"
-                          className="text-xs px-2 py-1 rounded shadow-sm border inline-flex items-center justify-center w-auto"
-                          style={{ backgroundColor: bgColor, borderColor, color: cloColor }}
-                          onMouseEnter={() => setHoveredCLODesc(clo.cloDesc || null)}
-                          onMouseLeave={() => setHoveredCLODesc(null)}
-                        >
-                          {clo.cloId}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {(unitMappings?.clos || []).length > 0 && hoveredCLODesc && (
-                  <div className="mt-1 text-[10px] leading-snug text-gray-700 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 min-h-[44px]">
-                    {hoveredCLODesc}
-                  </div>
-                )}
-                {!(unitMappings?.clos?.length) && (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50/50">
-                    <svg className="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                    <span className="text-[11px] font-medium px-2">Drag Course Outcomes Here (or Right-Click unit)</span>
-                  </div>
-                )}
-              </div>
-            )}
+              {activeTab === 'clos' && (
+                <div className="flex flex-col gap-2 h-full">
+                  {(unitMappings?.clos || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 content-start">
+                      {(unitMappings?.clos || []).map(clo => {
+                        const cloColor = clo.cloId ? getCLOColor(clo.cloId) : '#9CA3AF';
+                        const borderColor = cloColor + '33';
+                        const bgColor = cloColor + '15';
+                        return (
+                          <button
+                            key={clo.cloId}
+                            type="button"
+                            className="text-xs px-2 py-1 rounded shadow-sm border inline-flex items-center justify-center w-auto"
+                            style={{
+                              backgroundColor: bgColor,
+                              borderColor: borderColor,
+                              color: cloColor,
+                            }}
+                            onMouseEnter={() => setHoveredCLODesc(clo.cloDesc || null)}
+                            onMouseLeave={() => setHoveredCLODesc(null)}
+                          >
+                            {clo.cloId}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {(unitMappings?.clos || []).length > 0 && hoveredCLODesc && (
+                    <div className="mt-1 text-[10px] leading-snug text-gray-700 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 min-h-[44px]">
+                      {hoveredCLODesc}
+                    </div>
+                  )}
+                  {!(unitMappings?.clos?.length) && (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50/50">
+                      <svg className="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                      <span className="text-[11px] font-medium px-2">Drag Course Outcomes Here (or Right-Click unit)</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {activeTab === 'tags' && (
-              <div className="flex flex-wrap gap-2 content-start h-full">
-                {(unitMappings?.tags || []).map(tag => {
-                  const tagColors = getTagColor(tag.tagId, existingTags);
-                  return (
-                    <span
-                      key={tag.tagId}
-                      className="font-medium text-xs px-2.5 py-1 rounded-full shadow-sm border"
-                      style={{ backgroundColor: tagColors.bg, borderColor: tagColors.border, color: tagColors.label }}
-                    >
-                      {tag.tagName}
-                    </span>
-                  );
-                })}
-                {!(unitMappings?.tags?.length) && (
-                  <div className="w-full flex-1 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50/50">
-                    <svg className="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
-                    <span className="text-[11px] font-medium px-2">Drag Tags Here (or Right-Click unit)</span>
-                  </div>
-                )}
-              </div>
-            )}
+              {activeTab === 'tags' && (
+                <div className="flex flex-wrap gap-2 content-start h-full">
+                  {(unitMappings?.tags || []).map(tag => {
+                    const tagColors = getTagColor(tag.tagId, existingTags);
+                    return (
+                      <span
+                        key={tag.tagId}
+                        className="font-medium text-xs px-2.5 py-1 rounded-full shadow-sm border"
+                        style={{
+                          backgroundColor: tagColors.bg,
+                          borderColor: tagColors.border,
+                          color: tagColors.label,
+                        }}
+                      >
+                        {tag.tagName}
+                      </span>
+                    );
+                  })}
+                  {!(unitMappings?.tags?.length) && (
+                    <div className="w-full flex-1 flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50/50">
+                      <svg className="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
+                      <span className="text-[11px] font-medium px-2">Drag Tags Here (or Right-Click unit)</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Kebab dropdown rendered outside the overflow-hidden wrapper so items aren't clipped */}
       {menuOpen && (

@@ -51,10 +51,6 @@ export const deletePathway = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Pathway not found" });
     }
 
-    if (pathway.type === "CORE") {
-      return res.status(400).json({ message: "Cannot delete the Core pathway" });
-    }
-
     await prisma.pathway.delete({ where: { pathwayId: parseInt(pathwayId as string) } });
 
     return res.status(200).json({ message: "Pathway deleted" });

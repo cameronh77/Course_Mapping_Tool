@@ -3,6 +3,7 @@
 
 let handlers: {
   addUnit?: () => void;
+  addTeachingActivity?: () => void;
   addCLO?: () => void;
   addULO?: () => void;
   addAssessment?: () => void;
@@ -10,6 +11,7 @@ let handlers: {
 
 export const registerWhiteboardHandlers = (h: {
   addUnit?: () => void;
+  addTeachingActivity?: () => void;
   addCLO?: () => void;
   addULO?: () => void;
   addAssessment?: () => void;

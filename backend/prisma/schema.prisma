@@ -33,6 +33,7 @@ enum PathwayType {
   MINOR
   SPECIALISATION
   ENTRY_POINT
+  CUSTOM
 }
 
 model Course {

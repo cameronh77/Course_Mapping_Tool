@@ -14,6 +14,7 @@ import { useUnitStore } from "../stores/useUnitStore";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useCLOStore } from "../stores/useCLOStore";
 import { useTagStore } from "../stores/useTagStore";
+import { useSearchParams } from "react-router-dom";
 import { usePathwayStore } from "../stores/usePathwayStore";
 import { useNavigate } from "react-router-dom";
 import type {
@@ -30,6 +31,8 @@ import type {
 
 // Grid Layout Constants
 const COL_WIDTH = 600;
+
+const PAINTBRUSH_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='%23111' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18.37 2.63 14 7l-1.59-1.59a2 2 0 0 0-2.82 0L8 7l9 9 1.59-1.59a2 2 0 0 0 0-2.82L17 10l4.37-4.37a2.12 2.12 0 1 0-3-3Z'/%3E%3Cpath d='M9 8c-2 3-4 3.5-7 4l8 8c1-.5 3-1.5 4-7'/%3E%3C/svg%3E") 2 20, crosshair`;
 const ROW_HEIGHT = 150;
 const START_X = 80;
 const START_Y = 80;
@@ -63,13 +66,13 @@ export const CanvasPage: React.FC = () => {
   const [unitBoxes, setUnitBoxes] = useState<UnitBoxType[]>([]);
 
   // UX State - View Mode & Sidebar Navigation Tab
-  const [viewMode, setViewMode] = useState<'grid' | 'theme'>('grid');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewMode = searchParams.get("view") === "theme" ? "theme" : "grid";
   const [sidebarTab, setSidebarTab] = useState<'units' | 'connections' | 'mapping'>('units');
 
   // State for editing
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState<boolean>(false);
-  const [editingJunctionUnit, setEditingJunctionUnit] = useState<JunctionUnit | null>(null);
 
   // State for dragging existing units
   const [draggedUnit, setDraggedUnit] = useState<number | null>(null);
@@ -96,24 +99,28 @@ export const CanvasPage: React.FC = () => {
 
   // ID of unit currently being overlapped by a dragged unit (blocks the drop)
   const [blockedUnitId, setBlockedUnitId] = useState<number | null>(null);
+  const [canvasLoading, setCanvasLoading] = useState(false);
 
   // ID of year-long unit whose reserved "ghost" slot is being hovered
   const [ghostHoverId, setGhostHoverId] = useState<number | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const themeLayoutRef = useRef<ThemeViewStorage | null>(null);
+  const copyBarRef = useRef<HTMLDivElement>(null);
+  const [copyBarOpen, setCopyBarOpen] = useState(false);
+  const [copyBarLoading, setCopyBarLoading] = useState(false);
+  const [paintMode, setPaintMode] = useState(false);
+  const [paintColor, setPaintColor] = useState("#F59E0B");
+  const paintColorInputRef = useRef<HTMLInputElement>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
   const {
     pathways,
     activePathwayId,
+    secondaryPathwayId,
     visiblePathwayIds,
     fetchPathways,
     setActivePathway,
-    togglePathwayVisibility,
-    createPathway,
-    deletePathway,
-    duplicatePathway,
   } = usePathwayStore();
 
   useEffect(() => {
@@ -122,13 +129,44 @@ export const CanvasPage: React.FC = () => {
     }
   }, [currentCourse?.courseId, fetchPathways]);
 
-  const [showPathwayModal, setShowPathwayModal] = useState(false);
-  const [newPathwayName, setNewPathwayName] = useState("");
-  const [newPathwayType, setNewPathwayType] = useState<"MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION">("MAJOR");
+  // Derive the entry points relevant to the currently active pathway so the
+  // horizontal bar knows what to render.
+  const epNormalize = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+  const epBaseName = (name: string) =>
+    epNormalize(name).replace(/\s+entry\s+(level|point)(\s+\d+)?$/i, "").trim();
+  const isEPFor = (entryName: string, parentName: string) =>
+    epBaseName(entryName) === epNormalize(parentName);
 
-  const [duplicatingPathway, setDuplicatingPathway] = useState<{ id: number; name: string; type: string } | null>(null);
-  const [dupName, setDupName] = useState("");
-  const [dupType, setDupType] = useState<"MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION">("MAJOR");
+  const activePathwayObj = useMemo(
+    () => pathways.find((p) => p.pathwayId === activePathwayId) ?? null,
+    [pathways, activePathwayId]
+  );
+
+  const secondaryPathwayObj = useMemo(
+    () => pathways.find((p) => p.pathwayId === secondaryPathwayId) ?? null,
+    [pathways, secondaryPathwayId]
+  );
+
+  // True when every secondary pathway unit sits in a grid cell not already occupied by the primary pathway.
+  const secondaryCompatible = useMemo(() => {
+    if (!secondaryPathwayId) return true;
+    const primary = unitBoxes.filter((u) => u.pathwayId === activePathwayId && !u.unallocated);
+    const secondary = unitBoxes.filter((u) => u.pathwayId === secondaryPathwayId && !u.unallocated);
+    return secondary.every(
+      (su) => !primary.some((pu) => Math.abs(pu.x - su.x) < 1 && Math.abs(pu.y - su.y) < 1)
+    );
+  }, [unitBoxes, activePathwayId, secondaryPathwayId]);
+
+  const entryPointParent = useMemo(() => {
+    if (!activePathwayObj) return null;
+    if (activePathwayObj.type !== "ENTRY_POINT") return activePathwayObj;
+    return pathways.find((p) => p.type !== "ENTRY_POINT" && isEPFor(activePathwayObj.name, p.name)) ?? null;
+  }, [activePathwayObj, pathways]);
+
+  const canvasEntryPoints = useMemo(() => {
+    if (!entryPointParent) return [];
+    return pathways.filter((p) => p.type === "ENTRY_POINT" && isEPFor(p.name, entryPointParent.name));
+  }, [entryPointParent, pathways]);
 
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
@@ -146,6 +184,15 @@ export const CanvasPage: React.FC = () => {
   } = useUnitStore();
 
   const [showCreateForm, setShowCreateForm] = useState<boolean>(false);
+  const setViewMode = (mode: "grid" | "theme") => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (mode === "grid") {
+      nextParams.delete("view");
+    } else {
+      nextParams.set("view", mode);
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const navigate = useNavigate();
   // Context Menu to identify specific units
@@ -157,7 +204,7 @@ export const CanvasPage: React.FC = () => {
   }>({ visible: false, x: 0, y: 0 });
 
   const [viewingTagMenu, setViewingTagMenu] = useState<boolean>(false);
-  const [tagData, setTagData] = useState<{ name: string; id: number }[] | null>(null);
+  const [tagData, setTagData] = useState<CourseLearningOutcome[] | null>(null);
 
   const {
     existingTags,
@@ -262,6 +309,17 @@ export const CanvasPage: React.FC = () => {
   }, [currentCourse?.courseId, visiblePathwayIds]);
 
   useEffect(() => {
+    if (!copyBarOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (copyBarRef.current && !copyBarRef.current.contains(e.target as Node)) {
+        setCopyBarOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [copyBarOpen]);
+
+  useEffect(() => {
     if (!connectionMode) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -275,34 +333,14 @@ export const CanvasPage: React.FC = () => {
 
   useEffect(() => {
     const loadCanvasState = async () => {
-      if (!currentCourse?.courseId) {
+      if (!currentCourse?.courseId || visiblePathwayIds.length === 0) {
         setUnitBoxes([]);
         setUnitMappings({});
         return;
       }
+      setCanvasLoading(true);
       try {
-        // Always load placeholders so we know which courseUnitIds are parked in junctions
-        const phRes = await axiosInstance.get(`/canvas-placeholder?courseId=${currentCourse.courseId}`);
-        const loadedPlaceholders: PlaceholderBox[] = phRes.data || [];
-        setPlaceholderBoxes(loadedPlaceholders);
-
-        // Collect courseUnitIds that are currently parked inside a junction.
-        // Union DB data with local state so in-flight persists don't cause leaks.
-        const extractParked = (boxes: PlaceholderBox[]) =>
-          boxes.flatMap((p) =>
-            (p.unitOptions ?? []).map((u) => u.courseUnitId).filter((id): id is number => id != null)
-          );
-        const parkedIds = new Set<number>([
-          ...extractParked(loadedPlaceholders),
-          ...extractParked(placeholderBoxesRef.current),
-        ]);
-
-        if (visiblePathwayIds.length === 0) {
-          setUnitBoxes([]);
-          setUnitMappings({});
-          return;
-        }
-
+        // Fetch shared lookups + all pathway unit data in parallel
         const [cloRes, uloRes, tagRes, ...pathwayRess] = await Promise.all([
           axiosInstance.get(`/CLO/viewAll/${currentCourse.courseId}`),
           axiosInstance.get(`/ULO/view`),
@@ -328,11 +366,8 @@ export const CanvasPage: React.FC = () => {
           );
 
           for (const cu of courseUnits) {
-            // Skip units that are currently parked inside a junction
-            if (parkedIds.has(cu.id)) continue;
-
             allUnitBoxes.push({
-              id: cu.id, // use actual DB courseUnit id
+              id: cu.id,
               name: cu.unit.unitName,
               unitId: cu.unitId,
               pathwayId: cu.pathwayId,
@@ -365,6 +400,8 @@ export const CanvasPage: React.FC = () => {
         setUnitMappings(mappingsData);
       } catch (error) {
         console.error("Error loading canvas state:", error);
+      } finally {
+        setCanvasLoading(false);
       }
     };
     loadCanvasState();
@@ -379,12 +416,25 @@ export const CanvasPage: React.FC = () => {
     loadCLOs();
   }, [currentCourse?.courseId]);
 
-  // Persist a single placeholder update to the DB
-  const persistPlaceholderUpdate = (id: number, changes: Partial<PlaceholderBox>) => {
-    axiosInstance
-      .put(`/canvas-placeholder/${id}`, changes)
-      .catch((err) => console.error("Failed to save placeholder:", err));
-  };
+  // Load placeholder boxes from localStorage when course changes
+  useEffect(() => {
+    if (!currentCourse?.courseId) return;
+    const saved = localStorage.getItem(`canvas_placeholders_${currentCourse.courseId}`);
+    if (saved) {
+      try { setPlaceholderBoxes(JSON.parse(saved)); } catch { /* ignore */ }
+    } else {
+      setPlaceholderBoxes([]);
+    }
+  }, [currentCourse?.courseId]);
+
+  // Persist placeholder boxes to localStorage whenever they change
+  useEffect(() => {
+    if (!currentCourse?.courseId) return;
+    localStorage.setItem(
+      `canvas_placeholders_${currentCourse.courseId}`,
+      JSON.stringify(placeholderBoxes)
+    );
+  }, [currentCourse?.courseId, placeholderBoxes]);
 
   const companionSlotY = (snappedY: number): number | null => {
     const row = Math.round((snappedY - START_Y - 20) / ROW_HEIGHT);
@@ -403,7 +453,7 @@ export const CanvasPage: React.FC = () => {
   ): boolean => {
     return unitBoxes.some((u) => {
       if (u.id === excludeId) return false;
-      if (u.pathwayId != null && !visiblePathwayIds.includes(u.pathwayId)) return false;
+      if (u.pathwayId !== activePathwayId) return false;
       if (Math.abs(u.x - x) >= 1) return false;
       if (Math.abs(u.y - y) < 1) return true;
       if (u.spansYear) {
@@ -457,11 +507,80 @@ export const CanvasPage: React.FC = () => {
     setViewingTagMenu(false);
   };
 
+  const handleCopyFromEntryPoint = async (sourcePathwayId: number) => {
+    if (!activePathwayId || !currentCourse?.courseId) return;
+    try {
+      const res = await axiosInstance.get(
+        `/course-unit/view?courseId=${currentCourse.courseId}&pathwayId=${sourcePathwayId}`
+      );
+      const sourceUnits: any[] = res.data;
+
+      let copied = 0;
+      let skipped = 0;
+      const newBoxes: UnitBoxType[] = [];
+
+      for (const cu of sourceUnits) {
+        const alreadyExists = unitBoxes.some(
+          (u) => u.unitId === cu.unitId && u.pathwayId === activePathwayId
+        );
+        if (alreadyExists) {
+          skipped++;
+          continue;
+        }
+        try {
+          const createRes = await axiosInstance.post("/course-unit/create", {
+            courseId: currentCourse.courseId,
+            unitId: cu.unitId,
+            semester: cu.semester,
+            year: cu.year,
+            elective: cu.elective,
+            pathwayId: activePathwayId,
+            color: cu.color || "#3B82F6",
+            position: cu.position,
+          });
+          newBoxes.push({
+            id: createRes.data.id,
+            name: cu.unit.unitName,
+            unitId: cu.unitId,
+            pathwayId: activePathwayId,
+            description: cu.unit.unitDesc,
+            credits: cu.unit.credits,
+            semestersOffered: cu.unit.semestersOffered,
+            x: cu.position?.x ?? 0,
+            y: cu.position?.y ?? 0,
+            color: cu.color || "#3B82F6",
+          });
+          copied++;
+        } catch {
+          skipped++;
+        }
+      }
+
+      if (newBoxes.length > 0) {
+        setUnitBoxes((prev) => [...prev, ...newBoxes]);
+      }
+
+      const msg =
+        skipped > 0
+          ? `${copied} unit(s) copied. ${skipped} skipped (already present).`
+          : `${copied} unit(s) copied successfully.`;
+      alert(msg);
+    } catch (err) {
+      console.error("Failed to copy units:", err);
+      alert("Failed to copy units. Please try again.");
+    }
+  };
+
   const handleSaveCanvas = async () => {
     if (!currentCourse?.courseId) return;
     try {
+      // Only include units from the currently selected pathway
+      const unitsInPathway = unitBoxes.filter(
+        (u) => u.pathwayId === activePathwayId && !u.unallocated
+      );
+
       const unitIdsOnCanvas = new Set(
-        unitBoxes
+        unitsInPathway
           .map((u) => u.unitId)
           .filter((id): id is string => typeof id === "string" && id.length > 0)
       );
@@ -479,10 +598,20 @@ export const CanvasPage: React.FC = () => {
             return [unitId, { clos: dedupClos, tags: dedupTags }];
           })
       ) as UnitMappings;
+        // Unallocated units live only on the theme view — don't persist them as course-units.
 
       await axiosInstance.post(
         `/course-unit/tags/${currentCourse.courseId}`,
         { unitMappings: cleanedUnitMappings }
+      );
+
+      // Persist any colour changes applied via the paint tool.
+      await Promise.all(
+        unitsInPathway
+          .filter((u) => u.color)
+          .map((u) =>
+            axiosInstance.put(`/course-unit/update/${u.id}`, { color: u.color })
+          )
       );
 
       if (themeLayoutRef.current) {
@@ -632,6 +761,114 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
+  // Always-current ref so drag-close handlers don't capture stale state
+  const placeholderBoxesRef = useRef(placeholderBoxes);
+  placeholderBoxesRef.current = placeholderBoxes;
+
+  // ── Drag unit OUT of a junction ────────────────────────────────────────────
+  const handleDragUnitOut = (junctionId: number, unit: JunctionUnit, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Remove from junction immediately
+    setPlaceholderBoxes((prev) =>
+      prev.map((p) =>
+        p.id === junctionId
+          ? { ...p, unitOptions: (p.unitOptions ?? []).filter((u) => u.unitId !== unit.unitId) }
+          : p
+      )
+    );
+
+    const asUnit: Unit = {
+      unitId: unit.unitId,
+      unitName: unit.unitName,
+      unitDesc: unit.unitDesc ?? '',
+      credits: unit.credits ?? 0,
+      semestersOffered: unit.semestersOffered ?? [],
+    };
+
+    setDraggedNewUnit({ unit: asUnit, x: e.clientX, y: e.clientY });
+
+    const handleMove = (me: MouseEvent) => {
+      setDraggedNewUnit((prev) => prev ? { ...prev, x: me.clientX, y: me.clientY } : null);
+    };
+
+    const handleUp = (ue: MouseEvent) => {
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const insideCanvas =
+          ue.clientX >= rect.left && ue.clientX <= rect.right &&
+          ue.clientY >= rect.top  && ue.clientY <= rect.bottom;
+
+        if (insideCanvas) {
+          const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
+
+          // Check if dropped on another junction
+          const otherJunction = placeholderBoxesRef.current.find((p) => {
+            if (p.id === junctionId || p.placeholderType !== 'JUNCTION') return false;
+            const approxH = 80 + ((p.unitOptions?.length ?? 0) + (p.options?.length ?? 0)) * 60 + 48;
+            return (
+              canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
+              canvasCoords.y >= p.y && canvasCoords.y <= p.y + approxH
+            );
+          });
+
+          if (otherJunction) {
+            setPlaceholderBoxes((prev) =>
+              prev.map((p) =>
+                p.id === otherJunction.id
+                  ? { ...p, unitOptions: [...(p.unitOptions ?? []), unit] }
+                  : p
+              )
+            );
+          } else {
+            // Place on canvas only if not already there in this pathway
+            const alreadyOnCanvas = unitBoxes.some(
+              (u) => u.unitId === asUnit.unitId && u.pathwayId === (unit.pathwayId ?? activePathwayId)
+            );
+            if (!alreadyOnCanvas) {
+              addUnitToCanvasAtPos(asUnit, canvasCoords.x - UNIT_BOX_WIDTH / 2, canvasCoords.y - 40, unit.color);
+            }
+          }
+        } else {
+          // Dropped outside canvas — put back in same junction
+          setPlaceholderBoxes((prev) =>
+            prev.map((p) =>
+              p.id === junctionId
+                ? { ...p, unitOptions: [...(p.unitOptions ?? []), unit] }
+                : p
+            )
+          );
+        }
+      }
+      setDraggedNewUnit(null);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
+  // Snap canvas coords to the nearest grid cell
+  const snapToGrid = (x: number, y: number) => {
+    const semestersPerYear =
+      Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
+    const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
+    const col = Math.max(0, Math.round((x - START_X) / COL_WIDTH));
+    let closestRow = 0;
+    let minDist = Infinity;
+    for (let r = 0; r < totalRows; r++) {
+      const dist = Math.abs(y - (START_Y + r * ROW_HEIGHT + 20));
+      if (dist < minDist) { minDist = dist; closestRow = r; }
+    }
+    return {
+      x: START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2,
+      y: START_Y + closestRow * ROW_HEIGHT + 20,
+    };
+  };
+
   // Add a search-result unit directly to a theme group without placing it on the timeline.
   const addUnallocatedUnitToTheme = (selectedUnit: Unit, tag: Tag) => {
     const existing = unitBoxes.find((u) => u.unitId === selectedUnit.unitId);
@@ -729,160 +966,6 @@ export const CanvasPage: React.FC = () => {
     return null;
   };
 
-  // Always-current ref so drag-close handlers don't capture stale state
-  const placeholderBoxesRef = useRef(placeholderBoxes);
-  placeholderBoxesRef.current = placeholderBoxes;
-
-  // ── Restore a junction unit back to the canvas (or create fresh if it never was) ──
-  const restoreOrPlaceUnit = (unit: JunctionUnit, asUnit: Unit, rawX: number, rawY: number) => {
-    if (unit.courseUnitId) {
-      // Unit has an existing DB record — snap and restore without re-creating
-      const snapped = snapToGrid(rawX, rawY);
-      const restoredBox: UnitBoxType = {
-        id: unit.courseUnitId,
-        name: unit.unitName,
-        unitId: unit.unitId,
-        pathwayId: unit.pathwayId,
-        description: unit.unitDesc,
-        credits: unit.credits,
-        semestersOffered: unit.semestersOffered,
-        x: snapped.x,
-        y: snapped.y,
-        color: unit.color,
-      };
-      setUnitBoxes((prev) => [...prev, restoredBox]);
-      const col = Math.max(0, Math.round((snapped.x - START_X) / COL_WIDTH));
-      const semester = snapped.y < START_Y + MAX_UNITS_PER_SEM * ROW_HEIGHT ? 1 : 2;
-      axiosInstance
-        .put(`/course-unit/update/${unit.courseUnitId}`, {
-          semester,
-          year: col + 1,
-          position: { x: snapped.x, y: snapped.y },
-        })
-        .catch((err) => console.error("Failed to restore unit position:", err));
-    } else {
-      // Sidebar-sourced unit — create a new course-unit record
-      addUnitToCanvasAtPos(asUnit, rawX, rawY, unit.color);
-    }
-  };
-
-  // ── Drag unit OUT of a junction ────────────────────────────────────────────
-  // Uses a movement threshold so that a click/double-click never accidentally
-  // removes the unit — the drag only commits once the mouse has moved 5px.
-  const handleDragUnitOut = (junctionId: number, unit: JunctionUnit, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const DRAG_THRESHOLD = 5;
-    let dragCommitted = false;
-
-    const asUnit: Unit = {
-      unitId: unit.unitId,
-      unitName: unit.unitName,
-      unitDesc: unit.unitDesc ?? '',
-      credits: unit.credits ?? 0,
-      semestersOffered: unit.semestersOffered ?? [],
-    };
-
-    // Options after removing this unit — computed lazily when drag commits
-    let removedOptions: JunctionUnit[] = [];
-
-    const handleMove = (me: MouseEvent) => {
-      const dx = me.clientX - startX;
-      const dy = me.clientY - startY;
-
-      if (!dragCommitted && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD) {
-        // Commit the drag: remove from junction state + persist
-        dragCommitted = true;
-        removedOptions = (placeholderBoxesRef.current.find((p) => p.id === junctionId)?.unitOptions ?? [])
-          .filter((u) => u.unitId !== unit.unitId);
-        setPlaceholderBoxes((prev) =>
-          prev.map((p) => p.id === junctionId ? { ...p, unitOptions: removedOptions } : p)
-        );
-        persistPlaceholderUpdate(junctionId, { unitOptions: removedOptions });
-        setDraggedNewUnit({ unit: asUnit, x: me.clientX, y: me.clientY });
-      } else if (dragCommitted) {
-        setDraggedNewUnit((prev) => prev ? { ...prev, x: me.clientX, y: me.clientY } : null);
-      }
-    };
-
-    const handleUp = (ue: MouseEvent) => {
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-
-      if (!dragCommitted) {
-        // Mouse never moved enough — treat as a click, do nothing
-        setDraggedNewUnit(null);
-        return;
-      }
-
-      if (canvasRef.current) {
-        const rect = canvasRef.current.getBoundingClientRect();
-        const insideCanvas =
-          ue.clientX >= rect.left && ue.clientX <= rect.right &&
-          ue.clientY >= rect.top  && ue.clientY <= rect.bottom;
-
-        if (insideCanvas) {
-          const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
-
-          // Check if dropped on another junction (OR or AND)
-          const otherJunction = placeholderBoxesRef.current.find((p) => {
-            if (p.id === junctionId || (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND')) return false;
-            const approxH = 80 + ((p.unitOptions?.length ?? 0) + (p.options?.length ?? 0)) * 60 + 48;
-            return (
-              canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
-              canvasCoords.y >= p.y && canvasCoords.y <= p.y + approxH
-            );
-          });
-
-          if (otherJunction) {
-            const alreadyIn = (otherJunction.unitOptions ?? []).some((u) => u.unitId === unit.unitId);
-            const newOptions = alreadyIn ? (otherJunction.unitOptions ?? []) : [...(otherJunction.unitOptions ?? []), unit];
-            if (!alreadyIn) {
-              setPlaceholderBoxes((prev) =>
-                prev.map((p) => p.id === otherJunction.id ? { ...p, unitOptions: newOptions } : p)
-              );
-              persistPlaceholderUpdate(otherJunction.id, { unitOptions: newOptions });
-            }
-          } else {
-            restoreOrPlaceUnit(unit, asUnit, canvasCoords.x - UNIT_BOX_WIDTH / 2, canvasCoords.y - 40);
-          }
-        } else {
-          // Dropped outside canvas — put back in same junction
-          const restoredOptions = [...removedOptions, unit];
-          setPlaceholderBoxes((prev) =>
-            prev.map((p) => p.id === junctionId ? { ...p, unitOptions: restoredOptions } : p)
-          );
-          persistPlaceholderUpdate(junctionId, { unitOptions: restoredOptions });
-        }
-      }
-      setDraggedNewUnit(null);
-    };
-
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleUp);
-  };
-
-  // Snap canvas coords to the nearest grid cell
-  const snapToGrid = (x: number, y: number) => {
-    const semestersPerYear =
-      Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
-    const totalRows = semestersPerYear * MAX_UNITS_PER_SEM;
-    const col = Math.max(0, Math.round((x - START_X) / COL_WIDTH));
-    let closestRow = 0;
-    let minDist = Infinity;
-    for (let r = 0; r < totalRows; r++) {
-      const dist = Math.abs(y - (START_Y + r * ROW_HEIGHT + 20));
-      if (dist < minDist) { minDist = dist; closestRow = r; }
-    }
-    return {
-      x: START_X + col * COL_WIDTH + (COL_WIDTH - UNIT_BOX_WIDTH) / 2,
-      y: START_Y + closestRow * ROW_HEIGHT + 20,
-    };
-  };
-
   const handleNewUnitMouseDown = (e: React.MouseEvent, unit: Unit) => {
     e.preventDefault();
     setDraggedNewUnit({
@@ -927,11 +1010,11 @@ export const CanvasPage: React.FC = () => {
             canvasRef.current
           );
 
-          // Check if dropped onto a junction placeholder (OR or AND)
+          // Check if dropped onto a junction placeholder
           const PLACEHOLDER_W = UNIT_BOX_WIDTH; // same as placeholder width
           const junctionHit = placeholderBoxesRef.current.find((p) => {
-            if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
-            const approxHeight = 40 + (p.unitOptions?.length ?? 0) * 52 + 36;
+            if (p.placeholderType !== 'JUNCTION') return false;
+            const approxHeight = 40 + (p.options?.length ?? 2) * 52 + 36;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + PLACEHOLDER_W &&
               canvasCoords.y >= p.y && canvasCoords.y <= p.y + approxHeight
@@ -946,14 +1029,13 @@ export const CanvasPage: React.FC = () => {
               credits: unit.credits,
               semestersOffered: unit.semestersOffered,
             };
-            const alreadyInJunction = (junctionHit.unitOptions ?? []).some((u) => u.unitId === unit.unitId);
-            if (!alreadyInJunction) {
-              const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
-              setPlaceholderBoxes((prev) =>
-                prev.map((p) => p.id === junctionHit.id ? { ...p, unitOptions: newUnitOptions } : p)
-              );
-              persistPlaceholderUpdate(junctionHit.id, { unitOptions: newUnitOptions });
-            }
+            setPlaceholderBoxes((prev) =>
+              prev.map((p) =>
+                p.id === junctionHit.id
+                  ? { ...p, unitOptions: [...(p.unitOptions ?? []), jUnit] }
+                  : p
+              )
+            );
           } else {
             addUnitToCanvasAtPos(
               unit,
@@ -991,33 +1073,16 @@ export const CanvasPage: React.FC = () => {
         ) {
           const coords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
           const snapped = snapToGrid(coords.x, coords.y);
-          const tempId = Date.now();
           const newBox: PlaceholderBox = {
-            id: tempId,
-            pathwayId: activePathwayId,
+            id: Date.now(),
             placeholderType: type,
             x: snapped.x,
             y: snapped.y,
             ...(type === 'CORE'     ? { label: 'Core Unit' }
               : type === 'ELECTIVE' ? { label: 'Elective' }
-              : type === 'AND'      ? {}
-              :                       {}),
+              :                       { options: ['Option A', 'Option B'] }),
           };
           setPlaceholderBoxes((prev) => [...prev, newBox]);
-
-          if (currentCourse?.courseId) {
-            axiosInstance
-              .post('/canvas-placeholder', { courseId: currentCourse.courseId, pathwayId: activePathwayId, ...newBox })
-              .then((res) => {
-                setPlaceholderBoxes((prev) =>
-                  prev.map((p) => p.id === tempId ? { ...p, id: res.data.id } : p)
-                );
-              })
-              .catch((err) => {
-                console.error("Failed to create placeholder:", err);
-                setPlaceholderBoxes((prev) => prev.filter((p) => p.id !== tempId));
-              });
-          }
         }
       }
       setDraggedPlaceholder(null);
@@ -1064,7 +1129,6 @@ export const CanvasPage: React.FC = () => {
       setPlaceholderBoxes((prev) =>
         prev.map((p) => p.id === id ? { ...p, x: snapped.x, y: snapped.y } : p)
       );
-      persistPlaceholderUpdate(id, { x: snapped.x, y: snapped.y });
     };
 
     document.addEventListener("mousemove", handleMove);
@@ -1080,13 +1144,19 @@ export const CanvasPage: React.FC = () => {
     if (editingId) {
       const editedUnit = unitBoxes.find((unit) => unit.id === editingId);
       if (editedUnit) {
-        updateUnit(editedUnit.unitId!, {
-          unitName: formData.unitName || editedUnit.name,
-          unitDesc: formData.unitDesc || editedUnit.description,
-          credits: formData.credits ?? editedUnit.credits,
-          semestersOffered:
-            formData.semestersOffered || editedUnit.semestersOffered,
-        })
+        const newColor = formData.color || editedUnit.color;
+        Promise.all([
+          updateUnit(editedUnit.unitId!, {
+            unitName: formData.unitName || editedUnit.name,
+            unitDesc: formData.unitDesc || editedUnit.description,
+            credits: formData.credits || editedUnit.credits,
+            semestersOffered:
+              formData.semestersOffered || editedUnit.semestersOffered,
+          }),
+          newColor !== editedUnit.color
+            ? axiosInstance.put(`/course-unit/update/${editingId}`, { color: newColor })
+            : Promise.resolve(),
+        ])
           .then(() => {
             setUnitBoxes(
               unitBoxes.map((unit) =>
@@ -1096,10 +1166,10 @@ export const CanvasPage: React.FC = () => {
                       name: formData.unitName || unit.name,
                       unitId: formData.unitId || unit.unitId,
                       description: formData.unitDesc || unit.description,
-                      credits: formData.credits ?? unit.credits,
+                      credits: formData.credits || unit.credits,
                       semestersOffered:
                         formData.semestersOffered || unit.semestersOffered,
-                      color: formData.color || unit.color,
+                      color: newColor,
                     }
                   : unit
               )
@@ -1115,42 +1185,6 @@ export const CanvasPage: React.FC = () => {
   function cancelEdit() {
     setEditingId(null);
     setShowForm(false);
-  }
-
-  async function handleJunctionUnitFormSave(formData: UnitFormData) {
-    if (!editingJunctionUnit) return;
-    try {
-      await updateUnit(editingJunctionUnit.unitId, {
-        unitName: formData.unitName ?? editingJunctionUnit.unitName,
-        unitDesc: formData.unitDesc ?? editingJunctionUnit.unitDesc ?? '',
-        credits: formData.credits ?? editingJunctionUnit.credits ?? 0,
-        semestersOffered: formData.semestersOffered ?? editingJunctionUnit.semestersOffered ?? [],
-      });
-      // Update the unit data inside every junction that contains it
-      setPlaceholderBoxes((prev) =>
-        prev.map((p) => {
-          const updated = (p.unitOptions ?? []).map((u) =>
-            u.unitId === editingJunctionUnit.unitId
-              ? {
-                  ...u,
-                  unitName: formData.unitName ?? u.unitName,
-                  unitDesc: formData.unitDesc ?? u.unitDesc,
-                  credits: formData.credits ?? u.credits,
-                  semestersOffered: formData.semestersOffered ?? u.semestersOffered,
-                  color: formData.color ?? u.color,
-                }
-              : u
-          );
-          if (updated === p.unitOptions) return p;
-          persistPlaceholderUpdate(p.id, { unitOptions: updated });
-          return { ...p, unitOptions: updated };
-        })
-      );
-      setEditingJunctionUnit(null);
-    } catch (err) {
-      console.error('Error updating junction unit:', err);
-      alert('Failed to save unit.');
-    }
   }
 
   function handleMouseDownCanvas(e: React.MouseEvent) {
@@ -1193,6 +1227,7 @@ export const CanvasPage: React.FC = () => {
 
   function handleMouseDown(e: React.MouseEvent, id: number) {
     setContextMenu({ visible: false, x: 0, y: 0, unitId: undefined });
+    if (paintMode) return;
     e.preventDefault();
     e.stopPropagation();
 
@@ -1256,7 +1291,6 @@ export const CanvasPage: React.FC = () => {
         }
         const blocker = prevUnits.find((other) => {
           if (other.id === id) return false;
-          if (other.pathwayId != null && !visiblePathwayIds.includes(other.pathwayId)) return false;
           if (Math.abs(other.x - snappedX) >= 1) return false;
           const otherYs = [other.y];
           if (other.spansYear) {
@@ -1279,12 +1313,12 @@ export const CanvasPage: React.FC = () => {
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
 
-      // Check if dropped onto a junction placeholder (OR or AND)
+      // Check if dropped onto a junction placeholder
       if (canvasRef.current && unit?.unitId) {
         const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
         const junctionHit = placeholderBoxesRef.current.find((p) => {
-          if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
-          const approxHeight = 80 + (p.unitOptions?.length ?? 0) * 52 + 36;
+          if (p.placeholderType !== 'JUNCTION') return false;
+          const approxHeight = 80 + (p.options?.length ?? 2) * 52 + 36;
           return (
             canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
             canvasCoords.y >= p.y && canvasCoords.y <= p.y + approxHeight
@@ -1300,27 +1334,22 @@ export const CanvasPage: React.FC = () => {
             semestersOffered: unit.semestersOffered,
             color: unit.color,
             pathwayId: unit.pathwayId,
-            courseUnitId: id, // preserve DB id so we can restore without re-creating
           };
-          const alreadyInJunction = (junctionHit.unitOptions ?? []).some((u) => u.unitId === unit.unitId!);
-          if (!alreadyInJunction) {
-            const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
-            setPlaceholderBoxes((prev) =>
-              prev.map((p) => p.id === junctionHit.id ? { ...p, unitOptions: newUnitOptions } : p)
-            );
-            persistPlaceholderUpdate(junctionHit.id, { unitOptions: newUnitOptions });
-            // Hide from canvas state only — keep the DB record so we can restore it later
-            setUnitBoxes((prev) => prev.filter((u) => u.id !== id));
-            setUnitMappings((prev) => {
-              const next = { ...prev };
-              delete next[unit.unitId!];
-              return next;
-            });
-            setDraggedUnit(null);
-            setBlockedUnitId(null);
-            setTimeout(() => setIsDragging(false), 100);
-            return;
-          }
+          setPlaceholderBoxes((prev) =>
+            prev.map((p) =>
+              p.id === junctionHit.id
+                ? { ...p, unitOptions: [...(p.unitOptions ?? []), jUnit] }
+                : p
+            )
+          );
+          // Revert unit back to where it came from
+          setUnitBoxes((prev) =>
+            prev.map((u) => u.id === id ? { ...u, x: originalPos.x, y: originalPos.y } : u)
+          );
+          setDraggedUnit(null);
+          setBlockedUnitId(null);
+          setTimeout(() => setIsDragging(false), 100);
+          return;
         }
       }
 
@@ -1510,7 +1539,14 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
+  const handlePaintUnit = (unitId: string) => {
+    setUnitBoxes((prev) =>
+      prev.map((u) => (u.unitId === unitId || u.id.toString() === unitId ? { ...u, color: paintColor } : u))
+    );
+  };
+
   const handleUnitClickForConnection = (unitId: string) => {
+    if (paintMode) { handlePaintUnit(unitId); return; }
     if (!connectionMode) return;
     if (!connectionSource) setConnectionSource(unitId);
     else handleCreateRelationship(unitId);
@@ -1631,13 +1667,7 @@ export const CanvasPage: React.FC = () => {
     setDrawerUnitId((prev) => (prev === unitId ? null : unitId));
   };
 
-  const getPathwayBadge = (pathwayId: number | undefined) => {
-    if (visiblePathwayIds.length <= 1 || !pathwayId) return undefined;
-    const p = pathways.find((pw) => pw.pathwayId === pathwayId);
-    return p ? { name: p.name, type: p.type } : undefined;
-  };
-
-  const yearsCount =
+const yearsCount =
     Number((currentCourse as any)?.expectedDuration) || DEFAULT_YEARS;
   const semPerYear =
     Number((currentCourse as any)?.numberTeachingPeriods) || DEFAULT_SEMESTERS;
@@ -1694,6 +1724,8 @@ export const CanvasPage: React.FC = () => {
               credits: u.credits ?? 0,
               semestersOffered: u.semestersOffered ?? [],
             }))}
+          secondaryPathwayConflict={secondaryPathwayId !== null && !secondaryCompatible}
+          onCopyFromPathway={handleCopyFromEntryPoint}
           onDeleteUnallocated={(unitId) => {
             const target = unitBoxes.find((u) => u.unitId === unitId && u.unallocated);
             if (target) deleteUnit(target.id);
@@ -1701,7 +1733,145 @@ export const CanvasPage: React.FC = () => {
         />
       </div>
 
-      <div ref={canvasRef} className={`flex-1 bg-white overflow-auto relative ${connectionMode ? 'cursor-crosshair' : ''}`} style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+      <div ref={canvasRef} className={`flex-1 bg-white overflow-auto relative ${connectionMode ? 'cursor-crosshair' : ''}`} style={{ userSelect: "none", cursor: paintMode ? PAINTBRUSH_CURSOR : undefined }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+        {/* Persistent top bar — always visible in both Timeline and Theme view */}
+        <div className="sticky top-0 left-0 z-50 flex items-center gap-2 px-3 py-2 bg-white/90 backdrop-blur-sm border-b border-gray-100">
+          {/* Active pathway — always shown */}
+          {activePathwayObj && (
+            <span className="flex items-center gap-1.5 shrink-0">
+              {secondaryPathwayObj && (
+                <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-blue-500 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
+                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H7v-3.414a2 2 0 01.586-1.414z" />
+                  </svg>
+                  Editing
+                </span>
+              )}
+              <span className="text-xs font-semibold text-gray-700">
+                {entryPointParent?.name ?? activePathwayObj.name}
+              </span>
+            </span>
+          )}
+
+          {/* Secondary pathway — only shown when selected */}
+          {secondaryPathwayObj && (
+            <>
+              <span className="text-gray-300 text-xs mx-0.5">|</span>
+              <span className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded">
+                  Overlay
+                </span>
+                <span className="text-xs font-medium text-gray-400">
+                  {secondaryPathwayObj.name}
+                </span>
+              </span>
+            </>
+          )}
+
+          {/* Paintbrush tool — pushed to the right */}
+          <div className="ml-auto flex items-center gap-1.5 shrink-0">
+            {/* Hidden native colour picker */}
+            <input
+              ref={paintColorInputRef}
+              type="color"
+              value={paintColor}
+              onChange={(e) => setPaintColor(e.target.value)}
+              className="sr-only"
+              tabIndex={-1}
+            />
+            {/* Colour swatch — click to open picker */}
+            {paintMode && (
+              <button
+                type="button"
+                onClick={() => paintColorInputRef.current?.click()}
+                className="w-5 h-5 rounded-full border-2 border-white shadow ring-1 ring-gray-300 shrink-0 transition-transform hover:scale-110"
+                style={{ backgroundColor: paintColor }}
+                title="Change paint colour"
+              />
+            )}
+            {/* Paintbrush toggle */}
+            <button
+              type="button"
+              onClick={() => setPaintMode((m) => !m)}
+              title={paintMode ? "Exit paint mode" : "Paint unit colours"}
+              className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors ${
+                paintMode ? "text-white shadow-sm" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+              }`}
+              style={paintMode ? { backgroundColor: paintColor } : undefined}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}>
+                <path d="M18.37 2.63 14 7l-1.59-1.59a2 2 0 0 0-2.82 0L8 7l9 9 1.59-1.59a2 2 0 0 0 0-2.82L17 10l4.37-4.37a2.12 2.12 0 1 0-3-3Z" />
+                <path d="M9 8c-2 3-4 3.5-7 4l8 8c1-.5 3-1.5 4-7" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Entry level selectors — only when entry points exist */}
+          {canvasEntryPoints.length > 0 && (
+            <>
+              <span className="text-gray-300 text-xs">·</span>
+              <span className="text-xs text-gray-400 font-medium">Entry:</span>
+              {canvasEntryPoints.map((p) => {
+                const isActive = p.pathwayId === activePathwayId;
+                const level = p.name.match(/\d+$/)?.[0] ?? "1";
+                return (
+                  <button
+                    key={p.pathwayId}
+                    type="button"
+                    onClick={() => setActivePathway(p.pathwayId)}
+                    title={p.name}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                      isActive
+                        ? "bg-gray-900 text-white shadow-sm"
+                        : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
+                    }`}
+                  >
+                    {level}
+                  </button>
+                );
+              })}
+              {(() => {
+                const siblings = canvasEntryPoints.filter((p) => p.pathwayId !== activePathwayId);
+                if (siblings.length === 0) return null;
+                return (
+                  <div className="relative ml-1" ref={copyBarRef}>
+                    <button
+                      type="button"
+                      disabled={copyBarLoading}
+                      onClick={() => setCopyBarOpen((o) => !o)}
+                      className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600 rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span>⧉</span>
+                      {copyBarLoading ? "Copying…" : "Copy from…"}
+                    </button>
+                    {copyBarOpen && (
+                      <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 py-1 min-w-[140px]">
+                        {siblings.map((p) => {
+                          const level = p.name.match(/\d+$/)?.[0] ?? p.name;
+                          return (
+                            <button
+                              key={p.pathwayId}
+                              type="button"
+                              onClick={async () => {
+                                setCopyBarOpen(false);
+                                setCopyBarLoading(true);
+                                await handleCopyFromEntryPoint(p.pathwayId);
+                                setCopyBarLoading(false);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 transition-colors"
+                            >
+                              Entry Point {level}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
         {connectionMode && (
           <div
             onMouseDown={handleConnectionToolbarMouseDown}
@@ -1744,206 +1914,6 @@ export const CanvasPage: React.FC = () => {
             </button>
           </div>
         )}
-        {/* View Mode Toggle */}
-        <div className="sticky top-0 left-0 z-50 flex items-center gap-1 p-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
-          {/* View mode buttons */}
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'grid' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
-            onClick={() => setViewMode('grid')}
-          >
-            Timeline View
-          </button>
-          <button
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'theme' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'}`}
-            onClick={() => setViewMode('theme')}
-          >
-            Theme View
-          </button>
-
-          {/* Divider */}
-          <div className="w-px h-5 bg-gray-200 mx-1" />
-
-          {/* Pathway toggles */}
-          <span className="text-xs text-gray-400 font-medium mr-1">Pathways:</span>
-          {pathways.map((pathway) => {
-            const isVisible = visiblePathwayIds.includes(pathway.pathwayId);
-            const isActive = activePathwayId === pathway.pathwayId;
-            return (
-              <button
-                key={pathway.pathwayId}
-                onClick={() => togglePathwayVisibility(pathway.pathwayId)}
-                title={
-                  pathway.type === 'CORE'
-                    ? isActive ? 'Core pathway (always visible, currently editing)' : 'Core pathway (always visible) — click to set as editing target'
-                    : isActive
-                    ? 'Currently visible & editing — click again to hide'
-                    : isVisible
-                    ? 'Visible — click to set as editing target, click again to hide'
-                    : 'Hidden — click to show'
-                }
-                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${
-                  isActive
-                    ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-300'
-                    : isVisible
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600'
-                }`}
-              >
-                {isVisible ? (
-                  <svg className="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
-                    <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd"/>
-                  </svg>
-                ) : (
-                  <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 4.411m0 0L21 21"/>
-                  </svg>
-                )}
-                {pathway.type === 'CORE' && <span className="text-[10px]">◆</span>}
-                {pathway.type === 'MAJOR' && <span className="text-[10px]">▲</span>}
-                {pathway.type === 'MINOR' && <span className="text-[10px]">●</span>}
-                {pathway.type === 'SPECIALISATION' && <span className="text-[10px]">★</span>}
-                {pathway.type === 'ENTRY_POINT' && <span className="text-[10px]">→</span>}
-                {pathway.name}
-                {isActive && <span className="text-[9px] ml-0.5 opacity-75">✏</span>}
-                <span
-                  role="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const srcType = pathway.type === 'CORE' ? 'MAJOR' : pathway.type as "MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION";
-                    setDuplicatingPathway({ id: pathway.pathwayId, name: pathway.name, type: srcType });
-                    setDupName(`Copy of ${pathway.name}`);
-                    setDupType(srcType);
-                  }}
-                  className="ml-1 opacity-60 hover:opacity-100 leading-none"
-                  title="Duplicate pathway"
-                >
-                  ⧉
-                </span>
-                {pathway.type !== 'CORE' && (
-                  <span
-                    role="button"
-                    onClick={(e) => { e.stopPropagation(); deletePathway(pathway.pathwayId); }}
-                    className="ml-0.5 opacity-60 hover:opacity-100 hover:text-red-300 leading-none"
-                    title="Delete pathway"
-                  >
-                    ×
-                  </span>
-                )}
-              </button>
-            );
-          })}
-
-          {/* Add pathway button */}
-          <button
-            onClick={() => setShowPathwayModal(true)}
-            className="px-2 py-1.5 text-xs font-bold rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-all"
-            title="Add pathway"
-          >
-            + Pathway
-          </button>
-        </div>
-
-        {/* Add Pathway Modal */}
-        {showPathwayModal && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[200] backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-lg shadow-2xl w-80">
-              <h3 className="text-sm font-bold text-gray-800 mb-4">Add Pathway</h3>
-              <div className="flex flex-col gap-3">
-                <input
-                  type="text"
-                  placeholder="Pathway name (e.g. Software Engineering)"
-                  value={newPathwayName}
-                  onChange={(e) => setNewPathwayName(e.target.value)}
-                  className="input input-bordered input-sm w-full"
-                />
-                <select
-                  value={newPathwayType}
-                  onChange={(e) => setNewPathwayType(e.target.value as "MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION")}
-                  className="select select-bordered select-sm w-full"
-                >
-                  <option value="MAJOR">Major</option>
-                  <option value="MINOR">Minor</option>
-                  <option value="SPECIALISATION">Specialisation</option>
-                  <option value="ENTRY_POINT">Entry Point</option>
-                </select>
-                <div className="flex gap-2 justify-end mt-1">
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => { setShowPathwayModal(false); setNewPathwayName(""); }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    className="btn btn-sm btn-primary"
-                    disabled={!newPathwayName.trim()}
-                    onClick={async () => {
-                      if (!newPathwayName.trim() || !currentCourse?.courseId) return;
-                      const pathway = await createPathway(newPathwayName.trim(), newPathwayType, currentCourse.courseId);
-                      setActivePathway(pathway.pathwayId);
-                      setShowPathwayModal(false);
-                      setNewPathwayName("");
-                    }}
-                  >
-                    Create
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Duplicate Pathway Modal */}
-        {duplicatingPathway && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[200] backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-lg shadow-2xl w-80">
-              <h3 className="text-sm font-bold text-gray-800 mb-1">Duplicate Pathway</h3>
-              <p className="text-xs text-gray-500 mb-4">
-                All units from <span className="font-semibold text-gray-700">"{duplicatingPathway.name}"</span> will be copied into the new pathway.
-              </p>
-              <div className="flex flex-col gap-3">
-                <input
-                  type="text"
-                  placeholder="New pathway name"
-                  value={dupName}
-                  onChange={(e) => setDupName(e.target.value)}
-                  className="input input-bordered input-sm w-full"
-                  autoFocus
-                />
-                <select
-                  value={dupType}
-                  onChange={(e) => setDupType(e.target.value as "MAJOR" | "MINOR" | "ENTRY_POINT" | "SPECIALISATION")}
-                  className="select select-bordered select-sm w-full"
-                >
-                  <option value="MAJOR">Major</option>
-                  <option value="MINOR">Minor</option>
-                  <option value="SPECIALISATION">Specialisation</option>
-                  <option value="ENTRY_POINT">Entry Point</option>
-                </select>
-                <div className="flex gap-2 justify-end mt-1">
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => setDuplicatingPathway(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    className="btn btn-sm btn-primary"
-                    disabled={!dupName.trim()}
-                    onClick={async () => {
-                      if (!dupName.trim()) return;
-                      await duplicatePathway(duplicatingPathway.id, dupName.trim(), dupType);
-                      setDuplicatingPathway(null);
-                    }}
-                  >
-                    Duplicate
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {viewMode === 'grid' ? (
         <div className="relative bg-white" style={{ width: `${innerWidth}px`, height: `${innerHeight}px` }}>
           <GridBackground
@@ -1952,7 +1922,7 @@ export const CanvasPage: React.FC = () => {
           />
 
           {unitBoxes
-            .filter((u) => u.spansYear && !u.unallocated && isUnitVisible(u.unitId) && (u.pathwayId == null || visiblePathwayIds.includes(u.pathwayId)))
+            .filter((u) => u.pathwayId === activePathwayId && u.spansYear && isUnitVisible(u.unitId) && !u.unallocated)
             .map((u) => {
               const cy = companionSlotY(u.y);
               if (cy === null) return null;
@@ -1983,13 +1953,14 @@ export const CanvasPage: React.FC = () => {
               );
             })}
 
-          {unitBoxes.filter((unit) => !unit.unallocated && isUnitVisible(unit.unitId) && (unit.pathwayId == null || visiblePathwayIds.includes(unit.pathwayId))).map((unit) => (
+          {unitBoxes.filter((unit) => unit.pathwayId === activePathwayId && isUnitVisible(unit.unitId) && !unit.unallocated).map((unit) => (
             <UnitBox
               key={unit.id}
               unit={unit}
               draggedUnit={draggedUnit}
               selectedUnits={selectedUnits}
               connectionMode={connectionMode}
+              paintMode={paintMode}
               connectionSource={connectionSource}
               isExpanded={false}
               activeTab={activeTabs[unit.id] || "info"}
@@ -2018,53 +1989,102 @@ export const CanvasPage: React.FC = () => {
               existingTags={existingTags || []}
               isBlocked={blockedUnitId !== null && draggedUnit === unit.id}
               isHighlighted={ghostHoverId === unit.id || drawerUnitId === unit.id}
-              pathwayBadge={getPathwayBadge(unit.pathwayId)}
               onStartConnection={(uid) => {
                 setSidebarTab('connections');
                 setConnectionMode(true);
                 setConnectionSource(uid);
               }}
             />
+
           ))}
 
-          {/* Placeholder boxes — show those on a visible pathway OR the active pathway */}
-          {placeholderBoxes.filter((box) =>
-            box.pathwayId == null ||
-            visiblePathwayIds.includes(box.pathwayId) ||
-            box.pathwayId === activePathwayId
-          ).map((box) => (
+          {/* Secondary pathway — incompatibility banner */}
+          {secondaryPathwayId !== null && !secondaryCompatible && (
+            <div
+              className="absolute flex items-center gap-2 px-4 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-xs font-medium shadow-md pointer-events-none"
+              style={{ top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 20 }}
+            >
+              <svg className="w-4 h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              Not compatible with current pathway — one or more units conflict with an occupied slot
+            </div>
+          )}
+
+          {/* Secondary pathway units — read-only overlay */}
+          {secondaryPathwayId !== null && secondaryCompatible && (
+            <div className="pointer-events-none" style={{ opacity: 0.85 }}>
+              {unitBoxes
+                .filter((unit) => unit.pathwayId === secondaryPathwayId && isUnitVisible(unit.unitId) && !unit.unallocated)
+                .map((unit) => (
+                  <UnitBox
+                    key={`secondary-${unit.id}`}
+                    unit={unit}
+                    draggedUnit={null}
+                    selectedUnits={[]}
+                    connectionMode={false}
+                    connectionSource={null}
+                    isExpanded={false}
+                    activeTab="info"
+                    unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
+                    currentCLOs={currentCLOs || []}
+                    onMouseDown={() => {}}
+                    onDoubleClick={() => {}}
+                    onClick={() => {}}
+                    onMouseEnter={() => {}}
+                    onMouseLeave={() => {}}
+                    onContextMenu={() => {}}
+                    onDrop={() => {}}
+                    toggleExpand={() => {}}
+                    setActiveTab={() => {}}
+                    deleteUnit={() => {}}
+                    getCLOColor={getCLOColor}
+                    existingTags={existingTags || []}
+                    isBlocked={false}
+                    isHighlighted={false}
+                    onStartConnection={() => {}}
+                  />
+                ))}
+            </div>
+          )}
+
+          {/* Placeholder boxes */}
+          {placeholderBoxes.map((box) => (
             <CanvasPlaceholder
               key={box.id}
               box={box}
-              onDelete={(id) => {
-                setPlaceholderBoxes((prev) => prev.filter((p) => p.id !== id));
-                axiosInstance
-                  .delete(`/canvas-placeholder/${id}`)
-                  .catch((err) => console.error("Failed to delete placeholder:", err));
-              }}
+              onDelete={(id) => setPlaceholderBoxes((prev) => prev.filter((p) => p.id !== id))}
               onMouseDown={handlePlaceholderDragOnCanvas}
-              onUpdate={(id, changes) => {
-                setPlaceholderBoxes((prev) => prev.map((p) => p.id === id ? { ...p, ...changes } : p));
-                persistPlaceholderUpdate(id, changes);
-              }}
+              onUpdate={(id, changes) =>
+                setPlaceholderBoxes((prev) => prev.map((p) => p.id === id ? { ...p, ...changes } : p))
+              }
               onDragUnitOut={handleDragUnitOut}
-              onEditUnit={(unit) => setEditingJunctionUnit(unit)}
-              existingTags={existingTags || []}
-              unitMappings={unitMappings}
-              unitBoxes={unitBoxes}
             />
           ))}
 
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
             <ConnectionLines
               relationships={relationships.filter(
-                (r) => isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
+                (r) => r.pathwayId === activePathwayId && isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
               )}
               unitBoxes={unitBoxes}
               numberTeachingPeriods={semPerYear}
               hoveredUnit={hoveredUnit}
               onDeleteRelationship={handleDeleteRelationship}
             />
+            {secondaryPathwayId !== null && secondaryCompatible && (
+              <g opacity={0.85}>
+                <ConnectionLines
+                  relationships={relationships.filter(
+                    (r) => r.pathwayId === secondaryPathwayId && isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
+                  )}
+                  unitBoxes={unitBoxes}
+                  numberTeachingPeriods={semPerYear}
+                  hoveredUnit={null}
+                  onDeleteRelationship={() => {}}
+                />
+              </g>
+            )}
           </svg>
 
           {drawerUnitId !== null && (() => {
@@ -2099,12 +2119,34 @@ export const CanvasPage: React.FC = () => {
             );
           })()}
         </div>
+        ) : canvasLoading ? (
+          <div className="flex-1 flex items-center justify-center text-sm text-gray-400 gap-2">
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+            </svg>
+            Loading pathway…
+          </div>
         ) : (
           <ThemeView
+            key={activePathwayId ?? "none"}
             courseId={currentCourse?.courseId ?? ""}
-            unitBoxes={unitBoxes}
+            unitBoxes={unitBoxes.filter((u) => u.pathwayId === activePathwayId || u.unallocated)}
             unitMappings={unitMappings}
-            existingTags={existingTags}
+            existingTags={(() => {
+              // Only show themes that have at least one unit in the active pathway.
+              const activeUnitIds = new Set(
+                unitBoxes
+                  .filter((u) => u.pathwayId === activePathwayId && !u.unallocated && u.unitId)
+                  .map((u) => u.unitId as string)
+              );
+              const relevantTagIds = new Set(
+                Array.from(activeUnitIds).flatMap(
+                  (uid) => (unitMappings[uid]?.tags ?? []).map((t) => t.tagId)
+                )
+              );
+              return (existingTags ?? []).filter((t: { tagId: number }) => relevantTagIds.has(t.tagId));
+            })()}
             getCLOColor={getCLOColor}
             onUnitGroupChange={handleUnitGroupChange}
             onDeleteUnit={(unitKey) => {
@@ -2168,45 +2210,6 @@ export const CanvasPage: React.FC = () => {
           </div>
         )}
 
-        {/* Modal: Edit Junction Unit */}
-        {editingJunctionUnit && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-black text-xl font-bold">Edit Unit</h2>
-                <button
-                  onClick={() => setEditingJunctionUnit(null)}
-                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold transition-colors"
-                >
-                  &times;
-                </button>
-              </div>
-              <UnitForm
-                onSave={handleJunctionUnitFormSave}
-                initialData={{
-                  unitId: editingJunctionUnit.unitId,
-                  unitName: editingJunctionUnit.unitName,
-                  unitDesc: editingJunctionUnit.unitDesc ?? null,
-                  credits: editingJunctionUnit.credits ?? null,
-                  semestersOffered: editingJunctionUnit.semestersOffered ?? null,
-                  color: editingJunctionUnit.color ?? null,
-                }}
-                onView={() => {
-                  setUnit({
-                    unitId: editingJunctionUnit.unitId,
-                    unitName: editingJunctionUnit.unitName,
-                    unitDesc: editingJunctionUnit.unitDesc ?? '',
-                    credits: editingJunctionUnit.credits ?? 0,
-                    semestersOffered: editingJunctionUnit.semestersOffered ?? [],
-                  });
-                  setEditingJunctionUnit(null);
-                  navigate('/UnitInternalCanvas');
-                }}
-              />
-            </div>
-          </div>
-        )}
-
         {/* Modal: Create Unit */}
         {showCreateForm && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] backdrop-blur-sm">
@@ -2259,26 +2262,27 @@ export const CanvasPage: React.FC = () => {
 
       {/* Floating Drag Preview for Placeholder Blocks — matches unit box ghost */}
       {draggedPlaceholder && (() => {
-        const bgColor: Record<string, string> = {
-          CORE: '#6B7280', ELECTIVE: '#F59E0B', SELECTIVE_ELECTIVE: '#EA580C',
-          JUNCTION: '#8B5CF6', AND: '#059669',
-        };
-        const icon: Record<string, string> = {
-          CORE: '◆', ELECTIVE: '✦', SELECTIVE_ELECTIVE: '⊞', JUNCTION: '⑂', AND: '⊕',
-        };
-        const label: Record<string, string> = {
-          CORE: 'Core Unit', ELECTIVE: 'Free Elective', SELECTIVE_ELECTIVE: 'Selective Elective',
-          JUNCTION: 'OR Junction', AND: 'AND Junction',
-        };
+        const bgColor =
+          draggedPlaceholder.type === 'CORE'     ? '#6B7280'
+          : draggedPlaceholder.type === 'ELECTIVE' ? '#F59E0B'
+          :                                           '#8B5CF6';
+        const icon =
+          draggedPlaceholder.type === 'CORE'     ? '◆'
+          : draggedPlaceholder.type === 'ELECTIVE' ? '✦'
+          :                                           '⑂';
+        const label =
+          draggedPlaceholder.type === 'CORE'     ? 'Core Unit'
+          : draggedPlaceholder.type === 'ELECTIVE' ? 'Elective'
+          :                                           'OR Junction';
         return (
           <div
             className="fixed pointer-events-none z-[200] opacity-80"
             style={{ left: draggedPlaceholder.x - UNIT_BOX_WIDTH / 2, top: draggedPlaceholder.y - 40, width: UNIT_BOX_WIDTH }}
           >
-            <div className="rounded shadow-2xl border-2 border-white text-white overflow-hidden" style={{ backgroundColor: bgColor[draggedPlaceholder.type] }}>
+            <div className="rounded shadow-2xl border-2 border-white text-white overflow-hidden" style={{ backgroundColor: bgColor }}>
               <div className="px-4 py-3">
                 <h2 className="text-lg font-semibold leading-tight">
-                  <span className="mr-1 opacity-80">{icon[draggedPlaceholder.type]}</span>{label[draggedPlaceholder.type]}
+                  <span className="mr-1 opacity-80">{icon}</span>{label}
                 </h2>
                 <p className="text-[10px] opacity-50 uppercase tracking-widest mt-0.5">Placeholder</p>
               </div>
@@ -2488,7 +2492,7 @@ export const CanvasPage: React.FC = () => {
         <AddTagMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          data={tagData ?? []}
+          data={tagData}
           onClose={() => setViewingTagMenu(false)}
           onSave={handleAddTagToUnits}
         />
