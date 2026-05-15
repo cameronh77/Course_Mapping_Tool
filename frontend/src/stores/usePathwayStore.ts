@@ -28,7 +28,12 @@ export const usePathwayStore = create<PathwayState>((set) => ({
     if (core) set({ activePathwayId: core.pathwayId, visiblePathwayIds: [core.pathwayId] });
   },
 
-  setActivePathway: (pathwayId: number) => set({ activePathwayId: pathwayId }),
+  setActivePathway: (pathwayId: number) => set((state) => ({
+    activePathwayId: pathwayId,
+    visiblePathwayIds: state.visiblePathwayIds.includes(pathwayId)
+      ? state.visiblePathwayIds
+      : [...state.visiblePathwayIds, pathwayId],
+  })),
 
   togglePathwayVisibility: (pathwayId: number) =>
     set((state) => {

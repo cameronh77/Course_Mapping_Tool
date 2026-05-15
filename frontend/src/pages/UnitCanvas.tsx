@@ -403,6 +403,7 @@ export const CanvasPage: React.FC = () => {
   ): boolean => {
     return unitBoxes.some((u) => {
       if (u.id === excludeId) return false;
+      if (u.pathwayId != null && !visiblePathwayIds.includes(u.pathwayId)) return false;
       if (Math.abs(u.x - x) >= 1) return false;
       if (Math.abs(u.y - y) < 1) return true;
       if (u.spansYear) {
@@ -930,7 +931,7 @@ export const CanvasPage: React.FC = () => {
           const PLACEHOLDER_W = UNIT_BOX_WIDTH; // same as placeholder width
           const junctionHit = placeholderBoxesRef.current.find((p) => {
             if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
-            const approxHeight = 40 + (p.options?.length ?? 2) * 52 + 36;
+            const approxHeight = 40 + (p.unitOptions?.length ?? 0) * 52 + 36;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + PLACEHOLDER_W &&
               canvasCoords.y >= p.y && canvasCoords.y <= p.y + approxHeight
@@ -1255,6 +1256,7 @@ export const CanvasPage: React.FC = () => {
         }
         const blocker = prevUnits.find((other) => {
           if (other.id === id) return false;
+          if (other.pathwayId != null && !visiblePathwayIds.includes(other.pathwayId)) return false;
           if (Math.abs(other.x - snappedX) >= 1) return false;
           const otherYs = [other.y];
           if (other.spansYear) {
@@ -1282,7 +1284,7 @@ export const CanvasPage: React.FC = () => {
         const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
         const junctionHit = placeholderBoxesRef.current.find((p) => {
           if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
-          const approxHeight = 80 + (p.options?.length ?? 2) * 52 + 36;
+          const approxHeight = 80 + (p.unitOptions?.length ?? 0) * 52 + 36;
           return (
             canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
             canvasCoords.y >= p.y && canvasCoords.y <= p.y + approxHeight
@@ -1950,7 +1952,7 @@ export const CanvasPage: React.FC = () => {
           />
 
           {unitBoxes
-            .filter((u) => u.spansYear && !u.unallocated && isUnitVisible(u.unitId))
+            .filter((u) => u.spansYear && !u.unallocated && isUnitVisible(u.unitId) && (u.pathwayId == null || visiblePathwayIds.includes(u.pathwayId)))
             .map((u) => {
               const cy = companionSlotY(u.y);
               if (cy === null) return null;
@@ -1981,7 +1983,7 @@ export const CanvasPage: React.FC = () => {
               );
             })}
 
-          {unitBoxes.filter((unit) => !unit.unallocated && isUnitVisible(unit.unitId)).map((unit) => (
+          {unitBoxes.filter((unit) => !unit.unallocated && isUnitVisible(unit.unitId) && (unit.pathwayId == null || visiblePathwayIds.includes(unit.pathwayId))).map((unit) => (
             <UnitBox
               key={unit.id}
               unit={unit}
@@ -2025,9 +2027,11 @@ export const CanvasPage: React.FC = () => {
             />
           ))}
 
-          {/* Placeholder boxes — only show those belonging to a visible pathway */}
+          {/* Placeholder boxes — show those on a visible pathway OR the active pathway */}
           {placeholderBoxes.filter((box) =>
-            box.pathwayId == null || visiblePathwayIds.includes(box.pathwayId)
+            box.pathwayId == null ||
+            visiblePathwayIds.includes(box.pathwayId) ||
+            box.pathwayId === activePathwayId
           ).map((box) => (
             <CanvasPlaceholder
               key={box.id}
