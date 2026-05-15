@@ -11,6 +11,7 @@ interface UnitBoxProps {
   draggedUnit: number | null;
   selectedUnits: string[];
   connectionMode: boolean;
+  paintMode?: boolean;
   connectionSource: string | null;
   isExpanded: boolean;
   activeTab: 'info' | 'clos' | 'tags';
@@ -40,6 +41,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   draggedUnit,
   selectedUnits,
   connectionMode,
+  paintMode = false,
   connectionSource,
   isExpanded,
   activeTab,
@@ -117,8 +119,8 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
   return (
     <div
       className={`absolute group transition-shadow duration-200 ${draggedUnit === unit.id ? "shadow-2xl scale-105 z-50" : (isExpanded ? "z-40 shadow-xl" : "z-10 shadow-sm hover:shadow-md")}`}
-      style={{ left: `${unit.x}px`, top: `${unit.y}px`, width: `${unit.width ?? 256}px`, height: isExpanded ? 'auto' : '80px', minHeight: '80px' }}
-      onClick={connectionMode && unit.unitId ? () => onClick(unit.unitId!) : undefined}
+      style={{ left: `${unit.x}px`, top: `${unit.y}px`, width: `${unit.width ?? 256}px`, height: isExpanded ? 'auto' : '80px', minHeight: '80px', ...(paintMode ? { cursor: 'inherit' } : {}) }}
+      onClick={(connectionMode || paintMode) && unit.unitId ? () => onClick(unit.unitId!) : undefined}
       onMouseEnter={() => onMouseEnter(unit.unitId || null)}
       onMouseLeave={onMouseLeave}
       onContextMenu={(e) => onContextMenu(e, unitKey)}
@@ -139,7 +141,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
         
         {/* Draggable Header */}
         <div 
-          className="h-20 w-full flex items-center justify-between px-4 cursor-grab active:cursor-grabbing shrink-0 relative" 
+          className={`h-20 w-full flex items-center justify-between px-4 shrink-0 relative ${paintMode ? '' : 'cursor-grab active:cursor-grabbing'}`}
           style={{ backgroundColor: unit.color || "#3B82F6", color: "white" }}
           onMouseDown={(e) => onMouseDown(e, unit.id)} 
           onDoubleClick={() => onDoubleClick(unit.id)}

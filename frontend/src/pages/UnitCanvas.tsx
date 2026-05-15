@@ -31,6 +31,8 @@ import type {
 
 // Grid Layout Constants
 const COL_WIDTH = 600;
+
+const PAINTBRUSH_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='%23111' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18.37 2.63 14 7l-1.59-1.59a2 2 0 0 0-2.82 0L8 7l9 9 1.59-1.59a2 2 0 0 0 0-2.82L17 10l4.37-4.37a2.12 2.12 0 1 0-3-3Z'/%3E%3Cpath d='M9 8c-2 3-4 3.5-7 4l8 8c1-.5 3-1.5 4-7'/%3E%3C/svg%3E") 2 20, crosshair`;
 const ROW_HEIGHT = 150;
 const START_X = 80;
 const START_Y = 80;
@@ -106,6 +108,9 @@ export const CanvasPage: React.FC = () => {
   const copyBarRef = useRef<HTMLDivElement>(null);
   const [copyBarOpen, setCopyBarOpen] = useState(false);
   const [copyBarLoading, setCopyBarLoading] = useState(false);
+  const [paintMode, setPaintMode] = useState(false);
+  const [paintColor, setPaintColor] = useState("#F59E0B");
+  const paintColorInputRef = useRef<HTMLInputElement>(null);
   const { currentCourse } = useCourseStore();
   const { currentCLOs } = useCLOStore();
   const {
@@ -594,6 +599,15 @@ export const CanvasPage: React.FC = () => {
       await axiosInstance.post(
         `/course-unit/tags/${currentCourse.courseId}`,
         { unitMappings: cleanedUnitMappings }
+      );
+
+      // Persist any colour changes applied via the paint tool.
+      await Promise.all(
+        unitsInPathway
+          .filter((u) => u.color)
+          .map((u) =>
+            axiosInstance.put(`/course-unit/update/${u.id}`, { color: u.color })
+          )
       );
 
       if (themeLayoutRef.current) {
@@ -1209,6 +1223,7 @@ export const CanvasPage: React.FC = () => {
 
   function handleMouseDown(e: React.MouseEvent, id: number) {
     setContextMenu({ visible: false, x: 0, y: 0, unitId: undefined });
+    if (paintMode) return;
     e.preventDefault();
     e.stopPropagation();
 
@@ -1520,7 +1535,14 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
+  const handlePaintUnit = (unitId: string) => {
+    setUnitBoxes((prev) =>
+      prev.map((u) => (u.unitId === unitId || u.id.toString() === unitId ? { ...u, color: paintColor } : u))
+    );
+  };
+
   const handleUnitClickForConnection = (unitId: string) => {
+    if (paintMode) { handlePaintUnit(unitId); return; }
     if (!connectionMode) return;
     if (!connectionSource) setConnectionSource(unitId);
     else handleCreateRelationship(unitId);
@@ -1706,7 +1728,7 @@ const yearsCount =
         />
       </div>
 
-      <div ref={canvasRef} className={`flex-1 bg-white overflow-auto relative ${connectionMode ? 'cursor-crosshair' : ''}`} style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
+      <div ref={canvasRef} className={`flex-1 bg-white overflow-auto relative ${connectionMode ? 'cursor-crosshair' : ''}`} style={{ userSelect: "none", cursor: paintMode ? PAINTBRUSH_CURSOR : undefined }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
         {/* Persistent top bar — always visible in both Timeline and Theme view */}
         <div className="sticky top-0 left-0 z-50 flex items-center gap-2 px-3 py-2 bg-white/90 backdrop-blur-sm border-b border-gray-100">
           {/* Active pathway — always shown */}
@@ -1740,6 +1762,44 @@ const yearsCount =
               </span>
             </>
           )}
+
+          {/* Paintbrush tool — pushed to the right */}
+          <div className="ml-auto flex items-center gap-1.5 shrink-0">
+            {/* Hidden native colour picker */}
+            <input
+              ref={paintColorInputRef}
+              type="color"
+              value={paintColor}
+              onChange={(e) => setPaintColor(e.target.value)}
+              className="sr-only"
+              tabIndex={-1}
+            />
+            {/* Colour swatch — click to open picker */}
+            {paintMode && (
+              <button
+                type="button"
+                onClick={() => paintColorInputRef.current?.click()}
+                className="w-5 h-5 rounded-full border-2 border-white shadow ring-1 ring-gray-300 shrink-0 transition-transform hover:scale-110"
+                style={{ backgroundColor: paintColor }}
+                title="Change paint colour"
+              />
+            )}
+            {/* Paintbrush toggle */}
+            <button
+              type="button"
+              onClick={() => setPaintMode((m) => !m)}
+              title={paintMode ? "Exit paint mode" : "Paint unit colours"}
+              className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors ${
+                paintMode ? "text-white shadow-sm" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+              }`}
+              style={paintMode ? { backgroundColor: paintColor } : undefined}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}>
+                <path d="M18.37 2.63 14 7l-1.59-1.59a2 2 0 0 0-2.82 0L8 7l9 9 1.59-1.59a2 2 0 0 0 0-2.82L17 10l4.37-4.37a2.12 2.12 0 1 0-3-3Z" />
+                <path d="M9 8c-2 3-4 3.5-7 4l8 8c1-.5 3-1.5 4-7" />
+              </svg>
+            </button>
+          </div>
 
           {/* Entry level selectors — only when entry points exist */}
           {canvasEntryPoints.length > 0 && (
@@ -1895,6 +1955,7 @@ const yearsCount =
               draggedUnit={draggedUnit}
               selectedUnits={selectedUnits}
               connectionMode={connectionMode}
+              paintMode={paintMode}
               connectionSource={connectionSource}
               isExpanded={false}
               activeTab={activeTabs[unit.id] || "info"}
