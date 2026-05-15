@@ -99,6 +99,7 @@ export const CanvasPage: React.FC = () => {
 
   // ID of unit currently being overlapped by a dragged unit (blocks the drop)
   const [blockedUnitId, setBlockedUnitId] = useState<number | null>(null);
+  const [canvasLoading, setCanvasLoading] = useState(false);
 
   // ID of year-long unit whose reserved "ghost" slot is being hovered
   const [ghostHoverId, setGhostHoverId] = useState<number | null>(null);
@@ -337,6 +338,7 @@ export const CanvasPage: React.FC = () => {
         setUnitMappings({});
         return;
       }
+      setCanvasLoading(true);
       try {
         // Fetch shared lookups + all pathway unit data in parallel
         const [cloRes, uloRes, tagRes, ...pathwayRess] = await Promise.all([
@@ -398,6 +400,8 @@ export const CanvasPage: React.FC = () => {
         setUnitMappings(mappingsData);
       } catch (error) {
         console.error("Error loading canvas state:", error);
+      } finally {
+        setCanvasLoading(false);
       }
     };
     loadCanvasState();
@@ -1721,6 +1725,7 @@ const yearsCount =
               semestersOffered: u.semestersOffered ?? [],
             }))}
           secondaryPathwayConflict={secondaryPathwayId !== null && !secondaryCompatible}
+          onCopyFromPathway={handleCopyFromEntryPoint}
           onDeleteUnallocated={(unitId) => {
             const target = unitBoxes.find((u) => u.unitId === unitId && u.unallocated);
             if (target) deleteUnit(target.id);
@@ -2114,12 +2119,34 @@ const yearsCount =
             );
           })()}
         </div>
+        ) : canvasLoading ? (
+          <div className="flex-1 flex items-center justify-center text-sm text-gray-400 gap-2">
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+            </svg>
+            Loading pathway…
+          </div>
         ) : (
           <ThemeView
+            key={activePathwayId ?? "none"}
             courseId={currentCourse?.courseId ?? ""}
             unitBoxes={unitBoxes.filter((u) => u.pathwayId === activePathwayId || u.unallocated)}
             unitMappings={unitMappings}
-            existingTags={existingTags}
+            existingTags={(() => {
+              // Only show themes that have at least one unit in the active pathway.
+              const activeUnitIds = new Set(
+                unitBoxes
+                  .filter((u) => u.pathwayId === activePathwayId && !u.unallocated && u.unitId)
+                  .map((u) => u.unitId as string)
+              );
+              const relevantTagIds = new Set(
+                Array.from(activeUnitIds).flatMap(
+                  (uid) => (unitMappings[uid]?.tags ?? []).map((t) => t.tagId)
+                )
+              );
+              return (existingTags ?? []).filter((t: { tagId: number }) => relevantTagIds.has(t.tagId));
+            })()}
             getCLOColor={getCLOColor}
             onUnitGroupChange={handleUnitGroupChange}
             onDeleteUnit={(unitKey) => {

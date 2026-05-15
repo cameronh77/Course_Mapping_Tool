@@ -34,6 +34,7 @@ interface CanvasSidebarProps {
   unallocatedUnits?: Unit[];
   onDeleteUnallocated?: (unitId: string) => void;
   secondaryPathwayConflict?: boolean;
+  onCopyFromPathway?: (sourcePathwayId: number) => Promise<void>;
 }
 
 export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
@@ -57,6 +58,7 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   unallocatedUnits = [],
   onDeleteUnallocated,
   secondaryPathwayConflict = false,
+  onCopyFromPathway,
 }) => {
   // Connect directly to stores
   const { currentCourse } = useCourseStore() as any;
@@ -72,8 +74,11 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
   const [pathwayDropdownOpen, setPathwayDropdownOpen] = useState(false);
   const [secondaryDropdownOpen, setSecondaryDropdownOpen] = useState(false);
   const [showSecondary, setShowSecondary] = useState(false);
+  const [copyFromOpen, setCopyFromOpen] = useState(false);
+  const [copyFromLoading, setCopyFromLoading] = useState(false);
   const pathwayDropdownRef = useRef<HTMLDivElement>(null);
   const secondaryDropdownRef = useRef<HTMLDivElement>(null);
+  const copyFromRef = useRef<HTMLDivElement>(null);
   const handlers = getWhiteboardHandlers();
 
   useEffect(() => {
@@ -97,6 +102,17 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [secondaryDropdownOpen]);
+
+  useEffect(() => {
+    if (!copyFromOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (copyFromRef.current && !copyFromRef.current.contains(e.target as Node)) {
+        setCopyFromOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [copyFromOpen]);
 
   const activePathway = pathways.find((p) => p.pathwayId === activePathwayId) ?? null;
   const secondaryPathway = pathways.find((p) => p.pathwayId === secondaryPathwayId) ?? null;
@@ -141,19 +157,66 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
           <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
             Pathway
           </label>
-          {!showSecondary && secondaryDropdownPathways.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowSecondary(true)}
-              className="flex items-center gap-0.5 text-[10px] font-semibold text-gray-400 hover:text-blue-500 transition-colors"
-              title="Add secondary pathway overlay"
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              view
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Copy from dropdown */}
+            {onCopyFromPathway && nonEntryPathways.filter((p) => p.pathwayId !== activePathwayId).length > 0 && (
+              <div className="relative" ref={copyFromRef}>
+                <button
+                  type="button"
+                  disabled={copyFromLoading}
+                  onClick={() => setCopyFromOpen((o) => !o)}
+                  className="flex items-center gap-0.5 text-[10px] font-semibold text-gray-400 hover:text-green-600 transition-colors disabled:opacity-50"
+                  title="Copy all units from another pathway"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  {copyFromLoading ? "Copying…" : "copy from"}
+                </button>
+                {copyFromOpen && (
+                  <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1 min-w-[160px]">
+                    {nonEntryPathways
+                      .filter((p) => p.pathwayId !== activePathwayId)
+                      .map((p) => (
+                        <button
+                          key={p.pathwayId}
+                          type="button"
+                          onClick={async () => {
+                            setCopyFromOpen(false);
+                            setCopyFromLoading(true);
+                            await onCopyFromPathway(p.pathwayId);
+                            setCopyFromLoading(false);
+                          }}
+                          className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left transition-colors"
+                        >
+                          <span className="truncate">{p.name}</span>
+                          <span
+                            className="px-1.5 py-0.5 text-[10px] font-semibold rounded shrink-0"
+                            style={pathwayTypeBadgeStyle(p.type)}
+                          >
+                            {p.type}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!showSecondary && secondaryDropdownPathways.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowSecondary(true)}
+                className="flex items-center gap-0.5 text-[10px] font-semibold text-gray-400 hover:text-blue-500 transition-colors"
+                title="Add secondary pathway overlay"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                view
+              </button>
+            )}
+          </div>
         </div>
         <div className="relative">
           <button
