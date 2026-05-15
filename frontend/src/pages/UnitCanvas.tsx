@@ -136,6 +136,11 @@ export const CanvasPage: React.FC = () => {
     [pathways, activePathwayId]
   );
 
+  const secondaryPathwayObj = useMemo(
+    () => pathways.find((p) => p.pathwayId === secondaryPathwayId) ?? null,
+    [pathways, secondaryPathwayId]
+  );
+
   // True when every secondary pathway unit sits in a grid cell not already occupied by the primary pathway.
   const secondaryCompatible = useMemo(() => {
     if (!secondaryPathwayId) return true;
@@ -1702,69 +1707,106 @@ const yearsCount =
       </div>
 
       <div ref={canvasRef} className={`flex-1 bg-white overflow-auto relative ${connectionMode ? 'cursor-crosshair' : ''}`} style={{ userSelect: "none" }} onMouseDown={viewMode === 'grid' ? handleMouseDownCanvas : undefined} onContextMenu={viewMode === 'grid' ? (e) => handleRightClick(e) : undefined}>
-        {canvasEntryPoints.length > 0 && (
-          <div className="sticky top-0 left-0 z-50 flex items-center gap-1 px-3 py-2 bg-white/80 backdrop-blur-sm border-b border-gray-100">
-            <span className="text-xs text-gray-400 font-medium mr-1">Entry Point:</span>
-            {canvasEntryPoints.map((p) => {
-              const isActive = p.pathwayId === activePathwayId;
-              const level = p.name.match(/\d+$/)?.[0] ?? "1";
-              return (
-                <button
-                  key={p.pathwayId}
-                  type="button"
-                  onClick={() => setActivePathway(p.pathwayId)}
-                  title={p.name}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-                    isActive
-                      ? "bg-gray-900 text-white shadow-sm"
-                      : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
-                  }`}
-                >
-                  {level}
-                </button>
-              );
-            })}
-            {(() => {
-              const siblings = canvasEntryPoints.filter((p) => p.pathwayId !== activePathwayId);
-              if (siblings.length === 0) return null;
-              return (
-                <div className="relative ml-2" ref={copyBarRef}>
+        {/* Persistent top bar — always visible in both Timeline and Theme view */}
+        <div className="sticky top-0 left-0 z-50 flex items-center gap-2 px-3 py-2 bg-white/90 backdrop-blur-sm border-b border-gray-100">
+          {/* Active pathway — always shown */}
+          {activePathwayObj && (
+            <span className="flex items-center gap-1.5 shrink-0">
+              {secondaryPathwayObj && (
+                <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-blue-500 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
+                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H7v-3.414a2 2 0 01.586-1.414z" />
+                  </svg>
+                  Editing
+                </span>
+              )}
+              <span className="text-xs font-semibold text-gray-700">
+                {entryPointParent?.name ?? activePathwayObj.name}
+              </span>
+            </span>
+          )}
+
+          {/* Secondary pathway — only shown when selected */}
+          {secondaryPathwayObj && (
+            <>
+              <span className="text-gray-300 text-xs mx-0.5">|</span>
+              <span className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded">
+                  Overlay
+                </span>
+                <span className="text-xs font-medium text-gray-400">
+                  {secondaryPathwayObj.name}
+                </span>
+              </span>
+            </>
+          )}
+
+          {/* Entry level selectors — only when entry points exist */}
+          {canvasEntryPoints.length > 0 && (
+            <>
+              <span className="text-gray-300 text-xs">·</span>
+              <span className="text-xs text-gray-400 font-medium">Entry:</span>
+              {canvasEntryPoints.map((p) => {
+                const isActive = p.pathwayId === activePathwayId;
+                const level = p.name.match(/\d+$/)?.[0] ?? "1";
+                return (
                   <button
+                    key={p.pathwayId}
                     type="button"
-                    disabled={copyBarLoading}
-                    onClick={() => setCopyBarOpen((o) => !o)}
-                    className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600 rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => setActivePathway(p.pathwayId)}
+                    title={p.name}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                      isActive
+                        ? "bg-gray-900 text-white shadow-sm"
+                        : "text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600"
+                    }`}
                   >
-                    <span>⧉</span>
-                    {copyBarLoading ? "Copying…" : "Copy from…"}
+                    {level}
                   </button>
-                  {copyBarOpen && (
-                    <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 py-1 min-w-[140px]">
-                      {siblings.map((p) => {
-                        const level = p.name.match(/\d+$/)?.[0] ?? p.name;
-                        return (
-                          <button
-                            key={p.pathwayId}
-                            type="button"
-                            onClick={async () => {
-                              setCopyBarOpen(false);
-                              setCopyBarLoading(true);
-                              await handleCopyFromEntryPoint(p.pathwayId);
-                              setCopyBarLoading(false);
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 transition-colors"
-                          >
-                            Entry Point {level}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        )}
+                );
+              })}
+              {(() => {
+                const siblings = canvasEntryPoints.filter((p) => p.pathwayId !== activePathwayId);
+                if (siblings.length === 0) return null;
+                return (
+                  <div className="relative ml-1" ref={copyBarRef}>
+                    <button
+                      type="button"
+                      disabled={copyBarLoading}
+                      onClick={() => setCopyBarOpen((o) => !o)}
+                      className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600 rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span>⧉</span>
+                      {copyBarLoading ? "Copying…" : "Copy from…"}
+                    </button>
+                    {copyBarOpen && (
+                      <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 py-1 min-w-[140px]">
+                        {siblings.map((p) => {
+                          const level = p.name.match(/\d+$/)?.[0] ?? p.name;
+                          return (
+                            <button
+                              key={p.pathwayId}
+                              type="button"
+                              onClick={async () => {
+                                setCopyBarOpen(false);
+                                setCopyBarLoading(true);
+                                await handleCopyFromEntryPoint(p.pathwayId);
+                                setCopyBarLoading(false);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 transition-colors"
+                            >
+                              Entry Point {level}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
         {connectionMode && (
           <div
             onMouseDown={handleConnectionToolbarMouseDown}
@@ -1905,7 +1947,7 @@ const yearsCount =
 
           {/* Secondary pathway units — read-only overlay */}
           {secondaryPathwayId !== null && secondaryCompatible && (
-            <div className="pointer-events-none" style={{ opacity: 0.45 }}>
+            <div className="pointer-events-none" style={{ opacity: 0.85 }}>
               {unitBoxes
                 .filter((unit) => unit.pathwayId === secondaryPathwayId && isUnitVisible(unit.unitId) && !unit.unallocated)
                 .map((unit) => (
@@ -1965,7 +2007,7 @@ const yearsCount =
               onDeleteRelationship={handleDeleteRelationship}
             />
             {secondaryPathwayId !== null && secondaryCompatible && (
-              <g opacity={0.4}>
+              <g opacity={0.85}>
                 <ConnectionLines
                   relationships={relationships.filter(
                     (r) => r.pathwayId === secondaryPathwayId && isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
