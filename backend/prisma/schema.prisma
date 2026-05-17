@@ -81,6 +81,7 @@ model Pathway {
   name        String
   type        PathwayType
   courseId    String
+  comboOf     Int[]        @default([])
 
   course               Course               @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
   courseUnits          CourseUnit[]

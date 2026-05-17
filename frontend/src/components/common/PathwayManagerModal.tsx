@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { usePathwayStore } from "../../stores/usePathwayStore";
 import type { PathwayType } from "../../types";
-import { FieldTooltip } from "./FieldTooltip";
 
 interface PathwayManagerModalProps {
   courseId: string;
@@ -9,6 +8,7 @@ interface PathwayManagerModalProps {
 }
 
 const TYPES: PathwayType[] = ["CORE", "MAJOR", "MINOR", "SPECIALISATION", "CUSTOM"];
+const NON_CORE_TYPE_ORDER: PathwayType[] = ["MAJOR", "SPECIALISATION", "MINOR", "CUSTOM"];
 
 export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ courseId, onClose }) => {
   const { pathways, createPathway, updatePathway, deletePathway } = usePathwayStore();
@@ -184,75 +184,64 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
         )}
 
         <form onSubmit={handleCreate} className="mb-4 pb-4 border-b border-slate-700">
-          <div className="text-xs text-slate-300 mb-2 font-semibold">
-            Add new
-          </div>
-          <div className="flex gap-2 items-center mb-1">
-            <span className="text-[10px] text-slate-400 flex-1">
-              Name
-              <FieldTooltip text="A descriptive name for this pathway (e.g. 'Software Engineering Major'). Shown on the canvas and in reports." />
-            </span>
-            <span className="text-[10px] text-slate-400 w-24">
-              Type
-              <FieldTooltip text="CORE: always required. MAJOR/MINOR: elective streams. ENTRY_POINT: alternative entry routes into the course." />
-            </span>
-            <span className="w-12" />
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">Add new</span>
+            <div className="flex-1 h-px bg-slate-700" />
           </div>
           <div className="flex gap-2">
             <input
-              className="flex-1 px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
+              className="flex-1 min-w-0 px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Pathway name"
             />
             <select
-              className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
+              className="w-32 shrink-0 px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
               value={newType}
               onChange={(e) => setNewType(e.target.value as PathwayType)}
             >
               {TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
+                <option key={t} value={t}>{t}</option>
               ))}
             </select>
             <button
               type="submit"
-              className="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50"
+              className="shrink-0 px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-50"
               disabled={!newName.trim()}
             >
               Add
             </button>
           </div>
-          <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-300">
-            <input
-              type="checkbox"
-              className="h-3.5 w-3.5 rounded border-slate-500 bg-slate-900"
-              checked={addEntryLevel}
-              onChange={(e) => setAddEntryLevel(e.target.checked)}
-            />
-            Add entry level
-          </label>
-          {addEntryLevel && (
-            <div className="mt-2 flex items-center gap-2 text-xs text-slate-300">
-              <span>Number of entry levels</span>
+          <div className="mt-2 flex items-center gap-3 text-xs text-slate-400">
+            <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 rounded border-slate-500 bg-slate-900"
+                checked={addEntryLevel}
+                onChange={(e) => setAddEntryLevel(e.target.checked)}
+              />
+              Entry levels
+            </label>
+            {addEntryLevel && (
               <input
                 type="number"
                 min={1}
                 step={1}
                 value={entryLevelCount}
                 onChange={(e) => setEntryLevelCount(e.target.value)}
-                className="w-20 px-2 py-1 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
+                className="w-14 px-2 py-0.5 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
               />
-            </div>
-          )}
+            )}
+          </div>
         </form>
 
-        <div className="space-y-2">
-          {pathways.filter((p) => p.type !== "ENTRY_POINT").length === 0 && (
-            <div className="text-xs text-slate-400">No pathways yet.</div>
-          )}
-          {pathways.filter((p) => p.type !== "ENTRY_POINT").map((p) => {
+        {(() => {
+          const visiblePathways = pathways.filter((p) => p.type !== "ENTRY_POINT" && p.comboOf.length === 0);
+          if (visiblePathways.length === 0) {
+            return <div className="text-xs text-slate-400">No pathways yet.</div>;
+          }
+
+          const renderRow = (p: typeof pathways[0]) => {
             const isEditing = editingId === p.pathwayId;
             return (
               <div
@@ -262,82 +251,85 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
                 {isEditing ? (
                   <>
                     <input
-                      className="flex-1 px-2 py-1 rounded bg-slate-900 border border-slate-600 text-sm"
+                      className="flex-1 min-w-0 px-2 py-1 rounded bg-slate-900 border border-slate-600 text-xs"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                     />
-                    {p.type === "ENTRY_POINT" ? (
-                      <span className="px-2 py-1 rounded bg-slate-900 border border-slate-600 text-sm text-slate-300">
-                        ENTRY_POINT
-                      </span>
-                    ) : (
-                      <select
-                        className="px-2 py-1 rounded bg-slate-900 border border-slate-600 text-sm"
-                        value={editType}
-                        onChange={(e) => setEditType(e.target.value as PathwayType)}
-                      >
-                        {TYPES.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {p.type !== "ENTRY_POINT" && (
-                      <div className="flex items-center gap-1">
-                        <label className="text-xs text-slate-400">Entry Lvls:</label>
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={editEntryLevelCount}
-                          onChange={(e) => setEditEntryLevelCount(e.target.value)}
-                          className="w-12 px-1 py-1 rounded bg-slate-900 border border-slate-600 text-sm focus:outline-none focus:border-sky-400"
-                        />
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className="px-2 py-1 text-xs rounded bg-sky-600 hover:bg-sky-500"
-                      onClick={saveEdit}
+                    <select
+                      className="w-28 shrink-0 px-1 py-1 rounded bg-slate-900 border border-slate-600 text-xs focus:outline-none focus:border-sky-400"
+                      value={editType}
+                      onChange={(e) => setEditType(e.target.value as PathwayType)}
                     >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      className="px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600"
-                      onClick={() => setEditingId(null)}
-                    >
-                      Cancel
-                    </button>
+                      {TYPES.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <label className="text-[10px] text-slate-400 whitespace-nowrap">EL:</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={editEntryLevelCount}
+                        onChange={(e) => setEditEntryLevelCount(e.target.value)}
+                        className="w-10 px-1 py-1 rounded bg-slate-900 border border-slate-600 text-xs focus:outline-none focus:border-sky-400"
+                      />
+                    </div>
+                    <button type="button" className="shrink-0 px-2 py-1 text-xs rounded bg-sky-600 hover:bg-sky-500" onClick={saveEdit}>Save</button>
+                    <button type="button" className="shrink-0 px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600" onClick={() => setEditingId(null)}>✕</button>
                   </>
                 ) : (
                   <>
-                    <div className="flex-1 text-sm">
-                      <span>{p.name}</span>
-                      <span className="ml-2 text-xs text-slate-400">{p.type}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600"
-                      onClick={() => startEdit(p.pathwayId, p.name, p.type)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="px-2 py-1 text-xs rounded bg-red-700 hover:bg-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                      onClick={() => handleDelete(p.pathwayId)}
-                      title="Delete pathway"
-                    >
-                      Delete
-                    </button>
+                    <span className="flex-1 text-sm">{p.name}</span>
+                    <button type="button" className="px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600" onClick={() => startEdit(p.pathwayId, p.name, p.type)}>Edit</button>
+                    {p.type !== "CORE" && (
+                      <button type="button" className="px-2 py-1 text-xs rounded bg-red-700 hover:bg-red-600" onClick={() => handleDelete(p.pathwayId)} title="Delete pathway">Delete</button>
+                    )}
                   </>
                 )}
               </div>
             );
-          })}
-        </div>
+          };
+
+          const corePathways = visiblePathways.filter((p) => p.type === "CORE");
+          const nonCorePathways = visiblePathways.filter((p) => p.type !== "CORE");
+
+          const seen = new Set<string>();
+          const groups: { type: PathwayType; members: typeof pathways }[] = [];
+          for (const t of NON_CORE_TYPE_ORDER) {
+            const members = nonCorePathways.filter((p) => p.type === t);
+            if (members.length > 0) { groups.push({ type: t, members }); seen.add(t); }
+          }
+          for (const p of nonCorePathways) {
+            if (!seen.has(p.type)) {
+              groups.push({ type: p.type as PathwayType, members: nonCorePathways.filter((q) => q.type === p.type) });
+              seen.add(p.type);
+            }
+          }
+
+          return (
+            <div className="space-y-4">
+              {corePathways.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">Core</span>
+                    <div className="flex-1 h-px bg-slate-700" />
+                  </div>
+                  <div className="space-y-1">{corePathways.map(renderRow)}</div>
+                </div>
+              )}
+              {groups.map(({ type, members }) => (
+                <div key={type}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{type}</span>
+                    <div className="flex-1 h-px bg-slate-700" />
+                  </div>
+                  <div className="space-y-1">{members.map(renderRow)}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

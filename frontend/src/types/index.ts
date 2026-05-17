@@ -71,6 +71,7 @@ export interface Pathway {
   name: string;
   type: PathwayType;
   courseId: string;
+  comboOf: number[];
 }
 
 export interface UnitRelationship {

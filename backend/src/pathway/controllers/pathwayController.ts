@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import prisma from "../../../database/prismaClient.js";
 
 export const createPathway = async (req: Request, res: Response) => {
-  const { name, type, courseId } = req.body;
+  const { name, type, courseId, comboOf } = req.body;
 
   try {
     if (!name || !type || !courseId) {
@@ -10,7 +10,7 @@ export const createPathway = async (req: Request, res: Response) => {
     }
 
     const pathway = await prisma.pathway.create({
-      data: { name, type, courseId },
+      data: { name, type, courseId, comboOf: Array.isArray(comboOf) ? comboOf : [] },
     });
 
     return res.status(201).json(pathway);

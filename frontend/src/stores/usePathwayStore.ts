@@ -5,14 +5,13 @@ import type { Pathway } from "../types";
 interface PathwayState {
   pathways: Pathway[];
   activePathwayId: number | null;
-  secondaryPathwayId: number | null;
   visiblePathwayIds: number[];
   _courseId: string | null;
   fetchPathways: (courseId: string) => Promise<void>;
   setActivePathway: (pathwayId: number) => void;
-  setSecondaryPathway: (pathwayId: number | null) => void;
+  setVisibility: (pathwayId: number, visible: boolean) => void;
   togglePathwayVisibility: (pathwayId: number) => void;
-  createPathway: (name: string, type: string, courseId: string) => Promise<Pathway>;
+  createPathway: (name: string, type: string, courseId: string, comboOf?: number[]) => Promise<Pathway>;
   deletePathway: (pathwayId: number) => Promise<void>;
   updatePathway: (pathwayId: number, name: string, type: string) => Promise<void>;
 }
@@ -22,23 +21,18 @@ const selectionKey = (courseId: string) => `pathway_selection_${courseId}`;
 const loadPersistedSelection = (
   courseId: string,
   pathways: Pathway[]
-): { activePathwayId: number; secondaryPathwayId: number | null; visiblePathwayIds: number[] } | null => {
+): { activePathwayId: number; visiblePathwayIds: number[] } | null => {
   try {
     const raw = localStorage.getItem(selectionKey(courseId));
     if (!raw) return null;
-    const { activePathwayId, visiblePathwayIds, secondaryPathwayId } = JSON.parse(raw) as {
+    const { activePathwayId, visiblePathwayIds } = JSON.parse(raw) as {
       activePathwayId: number;
       visiblePathwayIds: number[];
-      secondaryPathwayId?: number | null;
     };
     const validIds = new Set(pathways.map((p) => p.pathwayId));
     const validVisible = visiblePathwayIds.filter((id) => validIds.has(id));
     if (validVisible.length > 0 && validIds.has(activePathwayId)) {
-      const validSecondary =
-        secondaryPathwayId != null && validIds.has(secondaryPathwayId) && secondaryPathwayId !== activePathwayId
-          ? secondaryPathwayId
-          : null;
-      return { activePathwayId, secondaryPathwayId: validSecondary, visiblePathwayIds: validVisible };
+      return { activePathwayId, visiblePathwayIds: validVisible };
     }
   } catch { /* ignore */ }
   return null;
@@ -61,7 +55,6 @@ const persistSelection = (
 export const usePathwayStore = create<PathwayState>((set) => ({
   pathways: [],
   activePathwayId: null,
-  secondaryPathwayId: null,
   visiblePathwayIds: [],
   _courseId: null,
 
@@ -102,35 +95,49 @@ export const usePathwayStore = create<PathwayState>((set) => ({
 
   setActivePathway: (pathwayId: number) =>
     set((state) => {
-      // Clear secondary if it matches the new active pathway.
-      const secondaryId = state.secondaryPathwayId !== pathwayId ? state.secondaryPathwayId : null;
-      const newVisible = [pathwayId, ...(secondaryId ? [secondaryId] : [])];
+      const newVisible = state.visiblePathwayIds.includes(pathwayId)
+        ? state.visiblePathwayIds
+        : [...state.visiblePathwayIds, pathwayId];
       persistSelection(state._courseId, pathwayId, newVisible);
-      return { activePathwayId: pathwayId, secondaryPathwayId: secondaryId, visiblePathwayIds: newVisible };
+      return { activePathwayId: pathwayId, visiblePathwayIds: newVisible };
     }),
 
-  setSecondaryPathway: (pathwayId: number | null) =>
+  setVisibility: (pathwayId: number, visible: boolean) =>
     set((state) => {
-      const newVisible = [
-        ...(state.activePathwayId ? [state.activePathwayId] : []),
-        ...(pathwayId ? [pathwayId] : []),
-      ];
-      persistSelection(state._courseId, state.activePathwayId, newVisible);
-      return { secondaryPathwayId: pathwayId, visiblePathwayIds: newVisible };
+      if (visible) {
+        if (state.visiblePathwayIds.includes(pathwayId)) return {};
+        const targetType = state.pathways.find((p) => p.pathwayId === pathwayId)?.type;
+        // Remove any other visible pathway of the same type (one-per-type rule).
+        const withoutSameType = targetType
+          ? state.visiblePathwayIds.filter(
+              (id) => state.pathways.find((p) => p.pathwayId === id)?.type !== targetType
+            )
+          : state.visiblePathwayIds;
+        const newVisible = [...withoutSameType, pathwayId];
+        // If the evicted pathway was the active one, promote the newly added pathway.
+        const newActive = state.visiblePathwayIds
+          .filter((id) => !newVisible.includes(id))
+          .includes(state.activePathwayId ?? -1)
+          ? pathwayId
+          : state.activePathwayId;
+        persistSelection(state._courseId, newActive, newVisible);
+        return { visiblePathwayIds: newVisible, activePathwayId: newActive };
+      }
+      const newVisible = state.visiblePathwayIds.filter((id) => id !== pathwayId);
+      const newActive =
+        state.activePathwayId === pathwayId ? (newVisible[0] ?? null) : state.activePathwayId;
+      persistSelection(state._courseId, newActive, newVisible);
+      return { visiblePathwayIds: newVisible, activePathwayId: newActive };
     }),
 
   togglePathwayVisibility: (pathwayId: number) =>
     set((state) => {
-      const isCore = state.pathways.find((p) => p.pathwayId === pathwayId)?.type === "CORE";
       const isVisible = state.visiblePathwayIds.includes(pathwayId);
       const isActive = state.activePathwayId === pathwayId;
 
       let next: Partial<PathwayState>;
 
-      if (isCore) {
-        // CORE is always visible — clicking just changes the active editing target.
-        next = { activePathwayId: pathwayId };
-      } else if (isVisible && isActive) {
+      if (isVisible && isActive) {
         // Active pathway clicked again — hide it and promote the next visible to active.
         const newVisible = state.visiblePathwayIds.filter((id) => id !== pathwayId);
         const newActive = newVisible.length > 0 ? newVisible[newVisible.length - 1] : null;
@@ -155,8 +162,8 @@ export const usePathwayStore = create<PathwayState>((set) => ({
       return next;
     }),
 
-  createPathway: async (name: string, type: string, courseId: string) => {
-    const res = await axios.post("/pathway", { name, type, courseId });
+  createPathway: async (name: string, type: string, courseId: string, comboOf?: number[]) => {
+    const res = await axios.post("/pathway", { name, type, courseId, comboOf: comboOf ?? [] });
     const pathway: Pathway = res.data;
     set((state) => ({ pathways: [...state.pathways, pathway] }));
     return pathway;
