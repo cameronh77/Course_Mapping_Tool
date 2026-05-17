@@ -117,10 +117,11 @@ export const CanvasPage: React.FC = () => {
   const {
     pathways,
     activePathwayId,
-    secondaryPathwayId,
     visiblePathwayIds,
     fetchPathways,
     setActivePathway,
+    createPathway,
+    deletePathway,
   } = usePathwayStore();
 
   useEffect(() => {
@@ -137,25 +138,54 @@ export const CanvasPage: React.FC = () => {
   const isEPFor = (entryName: string, parentName: string) =>
     epBaseName(entryName) === epNormalize(parentName);
 
-  const activePathwayObj = useMemo(
-    () => pathways.find((p) => p.pathwayId === activePathwayId) ?? null,
-    [pathways, activePathwayId]
-  );
-
-  const secondaryPathwayObj = useMemo(
-    () => pathways.find((p) => p.pathwayId === secondaryPathwayId) ?? null,
-    [pathways, secondaryPathwayId]
-  );
-
-  // True when every secondary pathway unit sits in a grid cell not already occupied by the primary pathway.
-  const secondaryCompatible = useMemo(() => {
-    if (!secondaryPathwayId) return true;
-    const primary = unitBoxes.filter((u) => u.pathwayId === activePathwayId && !u.unallocated);
-    const secondary = unitBoxes.filter((u) => u.pathwayId === secondaryPathwayId && !u.unallocated);
-    return secondary.every(
-      (su) => !primary.some((pu) => Math.abs(pu.x - su.x) < 1 && Math.abs(pu.y - su.y) < 1)
+  const activeCombo = useMemo(() => {
+    if (visiblePathwayIds.length < 2) return null;
+    const sorted = [...visiblePathwayIds].sort((a, b) => a - b);
+    return (
+      pathways.find(
+        (p) =>
+          p.comboOf.length === sorted.length &&
+          [...p.comboOf].sort((a, b) => a - b).every((id, i) => id === sorted[i])
+      ) ?? null
     );
-  }, [unitBoxes, activePathwayId, secondaryPathwayId]);
+  }, [pathways, visiblePathwayIds]);
+
+  const effectiveActivePathwayId = activeCombo?.pathwayId ?? activePathwayId;
+
+  const effectiveVisibleIds = useMemo(
+    () => (activeCombo ? [activeCombo.pathwayId] : visiblePathwayIds),
+    [activeCombo, visiblePathwayIds]
+  );
+
+  const activePathwayObj = useMemo(
+    () => pathways.find((p) => p.pathwayId === effectiveActivePathwayId) ?? null,
+    [pathways, effectiveActivePathwayId]
+  );
+
+  const overlayPathwayIds = useMemo(
+    () => (activeCombo ? [] : visiblePathwayIds.filter((id) => id !== activePathwayId)),
+    [activeCombo, visiblePathwayIds, activePathwayId]
+  );
+
+  const overlayPathwayObjects = useMemo(
+    () => overlayPathwayIds.flatMap((id) => {
+      const p = pathways.find((p) => p.pathwayId === id);
+      return p ? [p] : [];
+    }),
+    [overlayPathwayIds, pathways]
+  );
+
+  // True when every overlay pathway unit sits in a grid cell not already occupied by the active pathway.
+  const overlayCompatible = useMemo(() => {
+    if (overlayPathwayIds.length === 0) return true;
+    const primary = unitBoxes.filter((u) => u.pathwayId === effectiveActivePathwayId && !u.unallocated);
+    return overlayPathwayIds.every((oid) => {
+      const overlay = unitBoxes.filter((u) => u.pathwayId === oid && !u.unallocated);
+      return overlay.every(
+        (su) => !primary.some((pu) => Math.abs(pu.x - su.x) < 1 && Math.abs(pu.y - su.y) < 1)
+      );
+    });
+  }, [unitBoxes, effectiveActivePathwayId, overlayPathwayIds]);
 
   const entryPointParent = useMemo(() => {
     if (!activePathwayObj) return null;
@@ -286,13 +316,13 @@ export const CanvasPage: React.FC = () => {
 
   useEffect(() => {
     const loadRelationships = async () => {
-      if (!currentCourse?.courseId || visiblePathwayIds.length === 0) {
+      if (!currentCourse?.courseId || effectiveVisibleIds.length === 0) {
         setRelationships([]);
         return;
       }
       try {
         const results = await Promise.all(
-          visiblePathwayIds.map((pid) =>
+          effectiveVisibleIds.map((pid) =>
             axiosInstance.get(
               `/unit-relationship/view?courseId=${currentCourse.courseId}&pathwayId=${pid}`
             )
@@ -306,7 +336,7 @@ export const CanvasPage: React.FC = () => {
       }
     };
     loadRelationships();
-  }, [currentCourse?.courseId, visiblePathwayIds]);
+  }, [currentCourse?.courseId, effectiveVisibleIds]);
 
   useEffect(() => {
     if (!copyBarOpen) return;
@@ -333,7 +363,7 @@ export const CanvasPage: React.FC = () => {
 
   useEffect(() => {
     const loadCanvasState = async () => {
-      if (!currentCourse?.courseId || visiblePathwayIds.length === 0) {
+      if (!currentCourse?.courseId || effectiveVisibleIds.length === 0) {
         setUnitBoxes([]);
         setUnitMappings({});
         return;
@@ -345,7 +375,7 @@ export const CanvasPage: React.FC = () => {
           axiosInstance.get(`/CLO/viewAll/${currentCourse.courseId}`),
           axiosInstance.get(`/ULO/view`),
           axiosInstance.get(`/tag/view-unit-course/${currentCourse.courseId}`),
-          ...visiblePathwayIds.map((pid) =>
+          ...effectiveVisibleIds.map((pid) =>
             axiosInstance.get(
               `/course-unit/view?courseId=${currentCourse.courseId}&pathwayId=${pid}`
             )
@@ -360,7 +390,7 @@ export const CanvasPage: React.FC = () => {
         const mappingsData: UnitMappings = {};
 
         pathwayRess.forEach((res, idx) => {
-          const pathwayId = visiblePathwayIds[idx];
+          const pathwayId = effectiveVisibleIds[idx];
           const courseUnits = (res.data as any[]).filter(
             (cu: any) => cu.pathwayId === pathwayId
           );
@@ -405,7 +435,7 @@ export const CanvasPage: React.FC = () => {
       }
     };
     loadCanvasState();
-  }, [currentCourse, visiblePathwayIds]);
+  }, [currentCourse, effectiveVisibleIds]);
 
   useEffect(() => {
     const loadCLOs = async () => {
@@ -416,25 +446,13 @@ export const CanvasPage: React.FC = () => {
     loadCLOs();
   }, [currentCourse?.courseId]);
 
-  // Load placeholder boxes from localStorage when course changes
+  // Load placeholder boxes from backend when course changes
   useEffect(() => {
     if (!currentCourse?.courseId) return;
-    const saved = localStorage.getItem(`canvas_placeholders_${currentCourse.courseId}`);
-    if (saved) {
-      try { setPlaceholderBoxes(JSON.parse(saved)); } catch { /* ignore */ }
-    } else {
-      setPlaceholderBoxes([]);
-    }
+    axiosInstance.get(`/canvas-placeholder?courseId=${currentCourse.courseId}`)
+      .then((res) => setPlaceholderBoxes(res.data))
+      .catch(() => setPlaceholderBoxes([]));
   }, [currentCourse?.courseId]);
-
-  // Persist placeholder boxes to localStorage whenever they change
-  useEffect(() => {
-    if (!currentCourse?.courseId) return;
-    localStorage.setItem(
-      `canvas_placeholders_${currentCourse.courseId}`,
-      JSON.stringify(placeholderBoxes)
-    );
-  }, [currentCourse?.courseId, placeholderBoxes]);
 
   const companionSlotY = (snappedY: number): number | null => {
     const row = Math.round((snappedY - START_Y - 20) / ROW_HEIGHT);
@@ -453,7 +471,7 @@ export const CanvasPage: React.FC = () => {
   ): boolean => {
     return unitBoxes.some((u) => {
       if (u.id === excludeId) return false;
-      if (u.pathwayId !== activePathwayId) return false;
+      if (u.pathwayId !== effectiveActivePathwayId) return false;
       if (Math.abs(u.x - x) >= 1) return false;
       if (Math.abs(u.y - y) < 1) return true;
       if (u.spansYear) {
@@ -508,7 +526,7 @@ export const CanvasPage: React.FC = () => {
   };
 
   const handleCopyFromEntryPoint = async (sourcePathwayId: number) => {
-    if (!activePathwayId || !currentCourse?.courseId) return;
+    if (!effectiveActivePathwayId || !currentCourse?.courseId) return;
     try {
       const res = await axiosInstance.get(
         `/course-unit/view?courseId=${currentCourse.courseId}&pathwayId=${sourcePathwayId}`
@@ -521,7 +539,7 @@ export const CanvasPage: React.FC = () => {
 
       for (const cu of sourceUnits) {
         const alreadyExists = unitBoxes.some(
-          (u) => u.unitId === cu.unitId && u.pathwayId === activePathwayId
+          (u) => u.unitId === cu.unitId && u.pathwayId === effectiveActivePathwayId
         );
         if (alreadyExists) {
           skipped++;
@@ -534,7 +552,7 @@ export const CanvasPage: React.FC = () => {
             semester: cu.semester,
             year: cu.year,
             elective: cu.elective,
-            pathwayId: activePathwayId,
+            pathwayId: effectiveActivePathwayId,
             color: cu.color || "#3B82F6",
             position: cu.position,
           });
@@ -542,7 +560,7 @@ export const CanvasPage: React.FC = () => {
             id: createRes.data.id,
             name: cu.unit.unitName,
             unitId: cu.unitId,
-            pathwayId: activePathwayId,
+            pathwayId: effectiveActivePathwayId ?? undefined,
             description: cu.unit.unitDesc,
             credits: cu.unit.credits,
             semestersOffered: cu.unit.semestersOffered,
@@ -576,7 +594,7 @@ export const CanvasPage: React.FC = () => {
     try {
       // Only include units from the currently selected pathway
       const unitsInPathway = unitBoxes.filter(
-        (u) => u.pathwayId === activePathwayId && !u.unallocated
+        (u) => u.pathwayId === effectiveActivePathwayId && !u.unallocated
       );
 
       const unitIdsOnCanvas = new Set(
@@ -638,14 +656,14 @@ export const CanvasPage: React.FC = () => {
     const existing = unitBoxes.find(
       (u) =>
         u.unitId === selectedUnit.unitId &&
-        (u.unallocated || u.pathwayId === activePathwayId)
+        (u.unallocated || u.pathwayId === effectiveActivePathwayId)
     );
     if (existing && !existing.unallocated) {
       alert("This unit has already been added to this pathway.");
       return;
     }
 
-    if (!activePathwayId || !currentCourse?.courseId) return;
+    if (!effectiveActivePathwayId || !currentCourse?.courseId) return;
 
     const semestersPerYear =
       Number((currentCourse as any)?.numberTeachingPeriods) ||
@@ -687,7 +705,7 @@ export const CanvasPage: React.FC = () => {
                 x: snappedX,
                 y: snappedY,
                 unallocated: false,
-                pathwayId: activePathwayId,
+                pathwayId: effectiveActivePathwayId ?? undefined,
                 color: promotedColor,
               }
             : u
@@ -700,7 +718,7 @@ export const CanvasPage: React.FC = () => {
           semester,
           year,
           elective: false,
-          pathwayId: activePathwayId,
+          pathwayId: effectiveActivePathwayId,
           color: promotedColor,
           position: { x: snappedX, y: snappedY },
         });
@@ -728,7 +746,7 @@ export const CanvasPage: React.FC = () => {
       id: tempId,
       name: selectedUnit.unitName,
       unitId: selectedUnit.unitId,
-      pathwayId: activePathwayId,
+      pathwayId: effectiveActivePathwayId ?? undefined,
       description: selectedUnit.unitDesc,
       credits: selectedUnit.credits,
       semestersOffered: selectedUnit.semestersOffered,
@@ -746,7 +764,7 @@ export const CanvasPage: React.FC = () => {
         semester,
         year,
         elective: false,
-        pathwayId: activePathwayId,
+        pathwayId: effectiveActivePathwayId,
         color: color || "#3B82F6",
         position: { x: snappedX, y: snappedY },
       });
@@ -808,7 +826,7 @@ export const CanvasPage: React.FC = () => {
 
           // Check if dropped on another junction
           const otherJunction = placeholderBoxesRef.current.find((p) => {
-            if (p.id === junctionId || p.placeholderType !== 'JUNCTION') return false;
+            if (p.id === junctionId || (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND')) return false;
             const approxH = 80 + ((p.unitOptions?.length ?? 0) + (p.options?.length ?? 0)) * 60 + 48;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
@@ -817,17 +835,19 @@ export const CanvasPage: React.FC = () => {
           });
 
           if (otherJunction) {
+            const newUnitOptions = [...(otherJunction.unitOptions ?? []), unit];
             setPlaceholderBoxes((prev) =>
               prev.map((p) =>
                 p.id === otherJunction.id
-                  ? { ...p, unitOptions: [...(p.unitOptions ?? []), unit] }
+                  ? { ...p, unitOptions: newUnitOptions }
                   : p
               )
             );
+            axiosInstance.put(`/canvas-placeholder/${otherJunction.id}`, { unitOptions: newUnitOptions }).catch(console.error);
           } else {
             // Place on canvas only if not already there in this pathway
             const alreadyOnCanvas = unitBoxes.some(
-              (u) => u.unitId === asUnit.unitId && u.pathwayId === (unit.pathwayId ?? activePathwayId)
+              (u) => u.unitId === asUnit.unitId && u.pathwayId === (unit.pathwayId ?? effectiveActivePathwayId)
             );
             if (!alreadyOnCanvas) {
               addUnitToCanvasAtPos(asUnit, canvasCoords.x - UNIT_BOX_WIDTH / 2, canvasCoords.y - 40, unit.color);
@@ -835,13 +855,16 @@ export const CanvasPage: React.FC = () => {
           }
         } else {
           // Dropped outside canvas — put back in same junction
+          const restored = placeholderBoxesRef.current.find((p) => p.id === junctionId);
+          const newUnitOptions = [...((restored?.unitOptions) ?? []), unit];
           setPlaceholderBoxes((prev) =>
             prev.map((p) =>
               p.id === junctionId
-                ? { ...p, unitOptions: [...(p.unitOptions ?? []), unit] }
+                ? { ...p, unitOptions: newUnitOptions }
                 : p
             )
           );
+          axiosInstance.put(`/canvas-placeholder/${junctionId}`, { unitOptions: newUnitOptions }).catch(console.error);
         }
       }
       setDraggedNewUnit(null);
@@ -1013,7 +1036,7 @@ export const CanvasPage: React.FC = () => {
           // Check if dropped onto a junction placeholder
           const PLACEHOLDER_W = UNIT_BOX_WIDTH; // same as placeholder width
           const junctionHit = placeholderBoxesRef.current.find((p) => {
-            if (p.placeholderType !== 'JUNCTION') return false;
+            if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
             const approxHeight = 40 + (p.options?.length ?? 2) * 52 + 36;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + PLACEHOLDER_W &&
@@ -1029,13 +1052,15 @@ export const CanvasPage: React.FC = () => {
               credits: unit.credits,
               semestersOffered: unit.semestersOffered,
             };
+            const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
             setPlaceholderBoxes((prev) =>
               prev.map((p) =>
                 p.id === junctionHit.id
-                  ? { ...p, unitOptions: [...(p.unitOptions ?? []), jUnit] }
+                  ? { ...p, unitOptions: newUnitOptions }
                   : p
               )
             );
+            axiosInstance.put(`/canvas-placeholder/${junctionHit.id}`, { unitOptions: newUnitOptions }).catch(console.error);
           } else {
             addUnitToCanvasAtPos(
               unit,
@@ -1072,17 +1097,35 @@ export const CanvasPage: React.FC = () => {
           ue.clientY >= rect.top && ue.clientY <= rect.bottom
         ) {
           const coords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
-          const snapped = snapToGrid(coords.x, coords.y);
+          const snapped = snapToGrid(coords.x, coords.y - 40);
+          const initialData =
+            type === 'CORE'               ? { label: 'Core Unit' }
+            : type === 'ELECTIVE'         ? { label: 'Elective' }
+            : type === 'SELECTIVE_ELECTIVE' ? { label: 'Selective Elective' }
+            :                               { options: ['Option A', 'Option B'] };
+          const tempId = Date.now();
           const newBox: PlaceholderBox = {
-            id: Date.now(),
+            id: tempId,
             placeholderType: type,
             x: snapped.x,
             y: snapped.y,
-            ...(type === 'CORE'     ? { label: 'Core Unit' }
-              : type === 'ELECTIVE' ? { label: 'Elective' }
-              :                       { options: ['Option A', 'Option B'] }),
+            ...initialData,
           };
           setPlaceholderBoxes((prev) => [...prev, newBox]);
+          if (currentCourse?.courseId) {
+            axiosInstance.post('/canvas-placeholder', {
+              courseId: currentCourse.courseId,
+              pathwayId: effectiveActivePathwayId,
+              placeholderType: type,
+              x: snapped.x,
+              y: snapped.y,
+              ...initialData,
+            }).then((res) => {
+              setPlaceholderBoxes((prev) =>
+                prev.map((p) => p.id === tempId ? { ...p, id: res.data.id } : p)
+              );
+            }).catch(console.error);
+          }
         }
       }
       setDraggedPlaceholder(null);
@@ -1129,6 +1172,7 @@ export const CanvasPage: React.FC = () => {
       setPlaceholderBoxes((prev) =>
         prev.map((p) => p.id === id ? { ...p, x: snapped.x, y: snapped.y } : p)
       );
+      axiosInstance.put(`/canvas-placeholder/${id}`, { x: snapped.x, y: snapped.y }).catch(console.error);
     };
 
     document.addEventListener("mousemove", handleMove);
@@ -1317,7 +1361,7 @@ export const CanvasPage: React.FC = () => {
       if (canvasRef.current && unit?.unitId) {
         const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
         const junctionHit = placeholderBoxesRef.current.find((p) => {
-          if (p.placeholderType !== 'JUNCTION') return false;
+          if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
           const approxHeight = 80 + (p.options?.length ?? 2) * 52 + 36;
           return (
             canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
@@ -1335,13 +1379,15 @@ export const CanvasPage: React.FC = () => {
             color: unit.color,
             pathwayId: unit.pathwayId,
           };
+          const newUnitOptions = [...(junctionHit.unitOptions ?? []), jUnit];
           setPlaceholderBoxes((prev) =>
             prev.map((p) =>
               p.id === junctionHit.id
-                ? { ...p, unitOptions: [...(p.unitOptions ?? []), jUnit] }
+                ? { ...p, unitOptions: newUnitOptions }
                 : p
             )
           );
+          axiosInstance.put(`/canvas-placeholder/${junctionHit.id}`, { unitOptions: newUnitOptions }).catch(console.error);
           // Revert unit back to where it came from
           setUnitBoxes((prev) =>
             prev.map((u) => u.id === id ? { ...u, x: originalPos.x, y: originalPos.y } : u)
@@ -1505,7 +1551,7 @@ export const CanvasPage: React.FC = () => {
       setConnectionSource(null);
       return;
     }
-    if (!activePathwayId) {
+    if (!effectiveActivePathwayId) {
       alert("Select a pathway before creating connections.");
       return;
     }
@@ -1515,7 +1561,7 @@ export const CanvasPage: React.FC = () => {
         relatedId: targetUnitId,
         relationshipType: selectedRelationType,
         courseId: currentCourse.courseId,
-        pathwayId: activePathwayId,
+        pathwayId: effectiveActivePathwayId,
         entryType: 0,
       });
       setRelationships([...relationships, response.data]);
@@ -1525,6 +1571,17 @@ export const CanvasPage: React.FC = () => {
       alert(error.response?.data?.message || "Failed to create relationship");
       setConnectionSource(null);
     }
+  };
+
+  const handleCreateCombo = async () => {
+    if (!currentCourse?.courseId || visiblePathwayIds.length < 2) return;
+    const sorted = [...visiblePathwayIds].sort((a, b) => a - b);
+    await createPathway(`combo_${sorted.join("_")}`, "CUSTOM", currentCourse.courseId, sorted);
+  };
+
+  const handleRemoveCombo = async () => {
+    if (!activeCombo) return;
+    await deletePathway(activeCombo.pathwayId);
   };
 
   const handleDeleteRelationship = async (relationshipId: number) => {
@@ -1724,7 +1781,7 @@ const yearsCount =
               credits: u.credits ?? 0,
               semestersOffered: u.semestersOffered ?? [],
             }))}
-          secondaryPathwayConflict={secondaryPathwayId !== null && !secondaryCompatible}
+          secondaryPathwayConflict={overlayPathwayIds.length > 0 && !overlayCompatible}
           onCopyFromPathway={handleCopyFromEntryPoint}
           onDeleteUnallocated={(unitId) => {
             const target = unitBoxes.find((u) => u.unitId === unitId && u.unallocated);
@@ -1739,7 +1796,7 @@ const yearsCount =
           {/* Active pathway — always shown */}
           {activePathwayObj && (
             <span className="flex items-center gap-1.5 shrink-0">
-              {secondaryPathwayObj && (
+              {overlayPathwayIds.length > 0 && (
                 <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-blue-500 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
                   <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 2.828L11.828 15.828a2 2 0 01-1.414.586H7v-3.414a2 2 0 01.586-1.414z" />
@@ -1753,20 +1810,20 @@ const yearsCount =
             </span>
           )}
 
-          {/* Secondary pathway — only shown when selected */}
-          {secondaryPathwayObj && (
-            <>
+          {/* Overlay pathways — shown for each visible non-active pathway */}
+          {overlayPathwayObjects.map((p) => (
+            <React.Fragment key={p.pathwayId}>
               <span className="text-gray-300 text-xs mx-0.5">|</span>
               <span className="flex items-center gap-1.5 shrink-0">
                 <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded">
                   Overlay
                 </span>
                 <span className="text-xs font-medium text-gray-400">
-                  {secondaryPathwayObj.name}
+                  {p.name}
                 </span>
               </span>
-            </>
-          )}
+            </React.Fragment>
+          ))}
 
           {/* Paintbrush tool — pushed to the right */}
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
@@ -1871,6 +1928,32 @@ const yearsCount =
               })()}
             </>
           )}
+
+          {/* Combo layout override — only when 2+ pathways visible */}
+          {visiblePathwayIds.length >= 2 && (
+            <>
+              <span className="text-gray-200 text-xs">|</span>
+              {activeCombo ? (
+                <button
+                  type="button"
+                  onClick={handleRemoveCombo}
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded hover:bg-orange-100 transition-colors"
+                  title="Remove custom layout and return to default overlay"
+                >
+                  Custom layout · Remove override
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCreateCombo}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600 rounded transition-colors"
+                  title="Create a custom layout for this specific combination of pathways"
+                >
+                  Override defaults
+                </button>
+              )}
+            </>
+          )}
         </div>
         {connectionMode && (
           <div
@@ -1922,7 +2005,7 @@ const yearsCount =
           />
 
           {unitBoxes
-            .filter((u) => u.pathwayId === activePathwayId && u.spansYear && isUnitVisible(u.unitId) && !u.unallocated)
+            .filter((u) => u.pathwayId === effectiveActivePathwayId && u.spansYear && isUnitVisible(u.unitId) && !u.unallocated)
             .map((u) => {
               const cy = companionSlotY(u.y);
               if (cy === null) return null;
@@ -1953,7 +2036,7 @@ const yearsCount =
               );
             })}
 
-          {unitBoxes.filter((unit) => unit.pathwayId === activePathwayId && isUnitVisible(unit.unitId) && !unit.unallocated).map((unit) => (
+          {unitBoxes.filter((unit) => unit.pathwayId === effectiveActivePathwayId && isUnitVisible(unit.unitId) && !unit.unallocated).map((unit) => (
             <UnitBox
               key={unit.id}
               unit={unit}
@@ -1998,8 +2081,8 @@ const yearsCount =
 
           ))}
 
-          {/* Secondary pathway — incompatibility banner */}
-          {secondaryPathwayId !== null && !secondaryCompatible && (
+          {/* Overlay pathways — incompatibility banner */}
+          {overlayPathwayIds.length > 0 && !overlayCompatible && (
             <div
               className="absolute flex items-center gap-2 px-4 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-xs font-medium shadow-md pointer-events-none"
               style={{ top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 20 }}
@@ -2011,14 +2094,14 @@ const yearsCount =
             </div>
           )}
 
-          {/* Secondary pathway units — read-only overlay */}
-          {secondaryPathwayId !== null && secondaryCompatible && (
-            <div className="pointer-events-none" style={{ opacity: 0.85 }}>
+          {/* Overlay pathway units — read-only, click to make active */}
+          {overlayPathwayIds.length > 0 && overlayCompatible && overlayPathwayIds.map((pid) => (
+            <div key={`overlay-${pid}`} style={{ opacity: 0.85 }}>
               {unitBoxes
-                .filter((unit) => unit.pathwayId === secondaryPathwayId && isUnitVisible(unit.unitId) && !unit.unallocated)
+                .filter((unit) => unit.pathwayId === pid && isUnitVisible(unit.unitId) && !unit.unallocated)
                 .map((unit) => (
                   <UnitBox
-                    key={`secondary-${unit.id}`}
+                    key={`overlay-${pid}-${unit.id}`}
                     unit={unit}
                     draggedUnit={null}
                     selectedUnits={[]}
@@ -2028,7 +2111,7 @@ const yearsCount =
                     activeTab="info"
                     unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
                     currentCLOs={currentCLOs || []}
-                    onMouseDown={() => {}}
+                    onMouseDown={(e) => { e.stopPropagation(); setActivePathway(pid); }}
                     onDoubleClick={() => {}}
                     onClick={() => {}}
                     onMouseEnter={() => {}}
@@ -2046,18 +2129,22 @@ const yearsCount =
                   />
                 ))}
             </div>
-          )}
+          ))}
 
           {/* Placeholder boxes */}
           {placeholderBoxes.map((box) => (
             <CanvasPlaceholder
               key={box.id}
               box={box}
-              onDelete={(id) => setPlaceholderBoxes((prev) => prev.filter((p) => p.id !== id))}
+              onDelete={(id) => {
+                setPlaceholderBoxes((prev) => prev.filter((p) => p.id !== id));
+                axiosInstance.delete(`/canvas-placeholder/${id}`).catch(console.error);
+              }}
               onMouseDown={handlePlaceholderDragOnCanvas}
-              onUpdate={(id, changes) =>
-                setPlaceholderBoxes((prev) => prev.map((p) => p.id === id ? { ...p, ...changes } : p))
-              }
+              onUpdate={(id, changes) => {
+                setPlaceholderBoxes((prev) => prev.map((p) => p.id === id ? { ...p, ...changes } : p));
+                axiosInstance.put(`/canvas-placeholder/${id}`, changes).catch(console.error);
+              }}
               onDragUnitOut={handleDragUnitOut}
             />
           ))}
@@ -2065,18 +2152,18 @@ const yearsCount =
           <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
             <ConnectionLines
               relationships={relationships.filter(
-                (r) => r.pathwayId === activePathwayId && isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
+                (r) => r.pathwayId === effectiveActivePathwayId && isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
               )}
               unitBoxes={unitBoxes}
               numberTeachingPeriods={semPerYear}
               hoveredUnit={hoveredUnit}
               onDeleteRelationship={handleDeleteRelationship}
             />
-            {secondaryPathwayId !== null && secondaryCompatible && (
-              <g opacity={0.85}>
+            {overlayPathwayIds.length > 0 && overlayCompatible && overlayPathwayIds.map((pid) => (
+              <g key={`overlay-lines-${pid}`} opacity={0.85}>
                 <ConnectionLines
                   relationships={relationships.filter(
-                    (r) => r.pathwayId === secondaryPathwayId && isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
+                    (r) => r.pathwayId === pid && isUnitVisible(r.unitId) && isUnitVisible(r.relatedId)
                   )}
                   unitBoxes={unitBoxes}
                   numberTeachingPeriods={semPerYear}
@@ -2084,7 +2171,7 @@ const yearsCount =
                   onDeleteRelationship={() => {}}
                 />
               </g>
-            )}
+            ))}
           </svg>
 
           {drawerUnitId !== null && (() => {
@@ -2129,15 +2216,15 @@ const yearsCount =
           </div>
         ) : (
           <ThemeView
-            key={activePathwayId ?? "none"}
+            key={effectiveActivePathwayId ?? "none"}
             courseId={currentCourse?.courseId ?? ""}
-            unitBoxes={unitBoxes.filter((u) => u.pathwayId === activePathwayId || u.unallocated)}
+            unitBoxes={unitBoxes.filter((u) => u.pathwayId === effectiveActivePathwayId || u.unallocated)}
             unitMappings={unitMappings}
             existingTags={(() => {
               // Only show themes that have at least one unit in the active pathway.
               const activeUnitIds = new Set(
                 unitBoxes
-                  .filter((u) => u.pathwayId === activePathwayId && !u.unallocated && u.unitId)
+                  .filter((u) => u.pathwayId === effectiveActivePathwayId && !u.unallocated && u.unitId)
                   .map((u) => u.unitId as string)
               );
               const relevantTagIds = new Set(
@@ -2262,18 +2349,20 @@ const yearsCount =
 
       {/* Floating Drag Preview for Placeholder Blocks — matches unit box ghost */}
       {draggedPlaceholder && (() => {
-        const bgColor =
-          draggedPlaceholder.type === 'CORE'     ? '#6B7280'
-          : draggedPlaceholder.type === 'ELECTIVE' ? '#F59E0B'
-          :                                           '#8B5CF6';
-        const icon =
-          draggedPlaceholder.type === 'CORE'     ? '◆'
-          : draggedPlaceholder.type === 'ELECTIVE' ? '✦'
-          :                                           '⑂';
-        const label =
-          draggedPlaceholder.type === 'CORE'     ? 'Core Unit'
-          : draggedPlaceholder.type === 'ELECTIVE' ? 'Elective'
-          :                                           'OR Junction';
+        const PREVIEW_COLOR: Record<string, string> = {
+          CORE: '#6B7280', ELECTIVE: '#F59E0B', SELECTIVE_ELECTIVE: '#EA580C',
+          JUNCTION: '#8B5CF6', AND: '#059669',
+        };
+        const PREVIEW_ICON: Record<string, string> = {
+          CORE: '◆', ELECTIVE: '✦', SELECTIVE_ELECTIVE: '⊞', JUNCTION: '⑂', AND: '⊕',
+        };
+        const PREVIEW_LABEL: Record<string, string> = {
+          CORE: 'Core Unit', ELECTIVE: 'Elective', SELECTIVE_ELECTIVE: 'Selective Elective',
+          JUNCTION: 'OR Junction', AND: 'AND Junction',
+        };
+        const bgColor = PREVIEW_COLOR[draggedPlaceholder.type] ?? '#8B5CF6';
+        const icon    = PREVIEW_ICON[draggedPlaceholder.type]  ?? '⑂';
+        const label   = PREVIEW_LABEL[draggedPlaceholder.type] ?? draggedPlaceholder.type;
         return (
           <div
             className="fixed pointer-events-none z-[200] opacity-80"

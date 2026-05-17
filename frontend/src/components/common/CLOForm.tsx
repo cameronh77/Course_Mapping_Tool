@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { CourseLearningOutcome } from "../../pages/CourseEdit";
+import { FieldTooltip } from "./FieldTooltip";
 
 interface CLOFormProps {
   onSave: (c: CourseLearningOutcome) => void;
@@ -38,6 +39,7 @@ const CLOForm = ({ onSave, initialData, courseId }: CLOFormProps) => {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Learning Outcome Description
+            <FieldTooltip text="A statement describing what students should be able to do upon completing this course. Start with an action verb (e.g. 'Analyse', 'Design', 'Evaluate')." />
           </label>
           <input
             type="text"

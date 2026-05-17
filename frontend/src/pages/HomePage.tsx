@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useCourseStore } from "../stores/useCourseStore";
 import { useNavigate } from "react-router-dom";
 import { CourseCard } from "../components/common/CourseCard";
+import { FieldTooltip } from "../components/common/FieldTooltip";
 
 export interface Course {
   courseId: string;
@@ -32,8 +33,8 @@ export const HomePage = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
-  const { existingCourses, createCourse, viewCourses, setCurrentCourse } =
-    useCourseStore();
+  const { existingCourses, createCourse, viewCourses, setCurrentCourse, deleteCourse } =
+    useCourseStore() as any;
 
   useEffect(() => {
     setLoadedCourses(
@@ -111,17 +112,26 @@ export const HomePage = () => {
 
             <div className="flex gap-4">
               <div className="flex flex-col flex-1">
-                <label className={labelClass}>Course Name</label>
+                <label className={labelClass}>
+                  Course Name
+                  <FieldTooltip text="The full name of the course displayed on the dashboard and all reports (e.g. Bachelor of Science)." />
+                </label>
                 <input name="courseName" value={courseData.courseName} onChange={handleChange} className={inputClass} placeholder="e.g. Bachelor of Science" />
               </div>
               <div className="flex flex-col w-36">
-                <label className={labelClass}>Course ID</label>
+                <label className={labelClass}>
+                  Course ID
+                  <FieldTooltip text="A short unique identifier for this course (e.g. BSC01). Cannot be changed after creation." />
+                </label>
                 <input name="courseId" value={courseData.courseId} onChange={handleChange} className={inputClass} placeholder="e.g. BSC01" />
               </div>
             </div>
 
             <div className="flex flex-col">
-              <label className={labelClass}>Description</label>
+              <label className={labelClass}>
+                Description
+                <FieldTooltip text="A brief overview of the course shown on course cards and listings." />
+              </label>
               <input name="courseDesc" value={courseData.courseDesc} onChange={handleChange} className={inputClass} placeholder="Brief course description" />
             </div>
 
@@ -144,12 +154,18 @@ export const HomePage = () => {
 
             <div className="flex gap-4">
               <div className="flex flex-col flex-1">
-                <label className={labelClass}>Teaching Periods per Year</label>
+                <label className={labelClass}>
+                  Teaching Periods per Year
+                  <FieldTooltip text="How many teaching periods occur in a single calendar year (e.g. 2 for semester-based courses). Controls the row layout on the canvas." />
+                </label>
                 <p className="text-xs text-gray-400 mb-1">How many teaching periods occur in a single calendar year</p>
                 <input name="numberTeachingPeriods" value={courseData.numberTeachingPeriods} onChange={handleChange} className={inputClass} placeholder="e.g. 2 (semesters per year)" />
               </div>
               <div className="flex flex-col flex-1">
-                <label className={labelClass}>Expected Duration</label>
+                <label className={labelClass}>
+                  Expected Duration
+                  <FieldTooltip text="The total length of the course in years (e.g. 3). Determines how many year columns appear on the canvas timeline." />
+                </label>
                 <p className="text-xs text-gray-400 mb-1">Total length of the course in years</p>
                 <input name="expectedDuration" value={courseData.expectedDuration} onChange={handleChange} className={inputClass} placeholder="e.g. 3 years" />
               </div>
@@ -267,9 +283,15 @@ export const HomePage = () => {
                 activeStatus={true}
                 courseName={course.courseName}
                 courseId={course.courseId}
+                courseDesc={course.courseDesc}
                 courseDuration={course.expectedDuration}
                 numberOfUnits={32}
                 onClick={() => handleViewCourse(course)}
+                onDelete={() => {
+                  if (confirm(`Delete "${course.courseName}"? This cannot be undone.`)) {
+                    deleteCourse(course.courseId);
+                  }
+                }}
               />
             ))}
             <button

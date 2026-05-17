@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { FieldTooltip } from "./FieldTooltip";
 
 interface ULOFormProps {
   onSave: (description: string) => void;
@@ -27,7 +28,10 @@ const UnitLearningOutcomeForm: React.FC<ULOFormProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
-        <label className={labelClass}>Unit Learning Outcome Description</label>
+        <label className={labelClass}>
+          Unit Learning Outcome Description
+          <FieldTooltip text="A statement describing what students should be able to demonstrate upon completing this unit. Should map to one or more course-level outcomes (CLOs)." />
+        </label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}

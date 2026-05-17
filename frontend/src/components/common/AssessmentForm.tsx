@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { Assessment, AssessmentType } from "../../types";
+import { FieldTooltip } from "./FieldTooltip";
 
 const ASSESSMENT_TYPES: AssessmentType[] = [
   "Artefact",
@@ -99,7 +100,10 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
       {/* Grid */}
       <div className="grid grid-cols-2 gap-6">
         <div>
-          <label className={labelClass}>Assessment Name</label>
+          <label className={labelClass}>
+            Assessment Name
+            <FieldTooltip text="A short, descriptive name for this assessment task (e.g. 'Assignment 1', 'Final Exam')." />
+          </label>
           <input
             name="name"
             value={form.name}
@@ -111,7 +115,10 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
         </div>
 
         <div>
-          <label className={labelClass}>Assessment Type</label>
+          <label className={labelClass}>
+            Assessment Type
+            <FieldTooltip text="The format of this assessment (e.g. Examination, Project, Portfolio). Used for AQF and accreditation reporting." />
+          </label>
           <select
             name="type"
             value={form.type ?? ""}
@@ -131,7 +138,10 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
         </div>
 
         <div>
-          <label className={labelClass}>Value (%)</label>
+          <label className={labelClass}>
+            Value (%)
+            <FieldTooltip text="The percentage this assessment contributes to the overall unit grade. All assessments in a unit should total 100%." />
+          </label>
           <input
             type="number"
             name="value"
@@ -144,7 +154,10 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
         </div>
 
         <div>
-          <label className={labelClass}>Hurdle Requirement</label>
+          <label className={labelClass}>
+            Hurdle Requirement
+            <FieldTooltip text="Minimum mark (%) a student must achieve on this assessment to pass the unit, regardless of their overall grade. Leave blank if no hurdle applies." />
+          </label>
           <input
             type="number"
             name="hurdleReq"
@@ -156,7 +169,10 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
         </div>
 
         <div>
-          <label className={labelClass}>Due Weeks</label>
+          <label className={labelClass}>
+            Due Weeks
+            <FieldTooltip text="The teaching week(s) this assessment is due. Enter multiple weeks separated by commas (e.g. 3, 5, 7)." />
+          </label>
           <input
             name="dueWeek"
             onChange={(e) => handleArrayChange(e, "number")}
@@ -166,7 +182,10 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
         </div>
 
         <div>
-          <label className={labelClass}>Feedback Weeks</label>
+          <label className={labelClass}>
+            Feedback Weeks
+            <FieldTooltip text="The teaching week(s) when feedback on this assessment will be returned to students (e.g. 4, 6)." />
+          </label>
           <input
             name="feedbackWeek"
             onChange={(e) => handleArrayChange(e, "number")}
@@ -176,7 +195,10 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
         </div>
 
         <div className="col-span-2">
-          <label className={labelClass}>Feedback Details</label>
+          <label className={labelClass}>
+            Feedback Details
+            <FieldTooltip text="A brief description of the feedback method for each feedback week, comma-separated (e.g. 'Written comments, Rubric marks')." />
+          </label>
           <input
             name="feedbackDetails"
             onChange={(e) => handleArrayChange(e, "string")}
@@ -186,7 +208,10 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
         </div>
 
         <div className="col-span-2">
-          <label className={labelClass}>Assessment Description</label>
+          <label className={labelClass}>
+            Assessment Description
+            <FieldTooltip text="A detailed description of the assessment task, including what students are expected to produce or demonstrate." />
+          </label>
           <textarea
             name="description"
             value={form.description}
@@ -197,7 +222,10 @@ const AssessmentForm: React.FC<AssessmentFormProps> = ({
         </div>
 
         <div className="col-span-2">
-          <label className={labelClass}>Assessment Conditions</label>
+          <label className={labelClass}>
+            Assessment Conditions
+            <FieldTooltip text="Any special conditions such as time limits, open/closed book rules, or required materials students must bring." />
+          </label>
           <textarea
             name="conditions"
             value={form.conditions}

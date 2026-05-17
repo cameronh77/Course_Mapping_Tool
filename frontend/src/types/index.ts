@@ -71,6 +71,7 @@ export interface Pathway {
   name: string;
   type: PathwayType;
   courseId: string;
+  comboOf: number[];
 }
 
 export interface UnitRelationship {
@@ -212,7 +213,7 @@ export interface TARelationship {
   unitId: string;
 }
 
-export type PlaceholderType = 'CORE' | 'ELECTIVE' | 'JUNCTION';
+export type PlaceholderType = 'CORE' | 'ELECTIVE' | 'SELECTIVE_ELECTIVE' | 'JUNCTION' | 'AND';
 
 export interface JunctionUnit {
   unitId: string;
@@ -222,14 +223,23 @@ export interface JunctionUnit {
   semestersOffered?: number[];
   color?: string;
   pathwayId?: number;
+  courseUnitId?: number; // DB id of the course-unit record, if unit came from canvas
 }
 
 export interface PlaceholderBox {
   id: number;
+  pathwayId?: number | null;
   placeholderType: PlaceholderType;
   x: number;
   y: number;
   label?: string;        // CORE / ELECTIVE: display label
   options?: string[];    // JUNCTION: freetext labels
-  unitOptions?: JunctionUnit[]; // JUNCTION: dragged-in unit references
+  unitOptions?: JunctionUnit[]; // JUNCTION / AND: dragged-in unit references
+  // OR junction: per-unit credit constraints
+  minCredits?: number;
+  maxCredits?: number;
+  // AND junction: maximum sum of all unit credits
+  maxTotalCredits?: number;
+  // SELECTIVE_ELECTIVE: tag-based pool filter
+  tagIds?: number[];
 }

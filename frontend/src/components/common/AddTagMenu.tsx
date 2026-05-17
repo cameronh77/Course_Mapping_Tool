@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { CourseLearningOutcome } from "../../pages/CourseEdit";
 import type { Tag } from "../../pages/UnitCanvas";
 
@@ -18,9 +18,22 @@ export const AddTagMenu = ({
   onSave,
 }: AddTagMenuProps) => {
   const [selectedTag, setSelectedTag] = useState(data[0]);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
   return (
     <div
-      className="fixed bg-white border border-gray-300 shadow-lg rounded-md text-black flex flex-col justify-between min-h-[10rem] w-[20rem]"
+      ref={menuRef}
+      className="fixed bg-white border border-gray-300 shadow-lg rounded-md text-black flex flex-col justify-between min-h-[10rem] w-[20rem] z-[300]"
       style={{
         top: y,
         left: x,

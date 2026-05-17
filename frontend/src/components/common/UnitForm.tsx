@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useUnitStore } from "../../stores/useUnitStore";
+import { FieldTooltip } from "./FieldTooltip";
 
 interface UnitFormProps {
   onSave: (data: UnitFormData) => void;
@@ -21,7 +22,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData, onView }) => {
     unitId: initialData?.unitId || null,
     unitName: initialData?.unitName || null,
     unitDesc: initialData?.unitDesc || null,
-    credits: initialData?.credits || null,
+    credits: initialData?.credits ?? null,
     semestersOffered: initialData?.semestersOffered || null,
     color: initialData?.color || "#3B82F6", // Default blue
   });
@@ -63,6 +64,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData, onView }) => {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Unit ID
+            <FieldTooltip text="The unique code identifying this unit (e.g. FIT3170). Used across the system to reference and link this unit." />
           </label>
           <input
             type="text"
@@ -78,6 +80,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData, onView }) => {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Unit Name
+            <FieldTooltip text="The full display name of the unit shown on the canvas and in reports (e.g. Introduction to Computer Science)." />
           </label>
           <input
             type="text"
@@ -93,6 +96,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData, onView }) => {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Unit Description
+            <FieldTooltip text="A brief overview of what this unit covers. Displayed in unit detail panels and exported reports." />
           </label>
           <textarea
             name="unitDesc"
@@ -108,11 +112,12 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData, onView }) => {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Credits
+            <FieldTooltip text="The credit point value of this unit. A standard unit is typically 6 credits. Used to calculate total course load." />
           </label>
           <input
             type="number"
             name="credits"
-            value={form.credits || ""}
+            value={form.credits ?? ""}
             onChange={handleChange}
             min={0}
             max={20}
@@ -125,9 +130,8 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData, onView }) => {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Semesters Offered
-            <span className="text-gray-500 text-xs ml-2">
-              (comma-separated)
-            </span>
+            <span className="text-gray-500 text-xs ml-2">(comma-separated)</span>
+            <FieldTooltip text="Which teaching periods this unit runs in (e.g. 1, 2). Used to validate semester placement on the canvas timeline." />
           </label>
           <input
             type="text"
@@ -146,6 +150,7 @@ const UnitForm: React.FC<UnitFormProps> = ({ onSave, initialData, onView }) => {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Unit Color
+            <FieldTooltip text="The colour used to display this unit on the canvas. Helps visually distinguish units from one another. Enter a hex code or use the colour picker." />
           </label>
           <div className="flex items-center space-x-3">
             <input

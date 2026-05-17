@@ -3,6 +3,7 @@ import { useCourseStore } from "../stores/useCourseStore";
 import { Trash2 } from "lucide-react";
 import { useCLOStore } from "../stores/useCLOStore";
 import CLOForm from "../components/common/CLOForm";
+import { FieldTooltip } from "../components/common/FieldTooltip";
 
 export interface Course {
   courseId: String;
@@ -94,7 +95,10 @@ export const CourseEdit = () => {
 
           <div className="flex flex-col gap-4">
             <div className="flex flex-col">
-              <label className={labelClass}>Course Description</label>
+              <label className={labelClass}>
+                Course Description
+                <FieldTooltip text="A brief summary of the course shown on course listings and the dashboard." />
+              </label>
               <input
                 type="text"
                 className={inputClass}
@@ -105,7 +109,10 @@ export const CourseEdit = () => {
             </div>
 
             <div className="flex flex-col">
-              <label className={labelClass}>Expected Duration</label>
+              <label className={labelClass}>
+                Expected Duration
+                <FieldTooltip text="The total length of the course in years (e.g. 3). Determines how many year columns appear on the canvas." />
+              </label>
               <p className="text-xs text-gray-400 mb-1">Total length of the course in years</p>
               <input
                 type="text"
@@ -117,7 +124,10 @@ export const CourseEdit = () => {
             </div>
 
             <div className="flex flex-col">
-              <label className={labelClass}>Teaching Periods per Year</label>
+              <label className={labelClass}>
+                Teaching Periods per Year
+                <FieldTooltip text="How many teaching periods occur in a single calendar year (e.g. 2 for semester-based courses). Controls row layout on the canvas." />
+              </label>
               <p className="text-xs text-gray-400 mb-1">How many teaching periods occur in a single calendar year</p>
               <input
                 type="text"
