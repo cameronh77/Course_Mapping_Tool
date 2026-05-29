@@ -207,7 +207,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
           <div className="absolute right-2 top-2 flex items-center gap-1 z-10">
             <button
               data-expand-toggle={unit.id}
-              onClick={(e) => toggleExpand(e, unit.id)}
+              onClick={(e) => { setMenuOpen(false); toggleExpand(e, unit.id); }}
               onMouseDown={(e) => e.stopPropagation()}
               className="text-white bg-white/20 hover:bg-white/30 rounded-full w-7 h-7 flex items-center justify-center transition-colors"
               title={isExpanded ? "Hide Details" : "Show Details"}
@@ -219,7 +219,7 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
 
             <button
               ref={kebabRef}
-              onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+              onClick={(e) => { e.stopPropagation(); if (isExpanded) toggleExpand(e, unit.id); setMenuOpen((v) => !v); }}
               onMouseDown={(e) => e.stopPropagation()}
               className="text-white bg-white/20 hover:bg-white/30 rounded-full w-7 h-7 flex items-center justify-center transition-colors"
               title="More actions"
@@ -348,7 +348,8 @@ export const UnitBox: React.FC<UnitBoxProps> = ({
       {menuOpen && (
         <div
           ref={menuRef}
-          className="absolute right-2 top-11 bg-white border border-gray-200 rounded-md shadow-xl text-gray-800 text-xs font-medium py-1 min-w-[170px] z-30 cursor-default"
+          className="absolute bg-white border border-gray-200 rounded-md shadow-xl text-gray-800 text-xs font-medium py-1 min-w-[170px] cursor-default"
+          style={{ left: (unit.width ?? 256) + 8, top: 0, zIndex: 50 }}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >

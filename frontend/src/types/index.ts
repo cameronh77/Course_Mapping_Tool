@@ -6,6 +6,31 @@ export type BloomsLevel =
   | "EVALUATE"
   | "CREATE";
 
+export type TaxonomySystem = "BLOOMS" | "SOLO" | "WEBB" | "FINK";
+
+export type SoloLevel =
+  | "PRESTRUCTURAL"
+  | "UNISTRUCTURAL"
+  | "MULTISTRUCTURAL"
+  | "RELATIONAL"
+  | "EXTENDED_ABSTRACT";
+
+export type WebbLevel =
+  | "RECALL"
+  | "SKILL_CONCEPT"
+  | "STRATEGIC_THINKING"
+  | "EXTENDED_THINKING";
+
+export type FinkLevel =
+  | "FOUNDATIONAL"
+  | "APPLICATION"
+  | "INTEGRATION"
+  | "HUMAN_DIMENSION"
+  | "CARING"
+  | "LEARNING_TO_LEARN";
+
+export type AnyTaxonomyLevel = BloomsLevel | SoloLevel | WebbLevel | FinkLevel;
+
 // Unit and Canvas-related types
 export interface Unit {
   unitId: string;
@@ -29,6 +54,8 @@ export interface UnitLearningOutcome {
   cloIds?: number[];
   assessmentIds?: number[];
   bloomsLevel?: BloomsLevel | null;
+  taxonomySystem?: TaxonomySystem | null;
+  taxonomyLevel?: string | null;
 }
 
 export interface unitLearningOutcome {
@@ -171,6 +198,7 @@ export interface AssessmentBox {
 export interface UnitMapping {
   clos: CourseLearningOutcome[];
   tags: Tag[];
+  ulos: UnitLearningOutcome[];
 }
 
 // Record type for unit mappings keyed by unitId
@@ -242,4 +270,5 @@ export interface PlaceholderBox {
   maxTotalCredits?: number;
   // SELECTIVE_ELECTIVE: tag-based pool filter
   tagIds?: number[];
+  pinned?: boolean;
 }

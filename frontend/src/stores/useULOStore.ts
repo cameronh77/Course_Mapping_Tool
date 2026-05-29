@@ -39,6 +39,8 @@ export const useULOStore = create((set) => ({
       };
       if (data.cloId !== undefined) input.cloId = data.cloId;
       if (data.bloomsLevel !== undefined) input.bloomsLevel = data.bloomsLevel;
+      if (data.taxonomySystem !== undefined) input.taxonomySystem = data.taxonomySystem;
+      if (data.taxonomyLevel !== undefined) input.taxonomyLevel = data.taxonomyLevel;
       const res = await axiosInstance.put(`/ULO/update/${data.uloId}`, input);
       set((state) => ({
         currentULOs: state.currentULOs

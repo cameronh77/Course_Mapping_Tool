@@ -11,6 +11,7 @@ interface PathwayState {
   setActivePathway: (pathwayId: number) => void;
   setVisibility: (pathwayId: number, visible: boolean) => void;
   togglePathwayVisibility: (pathwayId: number) => void;
+  replaceVisiblePathway: (oldId: number, newId: number) => void;
   createPathway: (name: string, type: string, courseId: string, comboOf?: number[]) => Promise<Pathway>;
   deletePathway: (pathwayId: number) => Promise<void>;
   updatePathway: (pathwayId: number, name: string, type: string) => Promise<void>;
@@ -74,9 +75,16 @@ export const usePathwayStore = create<PathwayState>((set) => ({
         return { pathways, _courseId: courseId, ...saved };
       }
 
-      // Fall back to CORE, then first non-entry-point, then first pathway.
+      // Fall back to Core's first entry point, then CORE, then first non-entry-point, then first pathway.
+      const normalize = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+      const epBase = (s: string) => normalize(s).replace(/\s+entry\s+(level|point)(\s+\d+)?$/i, "").trim();
+      const corePathway = pathways.find((p) => p.type === "CORE");
+      const coreEntryPoint = corePathway
+        ? pathways.find((p) => p.type === "ENTRY_POINT" && epBase(p.name) === normalize(corePathway.name))
+        : null;
       const defaultPathway =
-        pathways.find((p) => p.type === "CORE") ??
+        coreEntryPoint ??
+        corePathway ??
         pathways.find((p) => p.type !== "ENTRY_POINT") ??
         pathways[0];
 
@@ -95,9 +103,29 @@ export const usePathwayStore = create<PathwayState>((set) => ({
 
   setActivePathway: (pathwayId: number) =>
     set((state) => {
-      const newVisible = state.visiblePathwayIds.includes(pathwayId)
-        ? state.visiblePathwayIds
-        : [...state.visiblePathwayIds, pathwayId];
+      const pathway = state.pathways.find((p) => p.pathwayId === pathwayId);
+      let newVisible: number[];
+
+      if (pathway?.type === "ENTRY_POINT") {
+        // Strip "Entry Level N" / "Entry Point N" suffix to get the base name
+        const normalize = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+        const baseName = (s: string) =>
+          normalize(s).replace(/\s+entry\s+(level|point)(\s+\d+)?$/i, "").trim();
+        const base = baseName(pathway.name);
+        // Remove the parent pathway and any sibling entry levels, then add this one
+        newVisible = state.visiblePathwayIds.filter((id) => {
+          const p = state.pathways.find((pw) => pw.pathwayId === id);
+          if (!p) return true;
+          if (p.type === "ENTRY_POINT") return baseName(p.name) !== base;
+          return normalize(p.name) !== base;
+        });
+        if (!newVisible.includes(pathwayId)) newVisible = [...newVisible, pathwayId];
+      } else {
+        newVisible = state.visiblePathwayIds.includes(pathwayId)
+          ? state.visiblePathwayIds
+          : [...state.visiblePathwayIds, pathwayId];
+      }
+
       persistSelection(state._courseId, pathwayId, newVisible);
       return { activePathwayId: pathwayId, visiblePathwayIds: newVisible };
     }),
@@ -108,7 +136,8 @@ export const usePathwayStore = create<PathwayState>((set) => ({
         if (state.visiblePathwayIds.includes(pathwayId)) return {};
         const targetType = state.pathways.find((p) => p.pathwayId === pathwayId)?.type;
         // Remove any other visible pathway of the same type (one-per-type rule).
-        const withoutSameType = targetType
+        // ENTRY_POINT pathways are exempt — multiple can be visible simultaneously.
+        const withoutSameType = (targetType && targetType !== "ENTRY_POINT")
           ? state.visiblePathwayIds.filter(
               (id) => state.pathways.find((p) => p.pathwayId === id)?.type !== targetType
             )
@@ -160,6 +189,14 @@ export const usePathwayStore = create<PathwayState>((set) => ({
       );
 
       return next;
+    }),
+
+  replaceVisiblePathway: (oldId: number, newId: number) =>
+    set((state) => {
+      const newVisible = state.visiblePathwayIds.map((id) => (id === oldId ? newId : id));
+      const newActive = state.activePathwayId === oldId ? newId : state.activePathwayId;
+      persistSelection(state._courseId, newActive, newVisible);
+      return { visiblePathwayIds: newVisible, activePathwayId: newActive };
     }),
 
   createPathway: async (name: string, type: string, courseId: string, comboOf?: number[]) => {

@@ -108,7 +108,7 @@ export const PathwayManagerModal: React.FC<PathwayManagerModalProps> = ({ course
         } else {
           // Parent name unchanged — reconcile to exactly desiredCount numbered 1–N.
           const existingNums = new Set(
-            currentEntryPoints.map(entryPointNumber).filter((n) => n > 0)
+            currentEntryPoints.map((ep) => entryPointNumber(ep.name)).filter((n) => n > 0)
           );
 
           // Delete entry points that are out of range or have no valid number.

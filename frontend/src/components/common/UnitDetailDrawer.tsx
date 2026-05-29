@@ -3,15 +3,17 @@ import type {
   CourseLearningOutcome,
   Tag,
   UnitBox as UnitBoxType,
+  UnitLearningOutcome,
 } from "../../types";
 import { getTagColor } from "./themeViewConstants";
+import { getTaxonomyBadge } from "./ULOBox";
 
 interface UnitDetailDrawerProps {
   unit: UnitBoxType;
   position: { left: number; top: number };
   activeTab: "info" | "clos" | "tags";
   setActiveTab: (id: number, tab: "info" | "clos" | "tags") => void;
-  unitMappings: { clos: CourseLearningOutcome[]; tags: Tag[] };
+  unitMappings: { clos: CourseLearningOutcome[]; tags: Tag[]; ulos: UnitLearningOutcome[] };
   getCLOColor: (cloId: number) => string;
   existingTags?: Tag[];
   onClose: () => void;
@@ -214,9 +216,36 @@ export const UnitDetailDrawer: React.FC<UnitDetailDrawerProps> = ({
         )}
 
         {activeTab === "clos" && (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
+            {/* Unit Learning Outcomes */}
+            {(unitMappings?.ulos || []).length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Unit Outcomes</p>
+                <div className="flex flex-col gap-1.5">
+                  {unitMappings.ulos.map((ulo) => {
+                    const badge = getTaxonomyBadge(ulo);
+                    return (
+                      <div
+                        key={ulo.uloId}
+                        className="flex items-start gap-1.5 p-1.5 rounded border border-gray-100 bg-gray-50/60 text-[11px] text-gray-700"
+                      >
+                        <span className="flex-1 leading-snug">{ulo.uloDesc}</span>
+                        {badge && (
+                          <span className={`shrink-0 mt-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${badge.badge}`}>
+                            {badge.label}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Course Learning Outcomes */}
             {(unitMappings?.clos || []).length > 0 ? (
-              <>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Course Outcomes</p>
                 <div className="flex flex-wrap gap-1.5">
                   {unitMappings.clos.map((clo) => {
                     const cloColor = clo.cloId
@@ -247,8 +276,8 @@ export const UnitDetailDrawer: React.FC<UnitDetailDrawerProps> = ({
                     {hoveredCLODesc}
                   </div>
                 )}
-              </>
-            ) : (
+              </div>
+            ) : (unitMappings?.ulos || []).length === 0 ? (
               <div className="flex flex-col items-center justify-center text-center p-4 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50/50">
                 <svg
                   className="w-6 h-6 mb-1 opacity-50"
@@ -267,7 +296,7 @@ export const UnitDetailDrawer: React.FC<UnitDetailDrawerProps> = ({
                   Drag Course Outcomes Here (or Right-Click unit)
                 </span>
               </div>
-            )}
+            ) : null}
           </div>
         )}
 

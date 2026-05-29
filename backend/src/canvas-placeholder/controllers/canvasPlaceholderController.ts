@@ -59,7 +59,7 @@ export const updateCanvasPlaceholder = async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
 
-  const { x, y, label, options, unitOptions, minCredits, maxCredits, maxTotalCredits, tagIds } = req.body;
+  const { x, y, label, options, unitOptions, minCredits, maxCredits, maxTotalCredits, tagIds, pinned } = req.body;
   try {
     const updated = await prisma.canvasPlaceholder.update({
       where: { id },
@@ -73,6 +73,7 @@ export const updateCanvasPlaceholder = async (req: Request, res: Response) => {
         ...(maxCredits !== undefined && { maxCredits: maxCredits != null ? Number(maxCredits) : null }),
         ...(maxTotalCredits !== undefined && { maxTotalCredits: maxTotalCredits != null ? Number(maxTotalCredits) : null }),
         ...(tagIds !== undefined && { tagIds: tagIds ?? null }),
+        ...(pinned !== undefined && { pinned: Boolean(pinned) }),
       },
     });
     return res.json(updated);

@@ -54,12 +54,38 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
   const isSelectiveElective = box.placeholderType === "SELECTIVE_ELECTIVE";
   const isJunctionLike = isOrJunction || isAndJunction;
 
-  const [isExpanded, setIsExpanded] = useState(isJunctionLike || isSelectiveElective);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState(box.label ?? DEFAULT_LABEL[box.placeholderType]);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const kebabRef = useRef<HTMLButtonElement>(null);
   const labelInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { if (editingLabel) labelInputRef.current?.focus(); }, [editingLabel]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      if (kebabRef.current?.contains(e.target as Node)) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    return () => document.removeEventListener("mousedown", onDocDown);
+  }, [menuOpen]);
+
+  const handleToggleMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsExpanded(false);
+    setMenuOpen((v) => !v);
+  };
+
+  const handleToggleExpand = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMenuOpen(false);
+    setIsExpanded((v) => !v);
+  };
 
   const color = TYPE_COLOR[box.placeholderType];
   const icon  = TYPE_ICON[box.placeholderType];
@@ -138,13 +164,14 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
 
   return (
     <div
-      className={`absolute group transition-shadow duration-200 shadow-sm hover:shadow-md ${isExpanded ? "z-40" : "z-10"}`}
+      className="absolute transition-shadow duration-200 shadow-sm hover:shadow-md"
       style={{
         left: box.x,
         top: box.y,
         width: PLACEHOLDER_WIDTH,
         height: 80,
         minHeight: 80,
+        zIndex: isExpanded || menuOpen ? 40 : 10,
       }}
     >
       <div
@@ -160,7 +187,7 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
             if (!isJunctionLike && !isSelectiveElective) { e.stopPropagation(); setLabelDraft(displayLabel); setEditingLabel(true); }
           }}
         >
-          <div className="flex-1 truncate pr-6">
+          <div className={`flex-1 truncate ${canExpand ? "pr-16" : "pr-9"}`}>
             {editingLabel ? (
               <input
                 ref={labelInputRef}
@@ -187,32 +214,66 @@ export const CanvasPlaceholder: React.FC<Props> = ({ box, onDelete, onMouseDown,
             </p>
           </div>
 
-          {/* Expand/collapse (junctions + selective elective) */}
-          {canExpand && (
+          {/* Header action buttons */}
+          <div className="absolute right-2 top-2 flex items-center gap-1 z-10">
+            {canExpand && (
+              <button
+                onClick={handleToggleExpand}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="text-white bg-black/10 hover:bg-black/20 rounded-full w-7 h-7 flex items-center justify-center transition-colors"
+                title={isExpanded ? "Collapse" : "Show options"}
+              >
+                {isExpanded
+                  ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+                  : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
+                }
+              </button>
+            )}
             <button
-              onClick={(e) => { e.stopPropagation(); setIsExpanded((v) => !v); }}
+              ref={kebabRef}
+              onClick={handleToggleMenu}
               onMouseDown={(e) => e.stopPropagation()}
-              className="absolute right-2 top-2 text-white bg-black/10 hover:bg-black/20 rounded-full w-7 h-7 flex items-center justify-center transition-colors z-10"
-              title={isExpanded ? "Collapse" : "Show options"}
+              className="text-white bg-black/10 hover:bg-black/20 rounded-full w-7 h-7 flex items-center justify-center transition-colors"
+              title="More actions"
             >
-              {isExpanded
-                ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
-                : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
-              }
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1.8" />
+                <circle cx="12" cy="12" r="1.8" />
+                <circle cx="12" cy="19" r="1.8" />
+              </svg>
             </button>
-          )}
-
-          {/* Delete */}
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(box.id); }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 border-2 border-white shadow-sm text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
-            title="Remove placeholder"
-          >
-            ×
-          </button>
+          </div>
         </div>
       </div>
+
+      {/* ── Actions menu ── */}
+      {menuOpen && (
+        <div
+          ref={menuRef}
+          className="absolute bg-white border border-gray-200 shadow-xl rounded-md text-gray-800 text-xs font-medium py-1 min-w-[170px]"
+          style={{ left: PLACEHOLDER_WIDTH + 8, top: 0, zIndex: 50 }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); onUpdate(box.id, { pinned: !box.pinned }); setMenuOpen(false); }}
+            className="w-full text-left px-3 py-1.5 hover:bg-gray-100 flex items-center gap-2"
+          >
+            <span className="text-base leading-none">📌</span>
+            {box.pinned ? "Unpin" : "Pin to all pathways"}
+          </button>
+          <div className="my-1 border-t border-gray-100" />
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(box.id); setMenuOpen(false); }}
+            className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600 flex items-center gap-2"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+            </svg>
+            Remove placeholder
+          </button>
+        </div>
+      )}
 
       {/* ── OR junction side panel ── */}
       {isOrJunction && isExpanded && (

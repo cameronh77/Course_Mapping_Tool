@@ -20,11 +20,19 @@ interface ConnectionLinesProps {
 
 const getRelationshipColor = (type: UnitRelationship["relationshipType"]) => {
   switch (type) {
-    case "PREREQUISITE": return "#EF4444";
-    case "COREQUISITE": return "#F59E0B";
-    case "PROGRESSION": return "#10B981";
-    case "CONNECTED": return "#6366F1";
+    case "PREREQUISITE":
+    case "PROGRESSION": return "#EF4444";
+    case "COREQUISITE":
+    case "CONNECTED": return "#F59E0B";
     default: return "#6B7280";
+  }
+};
+
+const getStrokeDasharray = (type: UnitRelationship["relationshipType"]) => {
+  switch (type) {
+    case "PROGRESSION":
+    case "CONNECTED": return "8 5";
+    default: return undefined;
   }
 };
 
@@ -91,6 +99,7 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({
         
         const { d, endX, endY, angle } = getCurvePath(sourceUnit, targetUnit, rel.id, numberTeachingPeriods);
         const color = getRelationshipColor(rel.relationshipType);
+        const strokeDasharray = getStrokeDasharray(rel.relationshipType);
         const arrowLength = 12;
         const arrowAngle = Math.PI / 6;
         
@@ -124,6 +133,7 @@ export const ConnectionLines: React.FC<ConnectionLinesProps> = ({
               d={d}
               stroke={color}
               strokeWidth={strokeWidth}
+              strokeDasharray={strokeDasharray}
               fill="none"
               className="transition-all duration-200"
             />

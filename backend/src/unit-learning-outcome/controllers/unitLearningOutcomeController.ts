@@ -1,7 +1,7 @@
 import prisma from "../../../database/prismaClient.js";
 
 export const addUnitLearningOutcome = async (req, res) => {
-  const { uloDesc, unitId, cloId, position, bloomsLevel } = req.body;
+  const { uloDesc, unitId, cloId, position, bloomsLevel, taxonomySystem, taxonomyLevel } = req.body;
 
   try {
     if (!uloDesc || !unitId) {
@@ -15,6 +15,8 @@ export const addUnitLearningOutcome = async (req, res) => {
         cloId: cloId ? parseInt(cloId) : null,
         position: position || null,
         bloomsLevel: bloomsLevel || null,
+        taxonomySystem: taxonomySystem || null,
+        taxonomyLevel: taxonomyLevel || null,
       },
     });
 
@@ -74,7 +76,7 @@ export const viewUnitLearningOutcomesByUnit = async (req, res) => {
 
 export const updateUnitLearningOutcome = async (req, res) => {
     const { uloId } = req.params;
-    const { uloDesc, unitId, cloId, position, bloomsLevel } = req.body;
+    const { uloDesc, unitId, cloId, position, bloomsLevel, taxonomySystem, taxonomyLevel } = req.body;
 
     try {
         const updatedUnitLearningOutcome = await prisma.unitLearningOutcome.update({
@@ -87,6 +89,8 @@ export const updateUnitLearningOutcome = async (req, res) => {
                 cloId: cloId !== undefined ? (cloId ? parseInt(cloId) : null) : undefined,
                 position: position !== undefined ? position : undefined,
                 bloomsLevel: bloomsLevel !== undefined ? (bloomsLevel || null) : undefined,
+                taxonomySystem: taxonomySystem !== undefined ? (taxonomySystem || null) : undefined,
+                taxonomyLevel: taxonomyLevel !== undefined ? (taxonomyLevel || null) : undefined,
             }
         });
 

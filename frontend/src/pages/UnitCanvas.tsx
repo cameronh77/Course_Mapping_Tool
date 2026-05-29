@@ -120,6 +120,7 @@ export const CanvasPage: React.FC = () => {
     visiblePathwayIds,
     fetchPathways,
     setActivePathway,
+    replaceVisiblePathway,
     createPathway,
     deletePathway,
   } = usePathwayStore();
@@ -138,7 +139,7 @@ export const CanvasPage: React.FC = () => {
   const isEPFor = (entryName: string, parentName: string) =>
     epBaseName(entryName) === epNormalize(parentName);
 
-  const activeCombo = useMemo(() => {
+  const activeJointLayout = useMemo(() => {
     if (visiblePathwayIds.length < 2) return null;
     const sorted = [...visiblePathwayIds].sort((a, b) => a - b);
     return (
@@ -150,11 +151,11 @@ export const CanvasPage: React.FC = () => {
     );
   }, [pathways, visiblePathwayIds]);
 
-  const effectiveActivePathwayId = activeCombo?.pathwayId ?? activePathwayId;
+  const effectiveActivePathwayId = activeJointLayout?.pathwayId ?? activePathwayId;
 
   const effectiveVisibleIds = useMemo(
-    () => (activeCombo ? [activeCombo.pathwayId] : visiblePathwayIds),
-    [activeCombo, visiblePathwayIds]
+    () => (activeJointLayout ? [activeJointLayout.pathwayId] : visiblePathwayIds),
+    [activeJointLayout, visiblePathwayIds]
   );
 
   const activePathwayObj = useMemo(
@@ -163,8 +164,8 @@ export const CanvasPage: React.FC = () => {
   );
 
   const overlayPathwayIds = useMemo(
-    () => (activeCombo ? [] : visiblePathwayIds.filter((id) => id !== activePathwayId)),
-    [activeCombo, visiblePathwayIds, activePathwayId]
+    () => (activeJointLayout ? [] : visiblePathwayIds.filter((id) => id !== activePathwayId)),
+    [activeJointLayout, visiblePathwayIds, activePathwayId]
   );
 
   const overlayPathwayObjects = useMemo(
@@ -194,9 +195,24 @@ export const CanvasPage: React.FC = () => {
   }, [activePathwayObj, pathways]);
 
   const canvasEntryPoints = useMemo(() => {
+    if (activeJointLayout) {
+      // Find entry levels for any constituent pathway of the joint layout
+      for (const pid of activeJointLayout.comboOf) {
+        const constituent = pathways.find((p) => p.pathwayId === pid);
+        if (!constituent) continue;
+        // If the constituent is itself an entry level, find siblings via its base name
+        const baseName = epBaseName(constituent.name);
+        const eps = pathways.filter((p) => p.type === "ENTRY_POINT" && epBaseName(p.name) === baseName);
+        if (eps.length > 0) return eps;
+        // If the constituent is a regular pathway that has entry levels
+        const directEps = pathways.filter((p) => p.type === "ENTRY_POINT" && isEPFor(p.name, constituent.name));
+        if (directEps.length > 0) return directEps;
+      }
+      return [];
+    }
     if (!entryPointParent) return [];
     return pathways.filter((p) => p.type === "ENTRY_POINT" && isEPFor(p.name, entryPointParent.name));
-  }, [entryPointParent, pathways]);
+  }, [entryPointParent, activeJointLayout, pathways]);
 
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
@@ -410,9 +426,8 @@ export const CanvasPage: React.FC = () => {
             });
 
             if (!mappingsData[cu.unitId]) {
-              const unitCLOMappings = allULOs.filter(
-                (ulo: any) => ulo.unitId === cu.unitId && ulo.cloId
-              );
+              const unitULOs = allULOs.filter((ulo: any) => ulo.unitId === cu.unitId);
+              const unitCLOMappings = unitULOs.filter((ulo: any) => ulo.cloId);
               const mappedCLOs = unitCLOMappings
                 .map((ulo: any) =>
                   allCLOs.find((clo: CourseLearningOutcome) => clo.cloId === ulo.cloId)
@@ -421,7 +436,7 @@ export const CanvasPage: React.FC = () => {
               const unitTags = allTagsForCourse.filter(
                 (ut: any) => ut.unitId === cu.unitId
               );
-              mappingsData[cu.unitId] = { clos: mappedCLOs, tags: unitTags };
+              mappingsData[cu.unitId] = { clos: mappedCLOs, tags: unitTags, ulos: unitULOs };
             }
           }
         });
@@ -500,7 +515,7 @@ export const CanvasPage: React.FC = () => {
   ) => {
     // Update local unitMappings immediately
     setUnitMappings((prev) => {
-      const mapping = { ...(prev[unitKey] || { clos: [], tags: [] }) };
+      const mapping = { ...(prev[unitKey] || { clos: [], tags: [], ulos: [] }) };
       if (fromTag) {
         mapping.tags = mapping.tags.filter((t) => t.tagId !== fromTag.tagId);
       }
@@ -578,10 +593,39 @@ export const CanvasPage: React.FC = () => {
         setUnitBoxes((prev) => [...prev, ...newBoxes]);
       }
 
+      // Copy placeholders from source pathway (skip pinned — they're already visible everywhere)
+      const sourcePlaceholders = placeholderBoxes.filter(
+        (p) => p.pathwayId === sourcePathwayId && !p.pinned
+      );
+      const newPlaceholders: PlaceholderBox[] = [];
+      for (const ph of sourcePlaceholders) {
+        try {
+          const phRes = await axiosInstance.post('/canvas-placeholder', {
+            courseId: currentCourse.courseId,
+            pathwayId: effectiveActivePathwayId,
+            placeholderType: ph.placeholderType,
+            x: ph.x,
+            y: ph.y,
+            label: ph.label,
+            options: ph.options,
+            unitOptions: ph.unitOptions,
+            minCredits: ph.minCredits,
+            maxCredits: ph.maxCredits,
+            maxTotalCredits: ph.maxTotalCredits,
+            tagIds: ph.tagIds,
+          });
+          newPlaceholders.push({ ...ph, id: phRes.data.id, pathwayId: effectiveActivePathwayId ?? null });
+        } catch { /* skip failed placeholder */ }
+      }
+      if (newPlaceholders.length > 0) {
+        setPlaceholderBoxes((prev) => [...prev, ...newPlaceholders]);
+      }
+
+      const phPart = newPlaceholders.length > 0 ? ` and ${newPlaceholders.length} placeholder(s)` : '';
       const msg =
         skipped > 0
-          ? `${copied} unit(s) copied. ${skipped} skipped (already present).`
-          : `${copied} unit(s) copied successfully.`;
+          ? `${copied} unit(s)${phPart} copied. ${skipped} unit(s) skipped (already present).`
+          : `${copied} unit(s)${phPart} copied successfully.`;
       alert(msg);
     } catch (err) {
       console.error("Failed to copy units:", err);
@@ -613,7 +657,7 @@ export const CanvasPage: React.FC = () => {
             const dedupTags = Array.from(
               new Map((mapping?.tags || []).map((tag) => [tag.tagId, tag])).values()
             );
-            return [unitId, { clos: dedupClos, tags: dedupTags }];
+            return [unitId, { clos: dedupClos, tags: dedupTags, ulos: mapping?.ulos || [] }];
           })
       ) as UnitMappings;
         // Unallocated units live only on the theme view — don't persist them as course-units.
@@ -824,9 +868,10 @@ export const CanvasPage: React.FC = () => {
         if (insideCanvas) {
           const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
 
-          // Check if dropped on another junction
+          // Check if dropped on another junction (only visible on current pathway)
           const otherJunction = placeholderBoxesRef.current.find((p) => {
             if (p.id === junctionId || (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND')) return false;
+            if (p.pathwayId !== effectiveActivePathwayId && !p.pinned) return false;
             const approxH = 80 + ((p.unitOptions?.length ?? 0) + (p.options?.length ?? 0)) * 60 + 48;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
@@ -844,7 +889,13 @@ export const CanvasPage: React.FC = () => {
               )
             );
             axiosInstance.put(`/canvas-placeholder/${otherJunction.id}`, { unitOptions: newUnitOptions }).catch(console.error);
+            // Persist removal from the source junction
+            const sourceAfter = placeholderBoxesRef.current.find((p) => p.id === junctionId);
+            axiosInstance.put(`/canvas-placeholder/${junctionId}`, { unitOptions: sourceAfter?.unitOptions ?? [] }).catch(console.error);
           } else {
+            // Persist removal from junction
+            const sourceAfter = placeholderBoxesRef.current.find((p) => p.id === junctionId);
+            axiosInstance.put(`/canvas-placeholder/${junctionId}`, { unitOptions: sourceAfter?.unitOptions ?? [] }).catch(console.error);
             // Place on canvas only if not already there in this pathway
             const alreadyOnCanvas = unitBoxes.some(
               (u) => u.unitId === asUnit.unitId && u.pathwayId === (unit.pathwayId ?? effectiveActivePathwayId)
@@ -897,7 +948,7 @@ export const CanvasPage: React.FC = () => {
     const existing = unitBoxes.find((u) => u.unitId === selectedUnit.unitId);
     const ensureTagMapping = () => {
       setUnitMappings((prev) => {
-        const m = prev[selectedUnit.unitId] || { clos: [], tags: [] };
+        const m = prev[selectedUnit.unitId] || { clos: [], tags: [], ulos: [] };
         if (m.tags.find((t) => t.tagId === tag.tagId)) return prev;
         return { ...prev, [selectedUnit.unitId]: { ...m, tags: [...m.tags, tag] } };
       });
@@ -938,6 +989,7 @@ export const CanvasPage: React.FC = () => {
       [selectedUnit.unitId]: {
         clos: prev[selectedUnit.unitId]?.clos || [],
         tags: [tag],
+        ulos: prev[selectedUnit.unitId]?.ulos || [],
       },
     }));
     setUnitBoxes((prev) => [...prev, newUnit]);
@@ -971,7 +1023,7 @@ export const CanvasPage: React.FC = () => {
     };
     setUnitMappings((prev) => ({
       ...prev,
-      [selectedUnit.unitId]: prev[selectedUnit.unitId] || { clos: [], tags: [] },
+      [selectedUnit.unitId]: prev[selectedUnit.unitId] || { clos: [], tags: [], ulos: [] },
     }));
     setUnitBoxes((prev) => [...prev, newUnit]);
   };
@@ -1033,10 +1085,11 @@ export const CanvasPage: React.FC = () => {
             canvasRef.current
           );
 
-          // Check if dropped onto a junction placeholder
+          // Check if dropped onto a junction placeholder (only visible on current pathway)
           const PLACEHOLDER_W = UNIT_BOX_WIDTH; // same as placeholder width
           const junctionHit = placeholderBoxesRef.current.find((p) => {
             if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
+            if (p.pathwayId !== effectiveActivePathwayId && !p.pinned) return false;
             const approxHeight = 40 + (p.options?.length ?? 2) * 52 + 36;
             return (
               canvasCoords.x >= p.x && canvasCoords.x <= p.x + PLACEHOLDER_W &&
@@ -1106,6 +1159,7 @@ export const CanvasPage: React.FC = () => {
           const tempId = Date.now();
           const newBox: PlaceholderBox = {
             id: tempId,
+            pathwayId: effectiveActivePathwayId ?? null,
             placeholderType: type,
             x: snapped.x,
             y: snapped.y,
@@ -1122,7 +1176,7 @@ export const CanvasPage: React.FC = () => {
               ...initialData,
             }).then((res) => {
               setPlaceholderBoxes((prev) =>
-                prev.map((p) => p.id === tempId ? { ...p, id: res.data.id } : p)
+                prev.map((p) => p.id === tempId ? { ...p, id: res.data.id, pathwayId: res.data.pathwayId } : p)
               );
             }).catch(console.error);
           }
@@ -1357,11 +1411,12 @@ export const CanvasPage: React.FC = () => {
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
 
-      // Check if dropped onto a junction placeholder
+      // Check if dropped onto a junction placeholder (only visible on current pathway)
       if (canvasRef.current && unit?.unitId) {
         const canvasCoords = getMouseCoords(ue as unknown as React.MouseEvent, canvasRef.current);
         const junctionHit = placeholderBoxesRef.current.find((p) => {
           if (p.placeholderType !== 'JUNCTION' && p.placeholderType !== 'AND') return false;
+          if (p.pathwayId !== effectiveActivePathwayId && !p.pinned) return false;
           const approxHeight = 80 + (p.options?.length ?? 2) * 52 + 36;
           return (
             canvasCoords.x >= p.x && canvasCoords.x <= p.x + UNIT_BOX_WIDTH &&
@@ -1573,15 +1628,15 @@ export const CanvasPage: React.FC = () => {
     }
   };
 
-  const handleCreateCombo = async () => {
+  const handleCreateJointLayout = async () => {
     if (!currentCourse?.courseId || visiblePathwayIds.length < 2) return;
     const sorted = [...visiblePathwayIds].sort((a, b) => a - b);
-    await createPathway(`combo_${sorted.join("_")}`, "CUSTOM", currentCourse.courseId, sorted);
+    await createPathway(`joint_${sorted.join("_")}`, "CUSTOM", currentCourse.courseId, sorted);
   };
 
-  const handleRemoveCombo = async () => {
-    if (!activeCombo) return;
-    await deletePathway(activeCombo.pathwayId);
+  const handleRemoveJointLayout = async () => {
+    if (!activeJointLayout) return;
+    await deletePathway(activeJointLayout.pathwayId);
   };
 
   const handleDeleteRelationship = async (relationshipId: number) => {
@@ -1635,7 +1690,7 @@ export const CanvasPage: React.FC = () => {
     add: boolean
   ) => {
     setUnitMappings((prev) => {
-      const unitData = prev[unitKey] || { clos: [], tags: [] };
+      const unitData = prev[unitKey] || { clos: [], tags: [], ulos: [] };
       if (add) {
         if (unitData.clos.some((c) => c.cloId === clo.cloId)) return prev;
         return { ...prev, [unitKey]: { ...unitData, clos: [...unitData.clos, clo] } };
@@ -1653,7 +1708,7 @@ export const CanvasPage: React.FC = () => {
 
   const handleToggleTag = (unitKey: string, tag: Tag, add: boolean) => {
     setUnitMappings((prev) => {
-      const unitData = prev[unitKey] || { clos: [], tags: [] };
+      const unitData = prev[unitKey] || { clos: [], tags: [], ulos: [] };
       if (add) {
         if (unitData.tags.some((t) => t.tagId === tag.tagId)) return prev;
         if (currentCourse?.courseId) {
@@ -1684,7 +1739,7 @@ export const CanvasPage: React.FC = () => {
   // Handle Drop onto a Unit Box from Sidebar
   const handleDropOnUnit = (unitKey: string, transferItem: any) => {
     setUnitMappings((prev) => {
-      const unitData = prev[unitKey] || { clos: [], tags: [] };
+      const unitData = prev[unitKey] || { clos: [], tags: [], ulos: [] };
       if (transferItem.type === "clo") {
         if (!unitData.clos.find((c) => c.cloId === transferItem.data.cloId)) {
           return {
@@ -1875,7 +1930,19 @@ const yearsCount =
                   <button
                     key={p.pathwayId}
                     type="button"
-                    onClick={() => setActivePathway(p.pathwayId)}
+                    onClick={() => {
+                      if (activeJointLayout) {
+                        // Replace whichever constituent this entry level belongs to
+                        const constituentId = activeJointLayout.comboOf.find((pid) => {
+                          const c = pathways.find((pw) => pw.pathwayId === pid);
+                          return c && (isEPFor(p.name, c.name) || epBaseName(p.name) === epBaseName(c.name));
+                        });
+                        if (constituentId) replaceVisiblePathway(constituentId, p.pathwayId);
+                        else setActivePathway(p.pathwayId);
+                      } else {
+                        setActivePathway(p.pathwayId);
+                      }
+                    }}
                     title={p.name}
                     className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
                       isActive
@@ -1929,27 +1996,27 @@ const yearsCount =
             </>
           )}
 
-          {/* Combo layout override — only when 2+ pathways visible */}
+          {/* Joint pathway layout — only when 2+ pathways visible */}
           {visiblePathwayIds.length >= 2 && (
             <>
               <span className="text-gray-200 text-xs">|</span>
-              {activeCombo ? (
+              {activeJointLayout ? (
                 <button
                   type="button"
-                  onClick={handleRemoveCombo}
+                  onClick={handleRemoveJointLayout}
                   className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded hover:bg-orange-100 transition-colors"
-                  title="Remove custom layout and return to default overlay"
+                  title="Remove joint layout and return to default overlay"
                 >
-                  Custom layout · Remove override
+                  Joint layout · Remove
                 </button>
               ) : (
                 <button
                   type="button"
-                  onClick={handleCreateCombo}
+                  onClick={handleCreateJointLayout}
                   className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 bg-gray-100 hover:bg-gray-200 hover:text-gray-600 rounded transition-colors"
-                  title="Create a custom layout for this specific combination of pathways"
+                  title="Save a custom joint layout for this specific combination of pathways"
                 >
-                  Override defaults
+                  Save joint layout
                 </button>
               )}
             </>
@@ -1970,8 +2037,14 @@ const yearsCount =
               const colors: Record<string, string> = {
                 PREREQUISITE: "#EF4444",
                 COREQUISITE: "#F59E0B",
-                PROGRESSION: "#10B981",
-                CONNECTED: "#6366F1",
+                PROGRESSION: "#EF4444",
+                CONNECTED: "#F59E0B",
+              };
+              const labels: Record<string, string> = {
+                PREREQUISITE: "Prerequisite",
+                COREQUISITE: "Corequisite",
+                PROGRESSION: "Progression (dotted)",
+                CONNECTED: "Connected (dotted)",
               };
               return (
                 <button
@@ -1982,9 +2055,10 @@ const yearsCount =
                     backgroundColor: active ? colors[t] : undefined,
                     borderColor: colors[t],
                     color: active ? '#fff' : colors[t],
+                    borderStyle: (t === "PROGRESSION" || t === "CONNECTED") ? "dashed" : "solid",
                   }}
                 >
-                  {t.charAt(0) + t.slice(1).toLowerCase()}
+                  {labels[t]}
                 </button>
               );
             })}
@@ -2109,7 +2183,7 @@ const yearsCount =
                     connectionSource={null}
                     isExpanded={false}
                     activeTab="info"
-                    unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [] }}
+                    unitMappings={unitMappings[unit.unitId || unit.id.toString()] || { clos: [], tags: [], ulos: [] }}
                     currentCLOs={currentCLOs || []}
                     onMouseDown={(e) => { e.stopPropagation(); setActivePathway(pid); }}
                     onDoubleClick={() => {}}
@@ -2131,8 +2205,8 @@ const yearsCount =
             </div>
           ))}
 
-          {/* Placeholder boxes */}
-          {placeholderBoxes.map((box) => (
+          {/* Placeholder boxes — active pathway + pinned from any pathway (pinned excluded from joint layouts) */}
+          {placeholderBoxes.filter((box) => box.pathwayId === effectiveActivePathwayId || (!activeJointLayout && box.pinned)).map((box) => (
             <CanvasPlaceholder
               key={box.id}
               box={box}
@@ -2197,7 +2271,7 @@ const yearsCount =
                 setActiveTab={(id, tab) =>
                   setActiveTabs((prev) => ({ ...prev, [id]: tab }))
                 }
-                unitMappings={unitMappings[key] || { clos: [], tags: [] }}
+                unitMappings={unitMappings[key] || { clos: [], tags: [], ulos: [] }}
                 getCLOColor={getCLOColor}
                 existingTags={existingTags || []}
                 onClose={() => setDrawerUnitId(null)}

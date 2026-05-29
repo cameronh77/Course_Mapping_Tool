@@ -111,6 +111,15 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
     [nonEntryPathways]
   );
 
+  const coreEntryPoints = useMemo(() => {
+    if (!corePathway) return [];
+    const normalize = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+    const epBase = (s: string) => normalize(s).replace(/\s+entry\s+(level|point)(\s+\d+)?$/i, "").trim();
+    return pathways
+      .filter((p) => p.type === "ENTRY_POINT" && epBase(p.name) === normalize(corePathway.name))
+      .sort((a, b) => a.pathwayId - b.pathwayId);
+  }, [corePathway, pathways]);
+
   const groupedNonCore = useMemo(() => {
     const nonCore = nonEntryPathways.filter((p) => p.type !== "CORE");
     const seen = new Set<string>();
@@ -209,14 +218,32 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
           <div className="flex flex-col gap-0.5">
             {/* CORE — toggleable, pinned at top with its own section label */}
             {corePathway && (() => {
-              const isCoreActive = corePathway.pathwayId === activePathwayId;
-              const isCoreVisible = visiblePathwayIds.includes(corePathway.pathwayId);
+              // When Core has entry points, reflect their state instead of Core's own ID.
+              const activeCoreEP = coreEntryPoints.find((ep) => visiblePathwayIds.includes(ep.pathwayId));
+              const isCoreActive = coreEntryPoints.length > 0
+                ? coreEntryPoints.some((ep) => ep.pathwayId === activePathwayId)
+                : corePathway.pathwayId === activePathwayId;
+              const isCoreVisible = coreEntryPoints.length > 0
+                ? coreEntryPoints.some((ep) => visiblePathwayIds.includes(ep.pathwayId))
+                : visiblePathwayIds.includes(corePathway.pathwayId);
               const toggleCore = () => {
-                if (isCoreVisible) {
-                  setVisibility(corePathway.pathwayId, false);
+                if (coreEntryPoints.length > 0) {
+                  if (isCoreVisible) {
+                    // Hide whichever Core entry point is currently visible.
+                    const hideId = activeCoreEP?.pathwayId ?? coreEntryPoints[0].pathwayId;
+                    setVisibility(hideId, false);
+                  } else {
+                    const showId = coreEntryPoints[0].pathwayId;
+                    setVisibility(showId, true);
+                    setActivePathway(showId);
+                  }
                 } else {
-                  setVisibility(corePathway.pathwayId, true);
-                  setActivePathway(corePathway.pathwayId);
+                  if (isCoreVisible) {
+                    setVisibility(corePathway.pathwayId, false);
+                  } else {
+                    setVisibility(corePathway.pathwayId, true);
+                    setActivePathway(corePathway.pathwayId);
+                  }
                 }
               };
               return (
@@ -582,10 +609,22 @@ export const CanvasSidebar: React.FC<CanvasSidebarProps> = ({
               <div className="bg-white rounded border border-red-100 p-3 shadow-sm">
                 <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-2">Legend</p>
                 <ul className="flex flex-col gap-1.5 text-xs text-gray-700">
-                  <li className="flex items-center gap-2"><span className="w-3 h-0.5" style={{ backgroundColor: "#EF4444" }} />Prerequisite</li>
-                  <li className="flex items-center gap-2"><span className="w-3 h-0.5" style={{ backgroundColor: "#F59E0B" }} />Corequisite</li>
-                  <li className="flex items-center gap-2"><span className="w-3 h-0.5" style={{ backgroundColor: "#10B981" }} />Progression</li>
-                  <li className="flex items-center gap-2"><span className="w-3 h-0.5" style={{ backgroundColor: "#6366F1" }} />Connected</li>
+                  <li className="flex items-center gap-2">
+                    <svg width="12" height="4" viewBox="0 0 12 4"><line x1="0" y1="2" x2="12" y2="2" stroke="#EF4444" strokeWidth="2" /></svg>
+                    Prerequisite
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <svg width="12" height="4" viewBox="0 0 12 4"><line x1="0" y1="2" x2="12" y2="2" stroke="#F59E0B" strokeWidth="2" /></svg>
+                    Corequisite
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <svg width="12" height="4" viewBox="0 0 12 4"><line x1="0" y1="2" x2="12" y2="2" stroke="#EF4444" strokeWidth="2" strokeDasharray="3 2" /></svg>
+                    Progression
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <svg width="12" height="4" viewBox="0 0 12 4"><line x1="0" y1="2" x2="12" y2="2" stroke="#F59E0B" strokeWidth="2" strokeDasharray="3 2" /></svg>
+                    Connected
+                  </li>
                 </ul>
                 <p className="text-[10px] text-gray-400 mt-2">Click a connection line on the canvas to delete it.</p>
               </div>

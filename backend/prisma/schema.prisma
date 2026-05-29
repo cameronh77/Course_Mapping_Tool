@@ -71,6 +71,7 @@ model CanvasPlaceholder {
   maxTotalCredits Float?
   // SELECTIVE_ELECTIVE: tag ids that define the unit pool
   tagIds          Json?
+  pinned          Boolean  @default(false)
 
   course  Course   @relation(fields: [courseId], references: [courseId], onDelete: Cascade)
   pathway Pathway? @relation(fields: [pathwayId], references: [pathwayId], onDelete: SetNull)
@@ -214,12 +215,14 @@ model CourseLearningOutcome {
 }
 
 model UnitLearningOutcome {
-  uloId       Int          @id @default(autoincrement())
-  uloDesc     String
-  unitId      String
-  cloId       Int?
-  bloomsLevel BloomsLevel?
-  position    Json?
+  uloId          Int          @id @default(autoincrement())
+  uloDesc        String
+  unitId         String
+  cloId          Int?
+  bloomsLevel    BloomsLevel?
+  taxonomySystem String?
+  taxonomyLevel  String?
+  position       Json?
 
   unit     Unit                   @relation(fields: [unitId], references: [unitId], onDelete:Cascade)
   courseLO CourseLearningOutcome? @relation(fields: [cloId], references: [cloId])

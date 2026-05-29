@@ -1,13 +1,53 @@
 import React, { useState } from "react";
-import type { BloomsLevel, CourseLearningOutcome, UnitLearningOutcome, unitLearningOutcomeBox } from "../../types";
+import type { BloomsLevel, TaxonomySystem, CourseLearningOutcome, UnitLearningOutcome, unitLearningOutcomeBox } from "../../types";
 
 const BLOOMS_STYLES: Record<BloomsLevel, { badge: string; label: string }> = {
-  REMEMBER:   { badge: "bg-red-200 text-red-800",    label: "Remember" },
-  UNDERSTAND: { badge: "bg-orange-200 text-orange-800", label: "Understand" },
-  APPLY:      { badge: "bg-yellow-200 text-yellow-800", label: "Apply" },
-  ANALYSE:    { badge: "bg-green-200 text-green-800",  label: "Analyse" },
-  EVALUATE:   { badge: "bg-blue-200 text-blue-800",    label: "Evaluate" },
-  CREATE:     { badge: "bg-purple-200 text-purple-800", label: "Create" },
+  REMEMBER:   { badge: "bg-red-200 text-red-800",       label: "Remember" },
+  UNDERSTAND: { badge: "bg-orange-200 text-orange-800",  label: "Understand" },
+  APPLY:      { badge: "bg-yellow-200 text-yellow-800",  label: "Apply" },
+  ANALYSE:    { badge: "bg-green-200 text-green-800",    label: "Analyse" },
+  EVALUATE:   { badge: "bg-blue-200 text-blue-800",      label: "Evaluate" },
+  CREATE:     { badge: "bg-purple-200 text-purple-800",  label: "Create" },
+};
+
+const SOLO_STYLES: Record<string, { badge: string; label: string }> = {
+  PRESTRUCTURAL:    { badge: "bg-gray-200 text-gray-700",    label: "Pre-structural" },
+  UNISTRUCTURAL:    { badge: "bg-sky-200 text-sky-800",      label: "Uni-structural" },
+  MULTISTRUCTURAL:  { badge: "bg-teal-200 text-teal-800",    label: "Multi-structural" },
+  RELATIONAL:       { badge: "bg-indigo-200 text-indigo-800",label: "Relational" },
+  EXTENDED_ABSTRACT:{ badge: "bg-violet-200 text-violet-800",label: "Extended Abstract" },
+};
+
+const WEBB_STYLES: Record<string, { badge: string; label: string }> = {
+  RECALL:              { badge: "bg-lime-200 text-lime-800",    label: "Recall" },
+  SKILL_CONCEPT:       { badge: "bg-emerald-200 text-emerald-800", label: "Skill/Concept" },
+  STRATEGIC_THINKING:  { badge: "bg-cyan-200 text-cyan-800",    label: "Strategic Thinking" },
+  EXTENDED_THINKING:   { badge: "bg-fuchsia-200 text-fuchsia-800", label: "Extended Thinking" },
+};
+
+const FINK_STYLES: Record<string, { badge: string; label: string }> = {
+  FOUNDATIONAL:     { badge: "bg-amber-200 text-amber-800",   label: "Foundational Knowledge" },
+  APPLICATION:      { badge: "bg-rose-200 text-rose-800",     label: "Application" },
+  INTEGRATION:      { badge: "bg-pink-200 text-pink-800",     label: "Integration" },
+  HUMAN_DIMENSION:  { badge: "bg-orange-200 text-orange-900", label: "Human Dimension" },
+  CARING:           { badge: "bg-red-200 text-red-700",       label: "Caring" },
+  LEARNING_TO_LEARN:{ badge: "bg-purple-200 text-purple-700", label: "Learning to Learn" },
+};
+
+const TAXONOMY_META: Record<TaxonomySystem, { label: string; styles: Record<string, { badge: string; label: string }> }> = {
+  BLOOMS: { label: "Bloom's Taxonomy",          styles: BLOOMS_STYLES },
+  SOLO:   { label: "SOLO Taxonomy",             styles: SOLO_STYLES },
+  WEBB:   { label: "Webb's Depth of Knowledge", styles: WEBB_STYLES },
+  FINK:   { label: "Fink's Significant Learning",styles: FINK_STYLES },
+};
+
+export const getTaxonomyBadge = (ulo: UnitLearningOutcome): { badge: string; label: string } | null => {
+  if (ulo.taxonomySystem && ulo.taxonomyLevel) {
+    const meta = TAXONOMY_META[ulo.taxonomySystem as TaxonomySystem];
+    return meta?.styles[ulo.taxonomyLevel] ?? null;
+  }
+  if (ulo.bloomsLevel) return BLOOMS_STYLES[ulo.bloomsLevel] ?? null;
+  return null;
 };
 
 type UnitOption = {
@@ -113,6 +153,10 @@ export const ULOBox: React.FC<ULOBoxProps> = (props) => {
   const [isEditing, setIsEditing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [editText, setEditText] = useState(ulo.uloDesc);
+  const initialSystem = ulo.taxonomySystem ?? (ulo.bloomsLevel ? "BLOOMS" : "");
+  const initialLevel = ulo.taxonomyLevel ?? ulo.bloomsLevel ?? "";
+  const [editTaxonomySystem, setEditTaxonomySystem] = useState<TaxonomySystem | "">(initialSystem as TaxonomySystem | "");
+  const [editTaxonomyLevel, setEditTaxonomyLevel] = useState<string>(initialLevel);
   const [editBloomsLevel, setEditBloomsLevel] = useState<BloomsLevel | "">(ulo.bloomsLevel ?? "");
   const [selectedUnitId, setSelectedUnitId] = useState(ulo.unitId || "");
   const [selectedCloIds, setSelectedCloIds] = useState<number[]>(
@@ -137,19 +181,26 @@ export const ULOBox: React.FC<ULOBoxProps> = (props) => {
 
   const handleSave = () => {
     if (editText.trim()) {
+      const isBlooms = editTaxonomySystem === "BLOOMS";
       onUpdate?.({
         uloDesc: editText,
         unitId: selectedUnitId,
         cloIds: selectedCloIds,
         assessmentIds: parseAssessmentIds(assessmentInput),
-        bloomsLevel: editBloomsLevel || undefined,
-      } as ULOUpdatePayload & { bloomsLevel?: BloomsLevel });
+        bloomsLevel: isBlooms ? (editTaxonomyLevel as BloomsLevel || undefined) : undefined,
+        taxonomySystem: editTaxonomySystem || undefined,
+        taxonomyLevel: editTaxonomySystem && !isBlooms ? (editTaxonomyLevel || undefined) : undefined,
+      } as ULOUpdatePayload & { bloomsLevel?: BloomsLevel; taxonomySystem?: TaxonomySystem; taxonomyLevel?: string });
     }
     setIsEditing(false);
   };
 
   const handleCancel = () => {
     setEditText(ulo.uloDesc);
+    const sys = ulo.taxonomySystem ?? (ulo.bloomsLevel ? "BLOOMS" : "");
+    const lvl = ulo.taxonomyLevel ?? ulo.bloomsLevel ?? "";
+    setEditTaxonomySystem(sys as TaxonomySystem | "");
+    setEditTaxonomyLevel(lvl);
     setEditBloomsLevel(ulo.bloomsLevel ?? "");
     setSelectedUnitId(ulo.unitId || "");
     const selected = availableUnits.find((u) => u.unitId === (ulo.unitId || ""));
@@ -188,7 +239,7 @@ export const ULOBox: React.FC<ULOBoxProps> = (props) => {
     }
   };
 
-  const bloomsStyle = ulo.bloomsLevel ? BLOOMS_STYLES[ulo.bloomsLevel] : null;
+  const bloomsStyle = getTaxonomyBadge(ulo);
   const boxHeight = 72;
 
   return (
@@ -242,20 +293,37 @@ export const ULOBox: React.FC<ULOBoxProps> = (props) => {
                 onClick={(e) => e.stopPropagation()}
               />
               <div className="mb-2">
-                <label className="mb-1 block font-semibold text-[11px] text-gray-600">Bloom's Level</label>
+                <label className="mb-1 block font-semibold text-[11px] text-gray-600">Taxonomy System</label>
                 <select
-                  value={editBloomsLevel}
-                  onChange={(e) => setEditBloomsLevel(e.target.value as BloomsLevel | "")}
+                  value={editTaxonomySystem}
+                  onChange={(e) => { setEditTaxonomySystem(e.target.value as TaxonomySystem | ""); setEditTaxonomyLevel(""); }}
                   className="w-full rounded border border-gray-300 p-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <option value="">None</option>
-                  {(Object.keys(BLOOMS_STYLES) as BloomsLevel[]).map((level) => (
-                    <option key={level} value={level}>{BLOOMS_STYLES[level].label}</option>
+                  {(Object.keys(TAXONOMY_META) as TaxonomySystem[]).map((sys) => (
+                    <option key={sys} value={sys}>{TAXONOMY_META[sys].label}</option>
                   ))}
                 </select>
               </div>
+              {editTaxonomySystem && (
+                <div className="mb-2">
+                  <label className="mb-1 block font-semibold text-[11px] text-gray-600">Level</label>
+                  <select
+                    value={editTaxonomyLevel}
+                    onChange={(e) => setEditTaxonomyLevel(e.target.value)}
+                    className="w-full rounded border border-gray-300 p-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <option value="">None</option>
+                    {Object.entries(TAXONOMY_META[editTaxonomySystem].styles).map(([key, val]) => (
+                      <option key={key} value={key}>{val.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="mb-2">
                 <label className="mb-1 block font-semibold text-[11px] text-gray-600">Linked Unit</label>
                 <input
